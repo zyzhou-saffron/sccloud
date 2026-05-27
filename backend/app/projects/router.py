@@ -7,11 +7,12 @@ import os
 import re
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from app.auth.deps import get_current_user
+from fastapi.responses import FileResponse
 from app.config import get_settings
 from app.db.models import Project, User, get_db
 
@@ -178,6 +179,51 @@ async def delete_project(
 
     db.delete(project)
     db.commit()
+
+
+@router.get("/{project_id}/download")
+async def download_project(
+    project_id: int,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Download all project files as a ZIP archive."""
+    import zipfile
+    import tempfile
+
+    project = (
+        db.query(Project)
+        .filter(Project.id == project_id, Project.user_id == current_user.id)
+        .first()
+    )
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    project_dir = project.storage_path
+    if not project_dir or not os.path.isdir(project_dir):
+        raise HTTPException(status_code=404, detail="Project files not found")
+
+    timestamp = datetime.now().strftime("%Y%m%d")
+    zip_name = f"{project.name}-{timestamp}.zip"
+
+    tmp_path = os.path.join(tempfile.gettempdir(), f"sccloud_{project_id}_{timestamp}.zip")
+    with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for root, dirs, files in os.walk(project_dir):
+            for f in files:
+                file_path = os.path.join(root, f)
+                arcname = os.path.relpath(file_path, project_dir)
+                try:
+                    zf.write(file_path, arcname)
+                except OSError:
+                    pass
+
+    background_tasks.add_task(os.unlink, tmp_path)
+    return FileResponse(
+        tmp_path,
+        media_type="application/zip",
+        filename=zip_name,
+    )
 
 
 @router.get("/{project_id}/genes")

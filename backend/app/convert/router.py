@@ -183,6 +183,7 @@ async def convert_format(
 @router.post("/mtx-merge", response_model=MtxMergeResponse)
 async def mtx_merge(
     sample_names: list[str] = Form(...),
+    sample_groups: list[str] = Form(...),
     files: list[UploadFile] = File(...),
     current_user: User = Depends(get_current_user),
 ):
@@ -263,6 +264,16 @@ async def mtx_merge(
         )
 
     result = response.json()
+
+    # 保存样本分组映射（供后续 QC 步骤使用）
+    groups_json_path = output_path + "_groups.json"
+    import json
+    group_map = {}
+    for nm, grp in zip(sample_names, sample_groups):
+        group_map[nm] = grp if grp and grp.strip() else nm
+    with open(groups_json_path, "w") as gf:
+        json.dump(group_map, gf, ensure_ascii=False)
+    os.chmod(groups_json_path, 0o666)
 
     # R jsonlite 将单值包装为数组，需要解包
     def _r(v, default=None):

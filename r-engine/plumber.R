@@ -535,6 +535,24 @@ function(req) {
 
   report(85, "保存结果...")
 
+  # 确保 data.frame 列名完整（修复 write.csv 列名缺失问题）
+  if (ncol(totalMT) > 0) {
+    mt_cols <- c("mt<=5%","mt<=10%","mt<=15%","mt<=20%","mt<=30%","mt<=50%","mt<=80%","mt<=100%")
+    colnames(totalMT) <- c("Sample", mt_cols[seq_len(min(length(mt_cols), ncol(totalMT)-1))])
+  }
+  if (ncol(totalMT1) > 0) {
+    mt_cols <- c("mt<=5%","mt<=10%","mt<=15%","mt<=20%","mt<=30%","mt<=50%","mt<=80%","mt<=100%")
+    colnames(totalMT1) <- c("Sample", mt_cols[seq_len(min(length(mt_cols), ncol(totalMT1)-1))])
+  }
+  if (ncol(umiGene) > 0) {
+    ug_cols <- c("umisMax","umisMed","umisMin","genesMax","genesMed","genesMin")
+    colnames(umiGene) <- c("Sample", ug_cols[seq_len(min(length(ug_cols), ncol(umiGene)-1))])
+  }
+  if (ncol(umiGene1) > 0) {
+    ug_cols <- c("umisMax","umisMed","umisMin","genesMax","genesMed","genesMin")
+    colnames(umiGene1) <- c("Sample", ug_cols[seq_len(min(length(ug_cols), ncol(umiGene1)-1))])
+  }
+
   # 双命名：归档名 + 管道链名
   rds_archive <- make_output_name(project_path, "1", "qc", "filtered", "rds")
   archive_path <- file.path(project_path, rds_archive)
@@ -931,6 +949,24 @@ function(req) {
   })
 
   report(85, "保存结果...")
+
+  # 确保 data.frame 列名完整（修复 write.csv 列名缺失问题）
+  if (ncol(totalMT) > 0) {
+    mt_cols <- c("mt<=5%","mt<=10%","mt<=15%","mt<=20%","mt<=30%","mt<=50%","mt<=80%","mt<=100%")
+    colnames(totalMT) <- c("Sample", mt_cols[seq_len(min(length(mt_cols), ncol(totalMT)-1))])
+  }
+  if (ncol(totalMT1) > 0) {
+    mt_cols <- c("mt<=5%","mt<=10%","mt<=15%","mt<=20%","mt<=30%","mt<=50%","mt<=80%","mt<=100%")
+    colnames(totalMT1) <- c("Sample", mt_cols[seq_len(min(length(mt_cols), ncol(totalMT1)-1))])
+  }
+  if (ncol(umiGene) > 0) {
+    ug_cols <- c("umisMax","umisMed","umisMin","genesMax","genesMed","genesMin")
+    colnames(umiGene) <- c("Sample", ug_cols[seq_len(min(length(ug_cols), ncol(umiGene)-1))])
+  }
+  if (ncol(umiGene1) > 0) {
+    ug_cols <- c("umisMax","umisMed","umisMin","genesMax","genesMed","genesMin")
+    colnames(umiGene1) <- c("Sample", ug_cols[seq_len(min(length(ug_cols), ncol(umiGene1)-1))])
+  }
 
   # 双命名：CSV
   csv_archive <- make_output_name(project_path, "5", "markers", "diff_genes", "csv")

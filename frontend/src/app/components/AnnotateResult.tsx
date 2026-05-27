@@ -130,6 +130,65 @@ export default function AnnotateResult({
   // 表格点击的高亮类型："cluster" | "celltype" | null
   const [tableHighlightType, setTableHighlightType] = useState<"cluster" | "celltype" | null>(null);
 
+  // ── 手动注释文件上传 ──
+  const [uploadAnnotating, setUploadAnnotating] = useState(false);
+  const [uploadAnnotateMsg, setUploadAnnotateMsg] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleAnnotateFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadAnnotating(true);
+    setUploadAnnotateMsg(null);
+    try {
+      const text = await file.text();
+      const lines = text.trim().split(/\r?\n/);
+      if (lines.length < 2) throw new Error("文件至少需要包含表头和数据行");
+      const sep = lines[0].includes("\t") ? "\t" : ",";
+      const headers = lines[0].split(sep).map((h: string) => h.trim().toLowerCase());
+      const clusterIdx = headers.indexOf("cluster_id");
+      const celltypeIdx = headers.indexOf("celltype");
+      if (clusterIdx < 0) throw new Error("缺少 cluster_id 列（需要 cluster_id, celltype 列）");
+      const mapping: Record<string, string> = {};
+      for (let i = 1; i < lines.length; i++) {
+        const cols = lines[i].split(sep);
+        const cid = cols[clusterIdx]?.trim();
+        const ct = celltypeIdx >= 0 ? cols[celltypeIdx]?.trim() : "";
+        if (cid && ct) mapping[cid] = ct;
+      }
+      const count = Object.keys(mapping).length;
+      if (count === 0) throw new Error("未解析到有效的注释数据");
+      // 更新 markerTable
+      const newTable = markerTable.map((row: MarkerTableRow) =>
+        mapping[row.cluster_id] ? { ...row, celltype: mapping[row.cluster_id] } : row
+      );
+      setMarkerTable(newTable);
+      // 更新 scatter_data celltype
+      let updatedCelltype: string[] | undefined;
+      const scatter = displayScatter;
+      if (scatter?.celltype && scatter?.cluster) {
+        updatedCelltype = scatter.celltype.map((ct: string, i: number) => {
+          const cid = scatter.cluster[i];
+          return mapping[cid] || ct;
+        });
+        setLocalScatter({ ...scatter, celltype: updatedCelltype });
+      }
+      // 持久化
+      const updatePayload: Record<string, unknown> = { marker_table: newTable };
+      if (updatedCelltype && annotateData?.scatter_data) {
+        updatePayload.scatter_data = { ...(annotateData.scatter_data as Record<string, unknown>), celltype: updatedCelltype };
+      }
+      await updateTaskResult(taskId, updatePayload);
+      window.dispatchEvent(new CustomEvent("annotation-updated"));
+      setUploadAnnotateMsg(`成功更新 ${count} 个聚类的注释`);
+    } catch (err) {
+      setUploadAnnotateMsg(err instanceof Error ? err.message : "上传失败");
+    } finally {
+      setUploadAnnotating(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }, [markerTable, displayScatter, taskId, annotateData?.scatter_data]);
+
   // ── 基因表达弹窗状态（hover 触发，跟随鼠标） ──
   const [activeGene, setActiveGene] = useState<string | null>(null);
   const [activeCellType, setActiveCellType] = useState<string | null>(null);
@@ -402,6 +461,58 @@ export default function AnnotateResult({
           >
             {mergeMode ? "退出调整" : "调整注释结果"}
           </button>
+        </div>
+      )}
+
+      {/* ── 手动注释文件上传 ── */}
+      <div
+        className="flex items-center gap-3 p-3 rounded-lg"
+        style={{
+          background: "rgba(200,96,25,0.04)",
+          border: "2px dashed rgba(200,96,25,0.3)",
+        }}
+      >
+        <div className="flex-1">
+          <p className="text-xs font-semibold" style={{ color: "var(--clr-amber-dark)" }}>
+            手工注释上传
+          </p>
+          <p className="text-[11px] mt-0.5" style={{ color: "var(--clr-text-muted)" }}>
+            上传 CSV/TSV 文件（需含 cluster_id, celltype 列），替换自动注释结果
+          </p>
+        </div>
+        <label
+          className="px-4 py-2 rounded-lg text-xs font-bold text-white cursor-pointer transition-all hover:opacity-90 flex items-center gap-1.5"
+          style={{
+            background: "linear-gradient(135deg, var(--clr-amber-dark), var(--clr-amber))",
+            boxShadow: "0 2px 8px rgba(200,96,25,0.2)",
+          }}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="17 8 12 3 7 8"/>
+            <line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+          {uploadAnnotating ? "上传中..." : "上传注释文件"}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv,.tsv,.txt"
+            className="hidden"
+            onChange={handleAnnotateFileUpload}
+            disabled={uploadAnnotating}
+          />
+        </label>
+      </div>
+      {uploadAnnotateMsg && (
+        <div
+          className="text-xs px-3 py-2 rounded"
+          style={{
+            background: uploadAnnotateMsg.startsWith("成功") ? "rgba(22,163,74,0.06)" : "rgba(220,38,38,0.06)",
+            border: `1px solid ${uploadAnnotateMsg.startsWith("成功") ? "rgba(22,163,74,0.2)" : "rgba(220,38,38,0.2)"}`,
+            color: uploadAnnotateMsg.startsWith("成功") ? "#15803d" : "#b91c1c",
+          }}
+        >
+          {uploadAnnotateMsg}
         </div>
       )}
 

@@ -48,6 +48,27 @@ export default function DashboardPage() {
     } finally { setCreating(false); }
   };
 
+  const handleDownload = async (project: Project) => {
+    const token = localStorage.getItem("access_token");
+    try {
+      const res = await fetch(`/api/projects/${project.id}/download`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error(`下载失败 (${res.status})`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const disposition = res.headers.get("Content-Disposition") || "";
+      const match = disposition.match(/filename="?(.+?)"?$/);
+      a.download = match?.[1] || `${project.name}.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      alert("下载失败: " + (e instanceof Error ? e.message : "未知错误"));
+    }
+  };
+
   const handleDelete = async (id: number, name: string) => {
     if (!confirm(`确定删除项目 "${name}" 吗？此操作不可撤销。`)) return;
     try {
@@ -133,6 +154,9 @@ export default function DashboardPage() {
                 <h3 className="font-semibold transition-colors" style={{ fontFamily: "var(--font-serif)", color: "var(--clr-dark)" }}>{project.name}</h3>
                 <div className="flex items-center gap-2">
                   <span className="badge">{project.status}</span>
+                  <button onClick={() => handleDownload(project)} className="opacity-0 group-hover:opacity-100 transition-all text-xs mr-1" style={{ color: "var(--clr-amber)" }} title="下载项目文件">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                  </button>
                   <button onClick={() => handleDelete(project.id, project.name)} className="opacity-0 group-hover:opacity-100 transition-all text-xs" style={{ color: "var(--clr-text-faint)" }} title="删除项目">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2M10 11v6M14 11v6" /></svg>
                   </button>

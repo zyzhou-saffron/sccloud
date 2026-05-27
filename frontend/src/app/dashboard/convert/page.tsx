@@ -24,6 +24,7 @@ interface MergeResult {
 interface SampleEntry {
   id: string;
   name: string;
+  group: string;
   file: File | null;
 }
 
@@ -63,8 +64,8 @@ async function authDownload(url: string, filename: string) {
 export default function ConvertPage() {
   // ===== MTX 整合状态 =====
   const [samples, setSamples] = useState<SampleEntry[]>([
-    { id: "s1", name: "Sample1", file: null },
-    { id: "s2", name: "Sample2", file: null },
+    { id: "s1", name: "Sample1", group: "", file: null },
+    { id: "s2", name: "Sample2", group: "", file: null },
   ]);
   const [merging, setMerging] = useState(false);
   const [mergeResult, setMergeResult] = useState<MergeResult | null>(null);
@@ -82,6 +83,7 @@ export default function ConvertPage() {
       const formData = new FormData();
       validSamples.forEach((s) => {
         formData.append("sample_names", s.name);
+        formData.append("sample_groups", s.group || s.name);
         formData.append("files", s.file!);
       });
 
@@ -101,7 +103,7 @@ export default function ConvertPage() {
     const id = `s${Date.now()}`;
     setSamples((prev) => [
       ...prev,
-      { id, name: `Sample${prev.length + 1}`, file: null },
+      { id, name: `Sample${prev.length + 1}`, group: "", file: null },
     ]);
   };
 
@@ -143,6 +145,14 @@ export default function ConvertPage() {
                 className="text-sm px-2 py-1 rounded border w-32"
                 style={{ borderColor: "var(--clr-border)", color: "var(--clr-text)", background: "white" }}
                 placeholder="样本名"
+              />
+              <input
+                type="text"
+                value={s.group}
+                onChange={(e) => setSamples((prev) => prev.map((x) => x.id === s.id ? { ...x, group: e.target.value } : x))}
+                className="text-sm px-2 py-1 rounded border w-24"
+                style={{ borderColor: "var(--clr-border)", color: "var(--clr-text)", background: "white" }}
+                placeholder="分组名"
               />
               <label className="flex-1 flex items-center gap-2 text-xs cursor-pointer" style={{ color: s.file ? "#15803d" : "var(--clr-text-faint)" }}>
                 <input
