@@ -61,7 +61,7 @@ const PHASE1_COUNT = 4;
 const PHASE1_ORDER: Record<string, number> = {
   qc: 1, normalize: 2, reduce: 3, annotate: 4,
 };
-const PHASE2_STEPS = ["markers", "wgcna", "enrich", "monocle", "cellchat", "infercnv"];
+const PHASE2_STEPS = ["markers", "enrich", "monocle", "cellchat", "infercnv", "wgcna"];
 
 function getTotalSteps(params?: Record<string, unknown>): number {
   const enabled = (params?.enabled_steps as string[] | undefined) || [];
@@ -194,7 +194,7 @@ export default function PipelineForm({ projectId, token, onSubmit, uploadedFiles
     e.preventDefault();
 
     if (uploadedFiles.length === 0) {
-      setError("请先上传 .rds 数据文件");
+      setError("请先上传数据文件");
       return;
     }
 
@@ -374,7 +374,7 @@ export default function PipelineForm({ projectId, token, onSubmit, uploadedFiles
           <div className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-4">
             {/* Step 1-2 QC + Normalize */}
             <div className="text-xs font-semibold pt-1 whitespace-nowrap" style={{ color: "var(--clr-text-muted)" }}>
-              Step 1-2: 预处理 + 标准化
+              Step 1: 数据预处理与标准化
             </div>
             <div className="space-y-2">
               <div>
@@ -461,13 +461,26 @@ export default function PipelineForm({ projectId, token, onSubmit, uploadedFiles
                 </div>
                 <div>
                   <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>分组方式</label>
-                  <div className="flex gap-3">
-                    {effectiveGroupCols.map((v) => (
-                      <label key={v} className="flex items-center gap-1 text-xs cursor-pointer" style={{ color: "var(--clr-text)" }}>
-                        <input type="radio" name="pipeline_group_by" value={v} checked={params.reduce.group_by === v} onChange={() => updateStepParam("reduce", "group_by", v)} className="accent-[#C86019]" />
-                        {v}
-                      </label>
-                    ))}
+                  <div className="flex flex-wrap gap-1.5">
+                    {effectiveGroupCols.map((v) => {
+                      const selected = params.reduce.group_by === v;
+                      return (
+                        <button
+                          key={v}
+                          type="button"
+                          onClick={() => updateStepParam("reduce", "group_by", v)}
+                          className="px-3 py-1 rounded-full text-xs font-medium transition-all duration-150 border"
+                          style={{
+                            background: selected ? "var(--clr-amber)" : "transparent",
+                            color: selected ? "#fff" : "var(--clr-text-muted)",
+                            borderColor: selected ? "var(--clr-amber)" : "var(--clr-border)",
+                            cursor: "pointer",
+                          }}
+                        >
+                          {v}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               </div>
@@ -499,13 +512,26 @@ export default function PipelineForm({ projectId, token, onSubmit, uploadedFiles
                       <IconQuestion size={14} className="text-stone-400 hover:text-[#C86019] transition-colors" />
                     </Tooltip>
                   </label>
-                  <div className="flex gap-3">
-                    {effectiveGroupCols.map((v) => (
-                      <label key={v} className="flex items-center gap-1 text-xs cursor-pointer" style={{ color: "var(--clr-text)" }}>
-                        <input type="radio" name="pipeline_cluster_group_by" value={v} checked={(params.cluster.group_by ?? "Sample") === v} onChange={() => updateStepParam("cluster", "group_by", v)} className="accent-[#C86019]" />
-                        {v}
-                      </label>
-                    ))}
+                  <div className="flex flex-wrap gap-1.5">
+                    {effectiveGroupCols.map((v) => {
+                      const selected = (params.cluster.group_by ?? "Sample") === v;
+                      return (
+                        <button
+                          key={v}
+                          type="button"
+                          onClick={() => updateStepParam("cluster", "group_by", v)}
+                          className="px-3 py-1 rounded-full text-xs font-medium transition-all duration-150 border"
+                          style={{
+                            background: selected ? "var(--clr-amber)" : "transparent",
+                            color: selected ? "#fff" : "var(--clr-text-muted)",
+                            borderColor: selected ? "var(--clr-amber)" : "var(--clr-border)",
+                            cursor: "pointer",
+                          }}
+                        >
+                          {v}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
                 <div>

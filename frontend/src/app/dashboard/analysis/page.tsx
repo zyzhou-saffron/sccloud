@@ -156,6 +156,7 @@ function AnalysisPageContent() {
   const markerInputRef = useRef<HTMLInputElement>(null);
   // Phase A 解析完成标记：结果显示在右侧但不折叠参数面板
   const [markerParseOnly, setMarkerParseOnly] = useState(false);
+  const [markerUploading, setMarkerUploading] = useState(false);
 
   const step = STEPS[activeStep];
   // 当前步骤的 task（来自 cache）
@@ -229,6 +230,17 @@ function AnalysisPageContent() {
   useEffect(() => { saveSession({ params }); }, [params]);
   useEffect(() => { saveSession({ uploadedFiles, uploadedFile: uploadedFiles[0] ?? null }); }, [uploadedFiles]);
   useEffect(() => { saveSession({ sampleGroups }); }, [sampleGroups]);
+
+  // 当用户定义了样本分组时，自动将各步骤的 group_by 切换为 Group
+  useEffect(() => {
+    const hasGroups = Object.keys(sampleGroups).length > 0;
+    setParams((prev) => ({
+      ...prev,
+      reduce: { ...prev.reduce, group_by: hasGroups ? "Group" : "Sample" },
+      cluster: { ...prev.cluster, group_by: hasGroups ? "Group" : "Sample" },
+      annotate: { ...prev.annotate, group_by: hasGroups ? "Group" : "Sample" },
+    }));
+  }, [sampleGroups]);
 
   /**
    * 当聚类任务完成后，自动拉取其结果以提取 cluster_levels，
@@ -331,7 +343,10 @@ function AnalysisPageContent() {
       const completeRes = await fetch("/api/upload/complete", {
         method: "POST", headers: { Authorization: `Bearer ${token}` }, body: completeForm,
       });
-      if (!completeRes.ok) throw new Error("合并文件失败");
+      if (!completeRes.ok) {
+        const errData = await completeRes.json().catch(() => ({}));
+        throw new Error(errData.detail || "合并文件失败");
+      }
       const { path: filePath } = await completeRes.json() as { path: string };
 
       setUploadProgress(100);
@@ -352,7 +367,7 @@ function AnalysisPageContent() {
     try {
       // QC 步骤时把已上传文件路径注入参数
       let finalParams = step.id === "qc" && uploadedFiles.length > 0
-        ? { ...stepParams, rds_file_path: uploadedFiles[0].path }
+        ? { ...stepParams, rds_file_path: uploadedFiles[0].path, sample_groups: sampleGroups }
         : stepParams;
 
       // marker_expr 步骤注入 marker 文件路径
@@ -569,7 +584,10 @@ function AnalysisPageContent() {
           )}
         </div>
 
-        {/* ===== Main Content ===== */}
+
+
+
+{/* ===== Main Content ===== */}
         <div className="flex-1 flex gap-6 items-stretch" style={{ minWidth: 0 }}>
           {/* Parameters Panel — 动态收缩 */}
           <div
@@ -632,9 +650,9 @@ function AnalysisPageContent() {
               {step.id === "qc" && (
                 <>
                   <div>
-                    <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>上传原始 RDS 文件</label>
+                    <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>上传数据文件</label>
 
-                    {/* 上传按钮 — 始终显示 */}
+                    {/* 上传按钮 */}
                     <div
                       onClick={() => {
                         if (!project) {
@@ -655,7 +673,7 @@ function AnalysisPageContent() {
                       }}
                     >
                       <IconUpload size={14} className="text-[#C86019]" />
-                      <span>{uploadedFiles.length > 0 ? "重新上传" : "点击上传数据文件"}</span>
+                      <span>{uploadedFiles.length > 0 ? "重新上传" : "上传数据文件"}</span>
                     </div>
                     <input
                       ref={fileInputRef}
@@ -677,22 +695,58 @@ function AnalysisPageContent() {
                       </div>
                     )}
 
-                    {/* 已上传文件名 + 独立垃圾桶 */}
+                    {/* 已上传文件名 */}
                     {uploadedFiles.length > 0 && uploadProgress === null && (
-                      <div className="flex items-center gap-2 mt-1">
-                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#2D8A56" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
-                        <span className="flex-1 truncate text-[11px]" style={{ color: "var(--clr-text-muted)" }}>{uploadedFiles[0].name}</span>
-                        <button
-                          type="button"
-                          onClick={() => { setUploadedFiles([]); saveSession({ uploadedFiles: [], uploadedFile: null }); }}
-                          title="移除文件"
-                          className="p-1 rounded hover:bg-red-50 transition-colors shrink-0"
-                          style={{ color: "var(--clr-danger)" }}
-                        >
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
-                        </button>
-                      </div>
+                      <>
+                        <div className="flex items-center gap-2 mt-1">
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#2D8A56" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+                          <span className="flex-1 truncate text-[11px]" style={{ color: "var(--clr-text-muted)" }}>{uploadedFiles[0].name}</span>
+                          <button
+                            type="button"
+                            onClick={() => { setUploadedFiles([]); saveSession({ uploadedFiles: [], uploadedFile: null }); }}
+                            title="移除文件"
+                            className="p-1 rounded hover:bg-red-50 transition-colors shrink-0"
+                            style={{ color: "var(--clr-danger)" }}
+                          >
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+                          </button>
+                        </div>
+                        <p className="text-[10px] mt-0.5" style={{ color: "var(--clr-amber-dark)" }}>
+                          已上传 {uploadedFiles.length} 个文件
+                        </p>
+                      </>
                     )}
+
+                    {/* 示例 RDS */}
+                    <a
+                      href="/api/tasks/example-rds"
+                      download="example.Samples.rds"
+                      className="text-[10px] mt-1 inline-block underline"
+                      style={{ color: "var(--clr-amber-dark)" }}
+                    >
+                      下载示例 RDS 文件
+                    </a>
+                  </div>
+
+                  {/* 样本分组定义 */}
+                  <div>
+                    <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>样本分组定义</label>
+                    <p className="text-[10px] mb-2" style={{ color: "var(--clr-text-faint)" }}>每行 "样本名=分组名"，如 Sample1=Control</p>
+                    <textarea
+                      value={Object.entries(sampleGroups).map(([k,v]) => k + '=' + v).join('\n')}
+                      onChange={(e) => {
+                        const map: Record<string,string> = {};
+                        e.target.value.split('\n').forEach((line: string) => {
+                          const [k, v] = line.split('=').map((s: string) => s.trim());
+                          if (k && v) map[k] = v;
+                        });
+                        setSampleGroups(map);
+                      }}
+                      rows={3}
+                      className="w-full px-2 py-1.5 text-xs rounded border"
+                      style={{ borderColor: "var(--clr-border)", color: "var(--clr-text)", background: "white", resize: "vertical" }}
+                      placeholder="Sample1=Control\nSample2=Treatment"
+                    />
                   </div>
                   <div>
                     <label className="flex items-center gap-1.5 text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>
@@ -740,6 +794,7 @@ function AnalysisPageContent() {
                     </label>
                     <input type="number" value={stepParams.umi_max_pct as number} onChange={(e) => updateParam("umi_max_pct", Number(e.target.value))} min={0} max={1} step={0.01} className={inputCls} style={inputStyle} />
                   </div>
+
                 </>
               )}
 
@@ -1076,12 +1131,14 @@ function AnalysisPageContent() {
                       }}
                     >
                       <IconUpload size={14} className="text-[#C86019]" />
-                      <span>{markerFile ? "重新上传" : "上传 Marker 列表 (.txt)"}</span>
+                      <span>{markerUploading ? "解析中..." : markerFile ? "重新上传" : "上传 Marker 列表 (.txt)"}</span>
+                      {markerUploading && <div className="w-3.5 h-3.5 border-2 border-[#C86019]/30 border-t-[#C86019] rounded-full animate-spin" />}
                     </div>
                     <input ref={markerInputRef} type="file" accept=".txt" className="hidden" onChange={async (e) => {
                       const f = e.target.files?.[0];
                       if (!f || !project) return;
                       e.target.value = '';
+                      setMarkerUploading(true);
                       const token = localStorage.getItem('access_token');
                       const fd = new FormData();
                       fd.append('file', f);
@@ -1124,8 +1181,17 @@ function AnalysisPageContent() {
                         }
                       } catch (err) {
                         setError(err instanceof Error ? err.message : 'Marker 文件上传失败');
+                      } finally {
+                        setMarkerUploading(false);
                       }
                     }} />
+
+                    {/* 上传中提示 */}
+                    {markerUploading && (
+                      <p className="text-[11px] mt-1 animate-pulse" style={{ color: "var(--clr-amber)" }}>
+                        正在上传并解析 Marker 文件，请稍候...
+                      </p>
+                    )}
 
                     {/* 已上传文件名 + 删除按钮 */}
                     {markerFile && (
@@ -1159,9 +1225,9 @@ function AnalysisPageContent() {
                   </div>
 
                   {/* 细胞类型选择 */}
-                  {markerFile && markerFile.cellTypes.length > 0 && (
-                    <div>
-                      <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>细胞类型</label>
+                  <div>
+                    <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>细胞类型</label>
+                    {markerFile && markerFile.cellTypes.length > 0 ? (
                       <select
                         value={stepParams.cell_type as string}
                         onChange={(e) => updateParam('cell_type', e.target.value)}
@@ -1171,8 +1237,19 @@ function AnalysisPageContent() {
                           <option key={ct} value={ct}>{ct}</option>
                         ))}
                       </select>
-                    </div>
-                  )}
+                    ) : (
+                      <div
+                        className="text-xs px-2 py-1.5 rounded border"
+                        style={{
+                          borderColor: "var(--clr-border)",
+                          color: "var(--clr-text-faint)",
+                          background: "var(--clr-bg-alt)",
+                        }}
+                      >
+                        {markerUploading ? "解析中..." : "请先上传 Marker 基因文件以加载细胞类型列表"}
+                      </div>
+                    )}
+                  </div>
                 </>
               )}
 

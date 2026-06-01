@@ -135,6 +135,8 @@ export default function AnnotateResult({
   const [uploadAnnotateMsg, setUploadAnnotateMsg] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const displayScatter = localScatter ?? rawScatter;
+
   const handleAnnotateFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -246,8 +248,6 @@ export default function AnnotateResult({
       setSelectedForMerge(new Set());
     }
   }, [mergeMode]);
-
-  const displayScatter = localScatter ?? rawScatter;
 
   // ── 合并处理（直接更新本地状态 + 持久化到后端，不经过 R engine） ──
   const handleMerge = useCallback(async () => {
@@ -532,9 +532,38 @@ export default function AnnotateResult({
       {/* ── UMAP 注释图 ── */}
       {displayScatter ? (
         <div className="space-y-2">
-          <p className="text-xs font-semibold" style={{ color: "var(--clr-amber-dark)" }}>
-            细胞类型 UMAP 标注图
-          </p>
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-semibold" style={{ color: "var(--clr-amber-dark)" }}>
+              细胞类型 UMAP 标注图
+            </p>
+            {plotSrc && (
+              <button
+                onClick={async () => {
+                  try {
+                    const resp = await fetch(`/api/tasks/${taskId}/plot?name=${encodeURIComponent(plotName)}`, {
+                      headers: { Authorization: `Bearer ${token}` }
+                    });
+                    if (!resp.ok) throw new Error("下载失败");
+                    const blob = await resp.blob();
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = plotName;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                  } catch(e) { alert("下载失败"); }
+                }}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-medium transition-all hover:shadow-sm"
+                style={{ border: "1px solid var(--clr-border)", color: "var(--clr-amber-dark)", background: "rgba(200,96,25,0.04)" }}
+                title="下载 R ggplot2 UMAP 图"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                下载原版 UMAP
+              </button>
+            )}
+          </div>
           <DeckScatterPlot
             data={displayScatter}
             method="UMAP"
@@ -558,6 +587,30 @@ export default function AnnotateResult({
           </p>
           <div className="relative rounded-lg overflow-hidden border" style={{ borderColor: "var(--clr-border)" }}>
             <AuthImg src={plotSrc} alt="Annotation UMAP" token={token} />
+            <button
+              onClick={async () => {
+                try {
+                  const resp = await fetch(`/api/tasks/${taskId}/plot?name=${encodeURIComponent(plotName)}`, {
+                    headers: { Authorization: `Bearer ${token}` }
+                  });
+                  if (!resp.ok) throw new Error("下载失败");
+                  const blob = await resp.blob();
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = plotName;
+                  document.body.appendChild(a);
+                  a.click();
+                  document.body.removeChild(a);
+                  URL.revokeObjectURL(url);
+                } catch(e) { alert("下载失败: " + e); }
+              }}
+              className="absolute bottom-3 right-3 inline-flex items-center justify-center w-9 h-9 rounded-lg transition-all hover:scale-110"
+              style={{ background: "rgba(255,255,255,0.92)", boxShadow: "0 2px 8px rgba(0,0,0,0.10)", color: "var(--clr-amber)" }}
+              title="下载 UMAP 图"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            </button>
           </div>
         </div>
       )}

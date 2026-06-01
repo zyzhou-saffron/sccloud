@@ -52,6 +52,45 @@ class TaskListResponse(BaseModel):
     tasks: list[TaskResponse]
 
 
+@router.get("/{task_id}/meta_csv")
+async def download_meta_csv(
+    task_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """下载聚类后的meta.data CSV"""
+    from app.utils.r_bridge import call_r_engine
+    task = db.query(Task).filter(Task.id == task_id, Task.user_id == current_user.id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+
+    project_id = task.project_id
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    import httpx
+    import os as _os
+    from app.config import get_settings as _get_settings
+    from fastapi.responses import FileResponse as _FileResponse
+
+    settings = _get_settings()
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.post(
+            f"{settings.r_engine_url}/meta_csv",
+            json={"project_path": project.storage_path},
+        )
+    if resp.status_code != 200:
+        raise HTTPException(status_code=500, detail="生成CSV失败")
+
+    result = resp.json()
+    csv_path = result.get("csv_path")
+    if not csv_path or not _os.path.exists(csv_path):
+        raise HTTPException(status_code=500, detail="CSV文件未生成")
+
+    return _FileResponse(csv_path, media_type="text/csv", filename="meta_data.csv")
+
+
 # ===== 后台任务执行函数 =====
 
 async def _run_task_background(task_id: str, step: str, payload: dict):
@@ -217,6 +256,30 @@ async def list_tasks(
 
     tasks = query.order_by(Task.created_at.desc()).all()
     return TaskListResponse(total=len(tasks), tasks=tasks)
+
+
+@router.get("/example-rds")
+async def download_example_rds():
+    """Download example RDS file for testing (no auth required)."""
+    import os
+    from fastapi.responses import FileResponse
+
+    example_path = "/app/r-engine-data/examples/example.Samples.rds"
+    if not os.path.exists(example_path):
+        alt_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+            "..", "r-engine", "data", "examples", "example.Samples.rds"
+        )
+        example_path = alt_path if os.path.exists(alt_path) else example_path
+
+    if not os.path.exists(example_path):
+        raise HTTPException(status_code=404, detail="Example file not found")
+
+    return FileResponse(
+        example_path,
+        media_type="application/octet-stream",
+        filename="example.Samples.rds",
+    )
 
 
 @router.get("/example-marker")

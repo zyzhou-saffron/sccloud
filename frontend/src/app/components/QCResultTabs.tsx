@@ -413,17 +413,7 @@ function SampleQCTab({ data, taskId, token, onDownload }: { data: QCResult; task
         </div>
       )}
 
-      {/* 过滤前后线粒体分布表 */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <div className="card-label">过滤前 · 线粒体基因分布</div>
-          <MitoTable rows={data.mito_table_before} />
-        </div>
-        <div>
-          <div className="card-label" style={{ color: "var(--clr-success)" }}>过滤后 · 线粒体基因分布</div>
-          <MitoTable rows={data.mito_table_after} />
-        </div>
-      </div>
+
     </div>
   );
 }

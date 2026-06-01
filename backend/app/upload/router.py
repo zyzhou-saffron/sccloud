@@ -217,7 +217,7 @@ async def complete_upload(
     shutil.rmtree(chunk_dir, ignore_errors=True)
 
     # 非 RDS 格式自动转换
-    NEEDS_CONVERT = {".h5ad", ".h5seurat", ".h5", ".rdata", ".loom", ".csv", ".tsv", ".txt"}
+    NEEDS_CONVERT = {".h5seurat", ".h5", ".rdata", ".loom", ".csv", ".tsv", ".txt"}
     if ext in NEEDS_CONVERT:
         try:
             converted_path = await _auto_convert_to_rds(final_path, ext, original_filename)

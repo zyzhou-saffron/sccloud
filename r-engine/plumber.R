@@ -21,6 +21,7 @@
 
 library(plumber)
 library(jsonlite)
+library(reticulate)
 library(hdWGCNA)
 
 # 全局 JSON 序列化：auto_unbox = TRUE 避免单值被包装为数组
@@ -197,7 +198,7 @@ function(req) {
 
     n_rows <- as.integer(adata$n_vars)
     n_cols <- as.integer(adata$n_obs)
-    genes <- as.character(reticulate::py_to_r(adata$var_names))
+    genes <- as.character(reticulate::py_to_r(adata$var_names$to_list()))
 
     gene_ids <- tryCatch({
       var_df <- reticulate::py_to_r(adata$var)
@@ -212,16 +213,24 @@ function(req) {
       rep("N/A", length(genes))
     })
 
-    obs_df <- reticulate::py_to_r(adata$obs)
-    meta_cols <- as.character(colnames(obs_df))
+    # 用 Python 端提取 obs 数据，避免 reticulate 转换 DataFrame view 失败
+    py$adata <- adata
+    reticulate::py_run_string("
+obs_cols = list(adata.obs.columns)
+sample_counts = {}
+if 'Sample' in adata.obs.columns:
+    for s in adata.obs['Sample'].unique():
+        sample_counts[s] = int((adata.obs['Sample'] == s).sum())
+")
+    meta_cols <- as.character(py$obs_cols)
 
+    # 检测样本列表
     samples <- list()
-    if ("Sample" %in% meta_cols) {
-      sample_vals <- as.character(obs_df$Sample)
-      for (s in sort(unique(sample_vals))) {
+    if (length(py$sample_counts) > 0) {
+      for (s in names(py$sample_counts)) {
         samples[[length(samples) + 1]] <- list(
           name = jsonlite::unbox(s),
-          cell_count = jsonlite::unbox(as.integer(sum(sample_vals == s)))
+          cell_count = jsonlite::unbox(as.integer(py$sample_counts[[s]]))
         )
       }
     }
@@ -279,20 +288,22 @@ function(req) {
     ))
 
   } else if (ext == "h5ad") {
-    if (!requireNamespace("anndata", quietly = TRUE)) {
-      stop("需要安装 anndata 库来解析 H5AD 文件")
+    if (!requireNamespace("reticulate", quietly = TRUE)) {
+      stop("缺少 reticulate 包，无法读取 H5AD 文件")
     }
-    adata <- anndata::read_h5ad(file_path)
+    anndata <- reticulate::import("anndata")
+    adata <- anndata$read_h5ad(file_path)
 
-    n_rows <- adata$n_obs
-    n_cols <- adata$n_vars
-    genes <- as.character(adata$var_names)
+    n_rows <- as.integer(adata$n_obs)
+    n_cols <- as.integer(adata$n_vars)
+    genes <- as.character(reticulate::py_to_r(adata$var_names$to_list()))
 
     gene_ids <- tryCatch({
-      if ("gene_ids" %in% colnames(adata$var)) {
-        as.character(adata$var$gene_ids)
-      } else if ("ensembl_id" %in% colnames(adata$var)) {
-        as.character(adata$var$ensembl_id)
+      var_df <- reticulate::py_to_r(adata$var)
+      if ("gene_ids" %in% colnames(var_df)) {
+        as.character(var_df$gene_ids)
+      } else if ("ensembl_id" %in% colnames(var_df)) {
+        as.character(var_df$ensembl_id)
       } else {
         rep("N/A", length(genes))
       }
@@ -300,16 +311,24 @@ function(req) {
       rep("N/A", length(genes))
     })
 
-    meta_cols <- as.character(colnames(adata$obs))
+    # 用 Python 端提取 obs 数据，避免 reticulate 转换 DataFrame view 失败
+    py$adata <- adata
+    reticulate::py_run_string("
+obs_cols = list(adata.obs.columns)
+sample_counts = {}
+if 'Sample' in adata.obs.columns:
+    for s in adata.obs['Sample'].unique():
+        sample_counts[s] = int((adata.obs['Sample'] == s).sum())
+")
+    meta_cols <- as.character(py$obs_cols)
 
-    # 检测样本列表（从 Sample 列读取 unique 值）
+    # 检测样本列表
     samples <- list()
-    if ("Sample" %in% meta_cols) {
-      sample_vals <- as.character(adata$obs$Sample)
-      for (s in sort(unique(sample_vals))) {
+    if (length(py$sample_counts) > 0) {
+      for (s in names(py$sample_counts)) {
         samples[[length(samples) + 1]] <- list(
           name = jsonlite::unbox(s),
-          cell_count = jsonlite::unbox(as.integer(sum(sample_vals == s)))
+          cell_count = jsonlite::unbox(as.integer(py$sample_counts[[s]]))
         )
       }
     }
@@ -427,12 +446,26 @@ function(req) {
   # 优先使用前端传入的 rds_file_path（上传后直接指定的路径）
   rds_file_path <- params$rds_file_path
   if (!is.null(rds_file_path) && nchar(rds_file_path) > 0 && file.exists(rds_file_path)) {
-    exp <- readRDS(rds_file_path)
+    load_file <- rds_file_path
   } else {
-    # 退而求其次: 扫描项目目录
-    rds_files <- list.files(project_path, pattern = "\\.rds$", full.names = TRUE)
-    if (length(rds_files) == 0) stop("项目目录中未找到 .rds 文件，请先上传数据文件")
-    exp <- readRDS(rds_files[1])
+    # 退而求其次: 扫描项目目录中的数据文件
+    data_files <- list.files(project_path, pattern = "\\.(rds|h5ad|h5|h5seurat|rdata|loom|csv|tsv)$", full.names = TRUE, ignore.case = TRUE)
+    if (length(data_files) == 0) stop("项目目录中未找到数据文件，请先上传数据文件")
+    load_file <- data_files[1]
+  }
+
+  # 自动检测文件格式，非 RDS 文件先转换为 RDS
+  ext <- tolower(tools::file_ext(load_file))
+  if (ext != "rds") {
+    report(8, paste0("检测到 ", ext, " 格式，正在转换为 RDS..."))
+    rds_out <- file.path(project_path, paste0("_converted_", basename(load_file), ".rds"))
+    if (!file.exists(rds_out)) {
+      exp <- convert_to_rds(load_file, ext, rds_out)
+      save_with_canonical(rds_out, rds_out, exp)
+    }
+    exp <- readRDS(rds_out)
+  } else {
+    exp <- readRDS(load_file)
   }
 
   # --- 样本分组信息处理 ---
@@ -449,13 +482,18 @@ function(req) {
       })
     }
   }
+  # 如果 Seurat 对象没有 Sample 列，用细胞名作为默认 Sample
+  if (!"Sample" %in% colnames(exp@meta.data)) {
+    exp$Sample <- colnames(exp)
+  }
+
   # 3. 如果存在分组信息，写入 Seurat 对象的 meta.data$Group 列
   if (!is.null(sample_groups) && length(sample_groups) > 0 && "Sample" %in% colnames(exp@meta.data)) {
     report(12, "写入样本分组信息...")
-    exp$Group <- sapply(as.character(exp@meta.data$Sample), function(s) {
+    exp$Group <- unname(sapply(as.character(exp@meta.data$Sample), function(s) {
       grp <- sample_groups[[s]]
       if (is.null(grp) || nchar(grp) == 0) "Unknown" else grp
-    })
+    }))
   }
 
   # --- 非 Symbol 基因 ID → Gene Symbol 回退转换 ---
@@ -757,6 +795,15 @@ function(req) {
   resolution <- params$resolution %||% 0.5
   group_by <- params$group_by %||% "Sample"
 
+  # 如果分组变量只有 1 个水平，Harmony 会失败，回退到 Sample
+  if (group_by %in% colnames(pro@meta.data)) {
+    n_levels <- length(unique(pro@meta.data[[group_by]]))
+    if (n_levels < 2) {
+      report(18, paste0(group_by, " 只有 ", n_levels, " 个分组，回退为 Sample"))
+      group_by <- "Sample"
+    }
+  }
+
   report(20, "运行 Harmony 批次校正 + 聚类...")
 
   # 调用原始函数 — data_summary.R::runHarmony()
@@ -838,6 +885,26 @@ function(req) {
     scatter_data = scatter_data,
     meta_data_sample = meta_sample,
     meta_data_total_rows = nrow(pro@meta.data)
+  )
+}
+
+
+#* 导出聚类结果的 meta.data 为 CSV
+#* @post /meta_csv
+function(req) {
+  body <- jsonlite::fromJSON(req$postBody)
+  project_path <- body$project_path
+
+  input_path <- file.path(project_path, "seurat_clustered.rds")
+  if (!file.exists(input_path)) stop("请先运行聚类步骤")
+  pro <- readRDS(input_path)
+
+  md <- pro@meta.data
+  csv_path <- file.path(project_path, "meta_data.csv")
+  write.csv(md, csv_path, row.names = TRUE)
+  list(
+    status = "success",
+    csv_path = csv_path
   )
 }
 
@@ -949,24 +1016,6 @@ function(req) {
   })
 
   report(85, "保存结果...")
-
-  # 确保 data.frame 列名完整（修复 write.csv 列名缺失问题）
-  if (ncol(totalMT) > 0) {
-    mt_cols <- c("mt<=5%","mt<=10%","mt<=15%","mt<=20%","mt<=30%","mt<=50%","mt<=80%","mt<=100%")
-    colnames(totalMT) <- c("Sample", mt_cols[seq_len(min(length(mt_cols), ncol(totalMT)-1))])
-  }
-  if (ncol(totalMT1) > 0) {
-    mt_cols <- c("mt<=5%","mt<=10%","mt<=15%","mt<=20%","mt<=30%","mt<=50%","mt<=80%","mt<=100%")
-    colnames(totalMT1) <- c("Sample", mt_cols[seq_len(min(length(mt_cols), ncol(totalMT1)-1))])
-  }
-  if (ncol(umiGene) > 0) {
-    ug_cols <- c("umisMax","umisMed","umisMin","genesMax","genesMed","genesMin")
-    colnames(umiGene) <- c("Sample", ug_cols[seq_len(min(length(ug_cols), ncol(umiGene)-1))])
-  }
-  if (ncol(umiGene1) > 0) {
-    ug_cols <- c("umisMax","umisMed","umisMin","genesMax","genesMed","genesMin")
-    colnames(umiGene1) <- c("Sample", ug_cols[seq_len(min(length(ug_cols), ncol(umiGene1)-1))])
-  }
 
   # 双命名：CSV
   csv_archive <- make_output_name(project_path, "5", "markers", "diff_genes", "csv")
@@ -1734,37 +1783,205 @@ convert_to_rds <- function(input_path, input_format, output_path) {
       anndata <- reticulate::import("anndata")
       adata <- anndata$read_h5ad(input_path)
 
-      # 获取表达矩阵
-      if (reticulate::py_has_attr(adata, "X")) {
-        counts <- reticulate::py_to_r(adata$X)
-      } else {
-        counts <- reticulate::py_to_r(adata$raw$X)
+      # 在 Python 端导出为 10X MTX 格式到临时目录，然后用 Read10X 读取
+      # 这完全避免了 reticulate 转换 scipy sparse / pandas view 的问题
+      mtx_dir <- file.path(dirname(output_path), paste0("_mtx_tmp_", basename(output_path)))
+      dir.create(mtx_dir, showWarnings = FALSE, recursive = TRUE)
+
+      py$adata <- adata
+      py$mtx_dir <- mtx_dir
+      py_run_string("
+import scipy.sparse as sp
+import scipy.io
+import numpy as np
+import os
+
+# 获取表达矩阵 (cells x genes)
+X = adata.X if hasattr(adata, 'X') and adata.X is not None else adata.raw.X
+# 转置: anndata (cells x genes) -> MTX (genes x cells)
+X = X.T
+if sp.issparse(X):
+    X = X.tocsc()
+else:
+    X = sp.csc_matrix(X if isinstance(X, np.ndarray) else np.array(X))
+
+# 写入 MTX
+scipy.io.mmwrite(os.path.join(mtx_dir, 'matrix.mtx'), X)
+
+# 写入 barcodes (cells)
+with open(os.path.join(mtx_dir, 'barcodes.tsv'), 'w') as f:
+    for n in adata.obs_names:
+        f.write(str(n) + '\\n')
+
+# 写入 features (genes)
+with open(os.path.join(mtx_dir, 'features.tsv'), 'w') as f:
+    for n in adata.var_names:
+        f.write(str(n) + '\\t' + str(n) + '\\tGene Expression\\n')
+
+# 导出 .obs 元数据
+obs_df = adata.obs.copy()
+# 只保留字符串/数值列，跳过复杂类型
+safe_cols = []
+for col in obs_df.columns:
+    if obs_df[col].dtype in ('object', 'category', 'int64', 'float64', 'int32', 'float32', 'bool'):
+        safe_cols.append(col)
+obs_df = obs_df[safe_cols]
+obs_df.to_csv(os.path.join(mtx_dir, 'metadata.csv'))
+has_metadata = len(safe_cols) > 0
+
+mtx_ok = True
+")
+
+      if (!isTRUE(py$mtx_ok)) stop("MTX 导出失败")
+
+      # 先读取 obs 元数据（gzip 之前）
+      meta_csv <- file.path(mtx_dir, "metadata.csv")
+      obs_meta <- NULL
+      if (file.exists(meta_csv)) {
+        obs_meta <- read.csv(meta_csv, row.names = 1, check.names = FALSE)
       }
-      if (inherits(counts, "dgCMatrix")) counts <- as.matrix(counts)
 
-      # 设置行列名
-      tryCatch({
-        if (reticulate::py_has_attr(adata, "var_names")) {
-          rownames(counts) <- as.character(reticulate::py_to_r(adata$var_names))
+      # 压缩 MTX 文件 (Seurat::Read10X 需要 .gz 文件)
+      for (fn in c("matrix.mtx", "barcodes.tsv", "features.tsv")) {
+        src <- file.path(mtx_dir, fn)
+        if (file.exists(src)) {
+          R.utils::gzip(src, destname = paste0(src, ".gz"), overwrite = TRUE)
+          file.remove(src)
         }
-      }, error = function(e) {})
-      tryCatch({
-        if (reticulate::py_has_attr(adata, "obs_names")) {
-          colnames(counts) <- as.character(reticulate::py_to_r(adata$obs_names))
-        }
-      }, error = function(e) {})
+      }
 
-      # 转稀疏矩阵
+      # 使用 Read10X 读取（最可靠的方式）
+      matrix_data <- Seurat::Read10X(data.dir = mtx_dir)
+
+      # 去重基因名
       if (requireNamespace("Matrix", quietly = TRUE)) {
-        counts <- Matrix::Matrix(counts, sparse = TRUE)
+        matrix_data <- Matrix::Matrix(as.matrix(matrix_data), sparse = TRUE)
       }
-      Seurat::CreateSeuratObject(counts = counts)
+      colnames(matrix_data) <- make.unique(colnames(matrix_data))
+
+      obj <- Seurat::CreateSeuratObject(counts = matrix_data)
+
+      # 逐列添加 .obs 元数据（已在 gzip 前读取）
+      if (!is.null(obs_meta)) {
+        for (col_name in colnames(obs_meta)) {
+          vals <- obs_meta[[col_name]]
+          names(vals) <- rownames(obs_meta)
+          common <- intersect(colnames(obj), names(vals))
+          if (length(common) > 0) {
+            obj[[col_name]] <- vals[common]
+          }
+        }
+      }
+
+      # 清理临时目录
+      unlink(mtx_dir, recursive = TRUE)
+
+      obj
     },
 
     # ---- 10X CellRanger H5 ----
     h5 = {
       mat <- Seurat::Read10X_h5(input_path)
       Seurat::CreateSeuratObject(counts = mat)
+    },
+
+    # ---- H5Seurat (Seurat v5 原生 HDF5) ----
+    h5seurat = {
+      if (!requireNamespace("reticulate", quietly = TRUE)) {
+        stop("缺少 reticulate 包")
+      }
+      anndata <- reticulate::import("anndata")
+      tryCatch({
+        adata <- anndata$read_h5ad(input_path)
+
+        mtx_dir <- file.path(dirname(output_path), paste0("_mtx_tmp_", basename(output_path)))
+        dir.create(mtx_dir, showWarnings = FALSE, recursive = TRUE)
+
+        py$adata <- adata
+        py$mtx_dir <- mtx_dir
+        py_run_string("
+import scipy.sparse as sp
+import scipy.io
+import numpy as np
+import os
+
+X = adata.X if hasattr(adata, 'X') and adata.X is not None else (adata.raw.X if hasattr(adata, 'raw') and adata.raw is not None else None)
+if X is None:
+    raise RuntimeError('无法读取表达矩阵')
+
+# 转置: anndata (cells x genes) -> MTX (genes x cells)
+X = X.T
+if sp.issparse(X):
+    X = X.tocsc()
+else:
+    X = sp.csc_matrix(X if isinstance(X, np.ndarray) else np.array(X))
+
+scipy.io.mmwrite(os.path.join(mtx_dir, 'matrix.mtx'), X)
+
+with open(os.path.join(mtx_dir, 'barcodes.tsv'), 'w') as f:
+    for n in adata.obs_names:
+        f.write(str(n) + '\\n')
+
+with open(os.path.join(mtx_dir, 'features.tsv'), 'w') as f:
+    for n in adata.var_names:
+        f.write(str(n) + '\\t' + str(n) + '\\tGene Expression\\n')
+
+obs_df = adata.obs.copy()
+safe_cols = []
+for col in obs_df.columns:
+    if obs_df[col].dtype in ('object', 'category', 'int64', 'float64', 'int32', 'float32', 'bool'):
+        safe_cols.append(col)
+obs_df = obs_df[safe_cols]
+obs_df.to_csv(os.path.join(mtx_dir, 'metadata.csv'))
+has_metadata = len(safe_cols) > 0
+
+mtx_ok = True
+")
+
+        if (!isTRUE(py$mtx_ok)) stop("MTX 导出失败")
+
+        # 先读取 obs 元数据（gzip 之前）
+        meta_csv <- file.path(mtx_dir, "metadata.csv")
+        obs_meta <- NULL
+        if (file.exists(meta_csv)) {
+          obs_meta <- read.csv(meta_csv, row.names = 1, check.names = FALSE)
+        }
+
+        # 压缩 MTX 文件
+        for (fn in c("matrix.mtx", "barcodes.tsv", "features.tsv")) {
+          src <- file.path(mtx_dir, fn)
+          if (file.exists(src)) {
+            R.utils::gzip(src, destname = paste0(src, ".gz"), overwrite = TRUE)
+            file.remove(src)
+          }
+        }
+
+        matrix_data <- Seurat::Read10X(data.dir = mtx_dir)
+
+        if (requireNamespace("Matrix", quietly = TRUE)) {
+          matrix_data <- Matrix::Matrix(as.matrix(matrix_data), sparse = TRUE)
+        }
+        colnames(matrix_data) <- make.unique(colnames(matrix_data))
+
+        obj <- Seurat::CreateSeuratObject(counts = matrix_data)
+
+        if (!is.null(obs_meta)) {
+          for (col_name in colnames(obs_meta)) {
+            vals <- obs_meta[[col_name]]
+            names(vals) <- rownames(obs_meta)
+            common <- intersect(colnames(obj), names(vals))
+            if (length(common) > 0) {
+              obj[[col_name]] <- vals[common]
+            }
+          }
+        }
+
+        unlink(mtx_dir, recursive = TRUE)
+
+        obj
+      }, error = function(e) {
+        stop("H5Seurat 文件读取失败: ", e$message, ". 请先将文件转换为 RDS 格式后重新上传。")
+      })
     },
 
     # ---- CSV 表达矩阵 (基因×细胞) ----
@@ -1971,6 +2188,72 @@ function(req) {
 
   if (!is.null(task_id)) {
     report_progress(task_id, 100, "✅ 整合完成")
+  }
+
+  list(
+    status = "success",
+    n_samples = length(seurat_objects),
+    cells = ncol(merged_obj),
+    genes = nrow(merged_obj),
+    file_size_mb = round(file.size(output_path) / 1024 / 1024, 2)
+  )
+}
+
+
+#* 合并 RDS 文件（支持 H5AD 等格式经 convert_to_rds 转换后合并）
+#* @post /convert_merge_rds
+function(req) {
+  params <- jsonlite::fromJSON(req$postBody)
+  rds_paths <- params$rds_paths        # RDS 文件路径列表
+  sample_names <- params$sample_names  # 样本名称列表
+  output_path <- params$output_path    # 输出 RDS 路径
+  task_id <- params$task_id            # 任务 ID
+
+  if (length(rds_paths) < 1) stop("请至少提供 1 个 RDS 文件")
+  if (length(rds_paths) != length(sample_names)) {
+    stop("rds_paths 和 sample_names 长度不一致")
+  }
+
+  seurat_objects <- list()
+
+  for (i in seq_along(rds_paths)) {
+    rpath <- rds_paths[i]
+    sname <- sample_names[i]
+
+    if (!file.exists(rpath)) stop(paste("RDS 文件不存在:", rpath))
+
+    if (!is.null(task_id)) {
+      pct <- round((i - 1) / length(rds_paths) * 80)
+      report_progress(task_id, pct, paste0("读取样本 ", sname, "..."))
+    }
+
+    obj <- readRDS(rpath)
+    obj$Sample <- sname
+    seurat_objects[[sname]] <- obj
+  }
+
+  if (!is.null(task_id)) {
+    report_progress(task_id, 85, paste0("合并 ", length(seurat_objects), " 个样本..."))
+  }
+
+  if (length(seurat_objects) == 1) {
+    merged_obj <- seurat_objects[[1]]
+  } else {
+    merged_obj <- merge(
+      seurat_objects[[1]],
+      y = seurat_objects[-1],
+      add.cell.ids = names(seurat_objects),
+      project = "Merged_MultiSample"
+    )
+  }
+
+  if (!is.null(task_id)) {
+    report_progress(task_id, 95, "保存 RDS...")
+  }
+  saveRDS(merged_obj, output_path)
+
+  if (!is.null(task_id)) {
+    report_progress(task_id, 100, "合并完成")
   }
 
   list(

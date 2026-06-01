@@ -17,7 +17,7 @@ from app.utils.r_bridge import call_r_engine
 logger = logging.getLogger(__name__)
 
 PIPELINE_PHASE1 = ["qc", "normalize", "reduce", "annotate"]
-PIPELINE_PHASE2_ALL = ["markers", "wgcna", "enrich", "monocle", "cellchat", "infercnv"]
+PIPELINE_PHASE2_ALL = ["markers", "enrich", "monocle", "cellchat", "infercnv", "wgcna"]
 # Phase 2 步骤全部串行执行 — R Plumber 单线程，并行会导致内存溢出和进程崩溃
 PARALLEL_PHASE2 = []
 # reduce 步骤内部依次执行 reduce + cluster 两个 R 引擎端点

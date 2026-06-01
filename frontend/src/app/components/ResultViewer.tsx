@@ -618,7 +618,7 @@ function ClusterResult({ data, task }: { data: Record<string, unknown> | null; t
           {/* 聚类后 RDS 下载 */}
           <AuthDownloadLink
             url={`/api/tasks/${taskId}/plot?name=seurat_clustered.rds`}
-            filename={`${task.project_id}_seurat_clustered.rds`}
+            filename={(() => { const rp = safeString(data?.result_path); return rp ? rp.split("/").pop()! : "cluster_harmony.rds"; })()}
             className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-medium transition-all hover:shadow-sm ml-auto"
             style={{ border: "1px solid var(--clr-border)", color: "var(--clr-amber-dark)", background: "rgba(200,96,25,0.04)" }}
           >
@@ -697,6 +697,46 @@ function ClusterResult({ data, task }: { data: Record<string, unknown> | null; t
       {/* ── Tab 1: 结果统计 ── */}
       {activeTab === "stats" && (
         <div className="space-y-5">
+          <div className="flex gap-3">
+            <button
+              onClick={() => {
+                const hdr = Object.keys(clusterNum[0]||{}).join(",");
+                const rows = clusterNum.map((r) => Object.values(r).join(","));
+                const csv = [hdr, ...rows].join("\n");
+                const rp = data?.result_path;
+                const name = typeof rp === "string" ? rp.split("/").pop().replace(".rds","_cluster_num.csv") : "cluster_num.csv";
+                const blob = new Blob([csv], {type: "text/csv"});
+                const a = document.createElement("a");
+                a.href = URL.createObjectURL(blob);
+                a.download = name;
+                a.click();
+              }}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-medium transition-all hover:shadow-sm"
+              style={{ border: "1px solid var(--clr-border)", color: "var(--clr-amber-dark)", background: "rgba(200,96,25,0.04)" }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              聚类统计 .csv
+            </button>
+            <button
+              onClick={() => {
+                const hdr = Object.keys(freqTable[0]||{}).join(",");
+                const rows = freqTable.map((r) => Object.values(r).join(","));
+                const csv = [hdr, ...rows].join("\n");
+                const rp = data?.result_path;
+                const name = typeof rp === "string" ? rp.split("/").pop().replace(".rds","_freq_table.csv") : "freq_table.csv";
+                const blob = new Blob([csv], {type: "text/csv"});
+                const a = document.createElement("a");
+                a.href = URL.createObjectURL(blob);
+                a.download = name;
+                a.click();
+              }}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-medium transition-all hover:shadow-sm"
+              style={{ border: "1px solid var(--clr-border)", color: "var(--clr-amber-dark)", background: "rgba(200,96,25,0.04)" }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              频率表 .csv
+            </button>
+          </div>
           {/* 样本聚类数目统计 */}
           <div>
             <p className="text-xs font-semibold mb-2" style={{ color: "var(--clr-amber-dark)" }}>样本聚类数目统计
@@ -790,7 +830,7 @@ function ClusterResult({ data, task }: { data: Record<string, unknown> | null; t
               className="w-full rounded border" style={{ border: "1px solid var(--clr-border)", background: "#fff" }} />
             <AuthDownloadLink
               url={sankeySrc}
-              filename="plot_cluster_sankey.png"
+              filename={sankeyName}
               className="absolute bottom-3 right-3 inline-flex items-center justify-center w-9 h-9 rounded-lg transition-all hover:scale-110"
               style={{ background: "rgba(255,255,255,0.92)", boxShadow: "0 2px 8px rgba(0,0,0,0.10)", color: "var(--clr-amber)" }}
             >
@@ -809,7 +849,7 @@ function ClusterResult({ data, task }: { data: Record<string, unknown> | null; t
               className="w-full rounded border" style={{ border: "1px solid var(--clr-border)", background: "#fff" }} />
             <AuthDownloadLink
               url={groupSrc}
-              filename="plot_cluster_group.png"
+              filename={groupName}
               className="absolute bottom-3 right-3 inline-flex items-center justify-center w-9 h-9 rounded-lg transition-all hover:scale-110"
               style={{ background: "rgba(255,255,255,0.92)", boxShadow: "0 2px 8px rgba(0,0,0,0.10)", color: "var(--clr-amber)" }}
             >
@@ -822,6 +862,27 @@ function ClusterResult({ data, task }: { data: Record<string, unknown> | null; t
       {/* ── Tab 4.5: metadata 表格 ── */}
       {activeTab === "metadata" && metaSample && metaSample.length > 0 && (
         <div className="space-y-2">
+          <div className="flex gap-3">
+            <button
+              onClick={async () => {
+                try {
+                  const token = localStorage.getItem("access_token") || "";
+                  const resp = await fetch("/api/tasks/" + taskId + "/meta_csv", { headers: { Authorization: "Bearer " + token } });
+                  if (!resp.ok) throw new Error("Failed");
+                  const blob = await resp.blob();
+                  const a = document.createElement("a");
+                  a.href = URL.createObjectURL(blob);
+                  a.download = "meta_data.csv";
+                  a.click();
+                } catch(e) { alert("下载失败"); }
+              }}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-medium transition-all hover:shadow-sm"
+              style={{ border: "1px solid var(--clr-border)", color: "var(--clr-amber-dark)", background: "rgba(200,96,25,0.04)" }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              全部 meta.data .csv
+            </button>
+          </div>
           <SectionTitle>
             meta.data 预览
             <span className="font-normal ml-1" style={{ color: "var(--clr-text-faint)" }}>
@@ -1002,7 +1063,7 @@ function MarkersResult({ task, data, taskCache, clusterLevels: parentClusterLeve
   const heatmapPath = safeString(data?.heatmap_path);
   const heatmapName = heatmapPath ? heatmapPath.split("/").pop()! : "plot_markers_heatmap.png";
   const csvPath     = safeString(data?.result_path);
-  const csvName     = csvPath ? csvPath.split("/").pop()! : "diff_genes.csv";
+  const csvName     = (() => { const p = typeof csvPath === 'string' ? csvPath : (Array.isArray(csvPath) ? csvPath[0] : null); return typeof p === 'string' ? p.split('/').pop()! : 'diff_genes.csv'; })();
 
   const dotplotSrc = task ? `/api/tasks/${task.id}/plot?name=${encodeURIComponent(dotplotName)}` : null;
   const heatmapSrc = task ? `/api/tasks/${task.id}/plot?name=${encodeURIComponent(heatmapName)}` : null;
@@ -1046,6 +1107,7 @@ function MarkersResult({ task, data, taskCache, clusterLevels: parentClusterLeve
   const [tab3Selected, setTab3Selected] = useState<string[]>([]);
   const [tab3TaskId, setTab3TaskId] = useState<string | null>(null);
   const [tab3Task, setTab3Task] = useState<Task | null>(null);
+  const [tab3Data, setTab3Data] = useState<Record<string, unknown> | null>(null);
   const [tab3Loading, setTab3Loading] = useState(false);
   const [tab3Error, setTab3Error] = useState<string | null>(null);
   const [tab3PlotMode, setTab3PlotMode] = useState<'feature' | 'vln'>('feature');
@@ -1317,6 +1379,7 @@ function MarkersResult({ task, data, taskCache, clusterLevels: parentClusterLeve
                    runSubTask("plot_markers", { ...task.params, cluster: clusterStr, custom_genes: customStr, group_by: !groupPrefix ? "CellType" : (task.params?.group_by ?? "Cluster") }, setTab3Loading, setTab3Error, (tid: string, res: any, completedTask: Task) => {
                      setTab3TaskId(tid);
                      setTab3Task(completedTask);
+                     setTab3Data(res);
                    });
                  }}
                  disabled={tab3Loading || tab3Selected.length === 0}
@@ -1352,11 +1415,14 @@ function MarkersResult({ task, data, taskCache, clusterLevels: parentClusterLeve
                    const featureSrc = `/api/tasks/${tab3TaskId}/plot?name=${encodeURIComponent(featureName)}`;
                    const vlnSrc = `/api/tasks/${tab3TaskId}/plot?name=${encodeURIComponent(vlnName)}`;
                    
-                   // 用于下载的格式化文件名: project_id_step_timestamp_suffix.png
-                   // 将 2026-04-23T14:59:41+08:00 转成 20260423145941
-                   const ts = tab3Task.completed_at ? tab3Task.completed_at.replace(/[-:T]/g, '').slice(0, 14) : "";
-                   const downloadFeatureName = `${tab3Task.project_id}_plot_markers_${ts}_feature_${cl}.png`;
-                   const downloadVlnName = `${tab3Task.project_id}_plot_markers_${ts}_vln_${cl}.png`;
+                   // 优先用 R 引擎返回的归档文件名（处理 jsonlite 单值数组包装）
+                   const pps = tab3Data?.plot_paths as Record<string, {feature: string | string[]; vln: string | string[]}> | undefined;
+                   const fRaw: string | string[] | undefined = pps?.[cl]?.feature;
+                   const vRaw: string | string[] | undefined = pps?.[cl]?.vln;
+                   const fp = Array.isArray(fRaw) ? fRaw[0] : fRaw;
+                   const vp = Array.isArray(vRaw) ? vRaw[0] : vRaw;
+                   const downloadFeatureName = (typeof fp === 'string' ? fp.split('/').pop()! : `plot_markers_feature_${cl}.png`);
+                   const downloadVlnName = (typeof vp === 'string' ? vp.split('/').pop()! : `plot_markers_vln_${cl}.png`);
                    
                    return (
                    <div key={cl} className="mb-6">
@@ -1522,9 +1588,7 @@ function MarkersResult({ task, data, taskCache, clusterLevels: parentClusterLeve
                     const actualCsvName = tab4Task?.result_path
                       ? tab4Task.result_path.split('/').pop()!
                       : `diff_genes_${tab4G1.join('+')}_vs_${tab4G2.join('+')}.csv`;
-                    const downloadCsvName = tab4Task 
-                      ? `${tab4Task.project_id}_markers_pairwise_${ts}_diff_genes.csv` 
-                      : actualCsvName;
+                    const downloadCsvName = actualCsvName;
 
                     return (
                       <AuthDownloadLink 

@@ -24,11 +24,11 @@ const STEPS = [
   { id: "reduce_cluster", num: 2, label: "降维与聚类", desc: "PCA · Harmony · UMAP", Icon: IconAxis, subSteps: ["reduce", "cluster"] },
   { id: "annotate", num: 3, label: "细胞注释", desc: "SingleR/手动", Icon: IconTag, subSteps: ["annotate"] },
   { id: "markers", num: 4, label: "差异基因", desc: "FindMarkers", Icon: IconTestTube, subSteps: ["markers"] },
-  { id: "wgcna", num: 5, label: "WGCNA分析", desc: "加权基因共表达网络", Icon: IconNetwork, subSteps: ["wgcna"] },
-  { id: "enrich", num: 6, label: "通路富集分析", desc: "GO / KEGG / GSEA", Icon: IconPathway, subSteps: ["enrich"] },
-  { id: "monocle", num: 7, label: "拟时序分析", desc: "Monocle 2", Icon: IconBranch, subSteps: ["monocle"] },
-  { id: "cellchat", num: 8, label: "细胞通讯", desc: "CellChat", Icon: IconNetwork, subSteps: ["cellchat"] },
-  { id: "infercnv", num: 9, label: "拷贝数变异", desc: "inferCNV", Icon: IconDNA, subSteps: ["infercnv"] },
+  { id: "enrich", num: 5, label: "通路富集分析", desc: "GO / KEGG / GSEA", Icon: IconPathway, subSteps: ["enrich"] },
+  { id: "monocle", num: 6, label: "拟时序分析", desc: "Monocle 2", Icon: IconBranch, subSteps: ["monocle"] },
+  { id: "cellchat", num: 7, label: "细胞通讯", desc: "CellChat", Icon: IconNetwork, subSteps: ["cellchat"] },
+  { id: "infercnv", num: 8, label: "拷贝数变异", desc: "inferCNV", Icon: IconDNA, subSteps: ["infercnv"] },
+  { id: "wgcna", num: 9, label: "WGCNA分析", desc: "加权基因共表达网络", Icon: IconNetwork, subSteps: ["wgcna"] },
 ];
 
 const STATUS_DOT: Record<string, string> = {

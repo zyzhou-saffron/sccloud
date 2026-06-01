@@ -27,6 +27,8 @@ from app.auth.deps import get_current_user
 from app.config import get_settings
 from app.db.models import User, get_db
 
+RDS_EXTENSIONS = {".rds", ".h5ad", ".h5seurat", ".h5", ".rdata", ".loom"}
+
 router = APIRouter(prefix="/api/convert", tags=["格式转换"])
 
 
@@ -188,20 +190,34 @@ async def mtx_merge(
     current_user: User = Depends(get_current_user),
 ):
     """
-    多样本 10X MTX 整合。
-    每个 sample 上传一个 ZIP (包含 matrix.mtx.gz / features.tsv.gz / barcodes.tsv.gz)。
+    多样本整合。支持两种格式：
+      - 10X MTX ZIP（包含 matrix.mtx.gz / features.tsv.gz / barcodes.tsv.gz）
+      - 单文件格式（.rds / .h5ad / .h5seurat / .h5）
     """
     settings = get_settings()
 
     if len(files) < 1:
-        raise HTTPException(status_code=400, detail="请至少提供 1 个样本 ZIP")
+        raise HTTPException(status_code=400, detail="请至少提供 1 个样本文件")
     if len(files) != len(sample_names):
         raise HTTPException(
             status_code=400,
             detail="样本名称和文件数量不一致",
         )
 
-    # 存储和解压
+    # 读取所有文件内容
+    file_contents = []
+    file_extensions = []
+    for f in files:
+        data = await f.read()
+        file_contents.append(data)
+        ext = os.path.splitext(f.filename or "")[1].lower()
+        file_extensions.append(ext)
+
+    # 判断格式：全部 .zip → 10X MTX 模式，否则 → 单文件合并模式
+    all_zip = all(ext == ".zip" for ext in file_extensions)
+    is_single_file = all(ext in RDS_EXTENSIONS for ext in file_extensions)
+
+    # 存储目录
     merge_dir = os.path.join(
         settings.projects_root,
         str(current_user.id),
@@ -211,51 +227,100 @@ async def mtx_merge(
     os.makedirs(merge_dir, exist_ok=True)
     os.chmod(merge_dir, 0o777)
 
-    sample_dirs = []
-    for i, (name, f) in enumerate(zip(sample_names, files)):
-        # 保存 ZIP
-        zip_path = os.path.join(merge_dir, f"{name}.zip")
-        content = await f.read()
-        with open(zip_path, "wb") as fp:
-            fp.write(content)
+    if all_zip:
+        # === 10X MTX ZIP 模式（原有逻辑）===
+        sample_dirs = []
+        for i, (name, data) in enumerate(zip(sample_names, file_contents)):
+            zip_path = os.path.join(merge_dir, f"{name}.zip")
+            with open(zip_path, "wb") as fp:
+                fp.write(data)
 
-        # 解压
-        sample_dir = os.path.join(merge_dir, name)
-        os.makedirs(sample_dir, exist_ok=True)
-        os.chmod(sample_dir, 0o777)
+            sample_dir = os.path.join(merge_dir, name)
+            os.makedirs(sample_dir, exist_ok=True)
+            os.chmod(sample_dir, 0o777)
 
-        with zipfile.ZipFile(zip_path, "r") as zf:
-            zf.extractall(sample_dir)
+            with zipfile.ZipFile(zip_path, "r") as zf:
+                zf.extractall(sample_dir)
 
-        # 寻找包含 matrix.mtx 的目录（可能嵌套一层）
-        actual_dir = _find_mtx_dir(sample_dir)
-        if actual_dir is None:
-            # 清理
-            shutil.rmtree(merge_dir, ignore_errors=True)
-            raise HTTPException(
-                status_code=400,
-                detail=f"样本 {name} 的 ZIP 中找不到 matrix.mtx 文件",
+            actual_dir = _find_mtx_dir(sample_dir)
+            if actual_dir is None:
+                shutil.rmtree(merge_dir, ignore_errors=True)
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"样本 {name} 的 ZIP 中找不到 matrix.mtx 文件",
+                )
+            sample_dirs.append(actual_dir)
+
+        output_path = os.path.join(merge_dir, "merged.rds")
+
+        import httpx
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(connect=10.0, read=1800.0, write=30.0, pool=10.0)
+        ) as client:
+            response = await client.post(
+                f"{settings.r_engine_url}/convert_mtx_merge",
+                json={
+                    "sample_dirs": sample_dirs,
+                    "sample_names": sample_names,
+                    "output_path": output_path,
+                },
             )
+    else:
+        # === 单文件模式（H5AD / RDS / H5Seurat）===
+        rds_paths = []
+        for i, (name, data, ext) in enumerate(zip(sample_names, file_contents, file_extensions)):
+            # 保存原始文件
+            orig_path = os.path.join(merge_dir, f"{name}{ext}")
+            with open(orig_path, "wb") as fp:
+                fp.write(data)
 
-        sample_dirs.append(actual_dir)
+            # 非 RDS 格式需要先转换为 RDS
+            if ext != ".rds":
+                import httpx
+                input_format_map = {
+                    ".h5ad": "h5ad", ".h5seurat": "h5seurat",
+                    ".h5": "h5", ".rdata": "rdata", ".loom": "loom",
+                }
+                input_format = input_format_map.get(ext)
+                if not input_format:
+                    shutil.rmtree(merge_dir, ignore_errors=True)
+                    raise HTTPException(status_code=400, detail=f"不支持的格式: {ext}")
 
-    # 构造输出路径
-    output_path = os.path.join(merge_dir, "merged.rds")
+                rds_path = os.path.splitext(orig_path)[0] + ".rds"
+                async with httpx.AsyncClient(
+                    timeout=httpx.Timeout(connect=10.0, read=600.0, write=30.0, pool=10.0)
+                ) as client:
+                    convert_resp = await client.post(
+                        f"{settings.r_engine_url}/convert",
+                        json={
+                            "direction": "import",
+                            "input_path": orig_path,
+                            "input_format": input_format,
+                            "output_path": rds_path,
+                        },
+                    )
+                if convert_resp.status_code != 200:
+                    detail = convert_resp.json().get("error", convert_resp.text) if convert_resp.headers.get("content-type", "").startswith("application/json") else convert_resp.text
+                    shutil.rmtree(merge_dir, ignore_errors=True)
+                    raise HTTPException(status_code=500, detail=f"转换 {name} 失败: {detail}")
+                rds_paths.append(rds_path)
+            else:
+                rds_paths.append(orig_path)
 
-    # 调用 R 引擎
-    import httpx
+        output_path = os.path.join(merge_dir, "merged.rds")
 
-    async with httpx.AsyncClient(
-        timeout=httpx.Timeout(connect=10.0, read=1800.0, write=30.0, pool=10.0)
-    ) as client:
-        response = await client.post(
-            f"{settings.r_engine_url}/convert_mtx_merge",
-            json={
-                "sample_dirs": sample_dirs,
-                "sample_names": sample_names,
-                "output_path": output_path,
-            },
-        )
+        import httpx
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(connect=10.0, read=1800.0, write=30.0, pool=10.0)
+        ) as client:
+            response = await client.post(
+                f"{settings.r_engine_url}/convert_merge_rds",
+                json={
+                    "rds_paths": rds_paths,
+                    "sample_names": sample_names,
+                    "output_path": output_path,
+                },
+            )
 
     if response.status_code != 200:
         raise HTTPException(

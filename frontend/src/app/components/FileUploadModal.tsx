@@ -111,7 +111,10 @@ export default function FileUploadModal({
         headers: { Authorization: `Bearer ${token}` },
         body: completeForm,
       });
-      if (!completeRes.ok) throw new Error("合并文件失败");
+      if (!completeRes.ok) {
+        const errData = await completeRes.json().catch(() => ({}));
+        throw new Error(errData.detail || "合并文件失败");
+      }
       const { path: filePath } = (await completeRes.json()) as { path: string };
 
       setUploadProgress(100);

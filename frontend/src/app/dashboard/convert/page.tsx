@@ -134,27 +134,52 @@ export default function ConvertPage() {
       {/* Step 1: 样本列表 */}
       <div className="p-5 rounded-xl" style={{ background: "var(--clr-card)", border: "1px solid var(--clr-border)" }}>
         <StepAnchor step={1} title="添加样本" subtitle="为每个样本命名并上传对应的 ZIP 包" />
-        <div className="space-y-3" style={{ maxHeight: "400px", overflowY: "auto" }}>
+        <div className="space-y-3" style={{ maxHeight: "480px", overflowY: "auto" }}>
           {samples.map((s, idx) => (
-            <div key={s.id} className="flex items-center gap-3 p-3 rounded-lg" style={{ background: "var(--clr-bg)", border: "1px solid var(--clr-border)" }}>
-              <span className="text-xs font-mono w-6 text-center" style={{ color: "var(--clr-text-faint)" }}>#{idx + 1}</span>
-              <input
-                type="text"
-                value={s.name}
-                onChange={(e) => setSamples((prev) => prev.map((x) => x.id === s.id ? { ...x, name: e.target.value } : x))}
-                className="text-sm px-2 py-1 rounded border w-32"
-                style={{ borderColor: "var(--clr-border)", color: "var(--clr-text)", background: "white" }}
-                placeholder="样本名"
-              />
-              <input
-                type="text"
-                value={s.group}
-                onChange={(e) => setSamples((prev) => prev.map((x) => x.id === s.id ? { ...x, group: e.target.value } : x))}
-                className="text-sm px-2 py-1 rounded border w-24"
-                style={{ borderColor: "var(--clr-border)", color: "var(--clr-text)", background: "white" }}
-                placeholder="分组名"
-              />
-              <label className="flex-1 flex items-center gap-2 text-xs cursor-pointer" style={{ color: s.file ? "#15803d" : "var(--clr-text-faint)" }}>
+            <div key={s.id} className="p-4 rounded-lg" style={{ background: "var(--clr-bg)", border: "1px solid var(--clr-border)" }}>
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs font-semibold" style={{ color: "var(--clr-amber-dark)" }}>样本 #{idx + 1}</span>
+                {samples.length > 1 && (
+                  <button
+                    onClick={() => removeSample(s.id)}
+                    className="text-xs px-2 py-1 rounded transition-colors hover:bg-red-50"
+                    style={{ color: "var(--clr-text-faint)" }}
+                  >
+                    ✕ 移除
+                  </button>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium mb-1" style={{ color: "var(--clr-text-muted)" }}>Sample</label>
+                  <input
+                    type="text"
+                    value={s.name}
+                    onChange={(e) => setSamples((prev) => prev.map((x) => x.id === s.id ? { ...x, name: e.target.value } : x))}
+                    className="w-full text-sm px-3 py-1.5 rounded border"
+                    style={{ borderColor: "var(--clr-border)", color: "var(--clr-text)", background: "white" }}
+                    placeholder="输入样本名"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1" style={{ color: "var(--clr-text-muted)" }}>Group</label>
+                  <input
+                    type="text"
+                    value={s.group}
+                    onChange={(e) => setSamples((prev) => prev.map((x) => x.id === s.id ? { ...x, group: e.target.value } : x))}
+                    className="w-full text-sm px-3 py-1.5 rounded border"
+                    style={{ borderColor: "var(--clr-border)", color: "var(--clr-text)", background: "white" }}
+                    placeholder="输入分组名（可选）"
+                  />
+                </div>
+              </div>
+              <label className="flex items-center gap-2 mt-3 text-xs cursor-pointer px-3 py-2 rounded border border-dashed transition-colors hover:border-amber-400"
+                style={{
+                  color: s.file ? "#15803d" : "var(--clr-text-muted)",
+                  borderColor: s.file ? "#15803d" : "var(--clr-border)",
+                  background: s.file ? "rgba(21,128,61,0.04)" : "transparent",
+                }}
+              >
                 <input
                   type="file"
                   accept=".zip"
@@ -164,17 +189,9 @@ export default function ConvertPage() {
                     setSamples((prev) => prev.map((x) => x.id === s.id ? { ...x, file: f } : x));
                   }}
                 />
-                {s.file ? `${s.file.name} (${(s.file.size / 1024 / 1024).toFixed(1)}MB)` : "点击上传 ZIP"}
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={s.file ? "#15803d" : "var(--clr-amber)"} strokeWidth="2" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+                {s.file ? `${s.file.name} (${(s.file.size / 1024 / 1024).toFixed(1)} MB)` : "点击上传 ZIP 文件"}
               </label>
-              {samples.length > 1 && (
-                <button
-                  onClick={() => removeSample(s.id)}
-                  className="text-xs px-2 py-1 rounded transition-colors"
-                  style={{ color: "var(--clr-text-faint)" }}
-                >
-                  ✕
-                </button>
-              )}
             </div>
           ))}
         </div>
