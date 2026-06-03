@@ -1033,7 +1033,7 @@ function AnalysisPageContent() {
                                 updateParam("cluster", "All");
                               }
                             }}
-                          />
+            />
                           All（所有聚类）
                         </label>
                         <div style={{ borderTop: "1px solid var(--clr-border)", margin: "2px 0" }} />
@@ -1060,7 +1060,7 @@ function AnalysisPageContent() {
                                     updateParam("cluster", next.join(","));
                                   }
                                 }}
-                              />
+                />
                               Cluster {cl}
                             </label>
                           );

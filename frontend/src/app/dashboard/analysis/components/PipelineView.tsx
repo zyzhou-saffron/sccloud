@@ -77,6 +77,13 @@ export default function PipelineView({ pipelineId, token, projectName }: Pipelin
   const [reduceClusterTab, setReduceClusterTab] = useState<"cluster" | "reduce">("cluster");
   // Phase 2 参数页显示状态
   const [showPhase2Param, setShowPhase2Param] = useState(false);
+  const [showBackMenu, setShowBackMenu] = useState(false);
+  useEffect(() => {
+    if (!showBackMenu) return;
+    const handler = () => setShowBackMenu(false);
+    setTimeout(() => document.addEventListener("click", handler), 0);
+    return () => document.removeEventListener("click", handler);
+  }, [showBackMenu]);
   const [sidebarWidth, setSidebarWidth] = useState(224); // 左侧导航栏宽度，默认 224px (w-56)
   const isResizing = useRef(false);
   // 步骤失败对话框
@@ -183,7 +190,7 @@ export default function PipelineView({ pipelineId, token, projectName }: Pipelin
 
   // Phase 2 步骤是否已配置/执行
   const enabledPhase2 = (pipeline.params?.enabled_steps as string[]) || [];
-  const hasPhase2Tasks = pipeline.tasks.some(t => ["monocle", "cellchat", "infercnv", "wgcna"].includes(t.step));
+  const hasPhase2Tasks = (pipeline.tasks || []).some(t => ["monocle", "cellchat", "infercnv", "wgcna"].includes(t.step));
   // 始终显示所有步骤
   const visibleSteps = STEPS;
 
@@ -219,13 +226,43 @@ export default function PipelineView({ pipelineId, token, projectName }: Pipelin
     <div className="animate-fade-in space-y-3">
       {/* 顶部栏：返回 + 状态 */}
       <div className="flex items-center justify-between">
-        <button
-          className="px-3 py-1 text-sm rounded"
-          style={{ border: "1px solid var(--clr-border)", background: "var(--clr-bg-alt)", cursor: "pointer" }}
-          onClick={() => window.dispatchEvent(new CustomEvent("pipeline-back"))}
-        >
-          ← 返回参数设置
-        </button>
+        <div className="relative">
+          <button
+            className="px-3 py-1 text-sm rounded inline-flex items-center gap-1"
+            style={{ border: "1px solid var(--clr-border)", background: "var(--clr-bg-alt)", cursor: "pointer" }}
+            onClick={() => setShowBackMenu(!showBackMenu)}
+          >
+            ← 返回参数设置
+            <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" style={{ transform: showBackMenu ? "rotate(180deg)" : "none" }}><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          {showBackMenu && (
+            <div className="absolute top-full left-0 mt-1 w-56 rounded-lg shadow-lg border z-50"
+              style={{ borderColor: "var(--clr-border)", background: "var(--clr-bg-card)" }}>
+              <button
+                className="w-full text-left px-4 py-2.5 text-sm rounded-t-lg hover:bg-[#fdf2e9] transition-colors"
+                style={{ borderBottom: "1px solid var(--clr-border)", color: "var(--clr-text)" }}
+                onClick={() => {
+                  setShowBackMenu(false);
+                  window.dispatchEvent(new CustomEvent("pipeline-back"));
+                }}
+              >
+                重新设置 Phase 1
+                <div className="text-xs mt-0.5" style={{ color: "var(--clr-text-muted)" }}>回到参数页，重新上传文件并运行全流程</div>
+              </button>
+              <button
+                className="w-full text-left px-4 py-2.5 text-sm rounded-b-lg hover:bg-[#eff6ff] transition-colors"
+                style={{ color: "var(--clr-text)" }}
+                onClick={() => {
+                  setShowBackMenu(false);
+                  setShowPhase2Param(true);
+                }}
+              >
+                重新设置 Phase 2
+                <div className="text-xs mt-0.5" style={{ color: "var(--clr-text-muted)" }}>复用 Phase 1 结果，仅重新配置后续分析步骤</div>
+              </button>
+            </div>
+          )}
+        </div>
         <div className="flex items-center gap-2">
           {(pipeline.status === "running" || pipeline.status === "pending") && (
             <button
@@ -267,7 +304,7 @@ export default function PipelineView({ pipelineId, token, projectName }: Pipelin
       )}
 
       {/* 暂停提示 + 参数设置按钮 */}
-      {pipeline.status === "paused" && !showPhase2Param && (
+      {(pipeline.status === "paused" || pipeline.status === "failed" || pipeline.status === "completed") && !showPhase2Param && (
         <div className="w-full rounded-lg border px-4 py-3" style={{ borderColor: "#93c5fd", background: "rgba(59,130,246,0.05)" }}>
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-start gap-3 text-left">
@@ -288,7 +325,7 @@ export default function PipelineView({ pipelineId, token, projectName }: Pipelin
       )}
 
       {/* Phase 2 参数选择页 */}
-      {pipeline.status === "paused" && showPhase2Param && (
+      {(pipeline.status === "paused" || pipeline.status === "failed" || pipeline.status === "completed") && showPhase2Param && (
         <Phase2ParamPage
           pipeline={pipeline}
           token={token}
@@ -681,6 +718,21 @@ export default function PipelineView({ pipelineId, token, projectName }: Pipelin
                 }}
               >
                 重新运行
+              </button>
+              <button
+                onClick={() => {
+                  dismissedFailsRef.current.add(failStepInfo.stepId);
+                  setShowFailDialog(false);
+                  setShowPhase2Param(true);
+                }}
+                className="flex-1 px-4 py-2.5 rounded-lg text-sm font-semibold text-white transition-all"
+                style={{
+                  background: "#3b82f6",
+                  cursor: "pointer",
+                  border: "none",
+                }}
+              >
+                重新配置 Phase 2
               </button>
             </div>
           </div>

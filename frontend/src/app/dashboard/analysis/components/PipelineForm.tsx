@@ -209,13 +209,16 @@ export default function PipelineForm({ projectId, token, onSubmit, uploadedFiles
         pipelineParams.qc = { ...pipelineParams.qc, rds_file_path: uploadedFiles[0].path };
       }
 
-      const data = {
+      const data: any = {
         project_id: projectId,
         params: pipelineParams,
         sample_groups: sampleGroups,
       };
 
       const response = await createPipeline(token, data);
+      if (!response || !response.pipeline_id) {
+        throw new Error("Server returned invalid response");
+      }
       onSubmit(response.pipeline_id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create pipeline");
@@ -731,7 +734,8 @@ export default function PipelineForm({ projectId, token, onSubmit, uploadedFiles
           将使用以上配置的参数依次执行全部分析步骤。
         </div>
 
-        {/* 提交按钮 */}
+                {/* 提交按钮 */}
+
         <button
           type="submit"
           disabled={loading}

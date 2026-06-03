@@ -123,6 +123,8 @@ export default function Phase2ParamPage({ pipeline, token, onComplete, species =
         phase2Params[step] = { ...params[step as keyof typeof params], plot_format: fmt };
       }
 
+      // For failed pipelines, resume via the resume endpoint (now accepts failed)
+      // For paused pipelines, same flow as before
       await resumePipeline(token, pipeline.id, {
         params: phase2Params,
         enabled_steps: enabledSteps,

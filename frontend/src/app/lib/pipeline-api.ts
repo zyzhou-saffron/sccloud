@@ -8,6 +8,7 @@ export interface PipelineParams {
   project_id: number;
   params: Record<string, Record<string, unknown>>;
   marker_file_path?: string;
+  skip_phase1?: boolean;
 }
 
 export interface PipelineTask {

@@ -179,16 +179,26 @@ async def create_pipeline(
                 logger.error(f"Pipeline {pipeline_id}: marker file parsing error: {e}")
                 raise HTTPException(status_code=400, detail=f"Marker file parsing failed: {str(e)}")
 
+        skip_phase1 = data.get("skip_phase1", False)
+
         # 创建 Pipeline 记录
         pipeline = Pipeline(
             id=pipeline_id,
             project_id=project_id,
             user_id=user.id,
             params=params,
-            status="pending",
+            status="paused" if skip_phase1 else "pending",
         )
         db.add(pipeline)
         db.commit()
+
+        if skip_phase1:
+            # 跳过 Phase 1，直接返回 paused 状态，前端进入 Phase2ParamPage
+            return {
+                "pipeline_id": pipeline_id,
+                "status": "paused",
+                "message": "Phase 1 skipped, ready for Phase 2 configuration"
+            }
 
         # 后台启动流程执行
         background_tasks.add_task(run_pipeline, pipeline_id)
@@ -250,11 +260,16 @@ async def resume_pipeline_endpoint(
     pipeline = db.query(Pipeline).filter(Pipeline.id == pipeline_id).first()
     if not pipeline:
         raise HTTPException(status_code=404, detail="Pipeline not found")
-    if pipeline.status != "paused":
+    if pipeline.status not in ("paused", "failed", "completed"):
         raise HTTPException(
             status_code=400,
-            detail=f"Pipeline 状态为 '{pipeline.status}'，无法继续（需要 'paused' 状态）",
+            detail=f"Pipeline 状态为 '{pipeline.status}'，无法继续（需要 'paused' 或 'failed' 状态）",
         )
+    # 从 failed 恢复时，清除失败的步骤参数以允许重新配置
+    if pipeline.status == "failed":
+        pipeline.current_step = None
+        pipeline.error_step = None
+        pipeline.error_msg = None
 
     from app.pipeline.executor import resume_pipeline
 
