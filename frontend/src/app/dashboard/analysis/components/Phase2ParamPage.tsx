@@ -20,12 +20,12 @@ interface Phase2ParamPageProps {
 }
 
 const DEFAULT_PARAMS = {
-  markers: { cluster: "All", min_pct: 0.1, logfc_threshold: 0.25, p_val_adj: 0.05, test_use: "wilcox", only_pos: true, ntop: 5, group_by: "CellType" },
-  enrich: { pathway: "GO", direction: "Up", pvalue_cutoff: 0.05, qvalue_cutoff: 0.2, n_term: 10 },
-  monocle: { group_beam: "CellType", group_traj: "CellType", min_expr_threshold: 0.5, min_cells_pct: 0.01, mean_expr: 0.3, qvalue1: 1e-5, reverse: false },
-  cellchat: { db_use: "Secreted", thresh: 0.05 },
-  infercnv: { cutoff_gene: 0.1, num_threads: 4, species: "Human", infer_df: [] as { cellType: string; refType: string }[] },
-  wgcna: { interest_types: [] as string[], min_fraction: 0.05, sft_threshold: 0.8, module_score: "Seurat", k: 25, max_shared: 10, min_cells: 100, n_hubs: 10, n_genes_score: 25 },
+  markers: { cluster: "All", min_pct: 0.1, logfc_threshold: 0.25, p_val_adj: 0.05, test_use: "wilcox", only_pos: true, ntop: 5, group_by: "CellType", plot_format: "png" },
+  enrich: { pathway: "GO", direction: "Up", pvalue_cutoff: 0.05, qvalue_cutoff: 0.2, n_term: 10, plot_format: "png" },
+  monocle: { group_beam: "CellType", group_traj: "CellType", min_expr_threshold: 0.5, min_cells_pct: 0.01, mean_expr: 0.3, qvalue1: 1e-5, reverse: false, plot_format: "png" },
+  cellchat: { db_use: "Secreted", thresh: 0.05, plot_format: "png" },
+  infercnv: { cutoff_gene: 0.1, num_threads: 4, species: "Human", infer_df: [] as { cellType: string; refType: string }[], plot_format: "png" },
+  wgcna: { interest_types: [] as string[], min_fraction: 0.05, sft_threshold: 0.8, module_score: "Seurat", k: 25, max_shared: 10, min_cells: 100, n_hubs: 10, n_genes_score: 25, plot_format: "png" },
 };
 
 export default function Phase2ParamPage({ pipeline, token, onComplete, species = "Human" }: Phase2ParamPageProps) {
@@ -118,8 +118,9 @@ export default function Phase2ParamPage({ pipeline, token, onComplete, species =
 
     try {
       const phase2Params: Record<string, Record<string, unknown>> = {};
+      const fmt = (params.markers.plot_format as string) || "png";
       for (const step of enabledSteps) {
-        phase2Params[step] = params[step as keyof typeof params];
+        phase2Params[step] = { ...params[step as keyof typeof params], plot_format: fmt };
       }
 
       await resumePipeline(token, pipeline.id, {
@@ -567,6 +568,16 @@ export default function Phase2ParamPage({ pipeline, token, onComplete, species =
           </div>
         );
       })}
+      </div>
+
+      {/* 图片格式选择 */}
+      <div className="flex items-center gap-2 px-3 py-2 rounded text-xs mb-3" style={{ background: "rgba(200,96,25,0.04)", border: "1px solid rgba(200,96,25,0.15)" }}>
+        <span style={{ color: "var(--clr-text-muted)" }}>图片格式:</span>
+        <select value={(params.markers.plot_format as string) || "png"} onChange={(e) => { const v = e.target.value; setParams(prev => { const next = {...prev}; Object.keys(next).forEach(k => { next[k] = {...next[k], plot_format: v}; }); return next; }); }} style={{ border: "1px solid var(--clr-border)", borderRadius: 4, padding: "2px 6px", fontSize: 12, background: "white", color: "var(--clr-text)" }}>
+          <option value="png">PNG (默认)</option>
+          <option value="pdf">PDF</option>
+        </select>
+        <span style={{ color: "var(--clr-text-faint)", fontSize: 10 }}>不选默认PNG</span>
       </div>
 
       {/* 开始分析按钮 */}

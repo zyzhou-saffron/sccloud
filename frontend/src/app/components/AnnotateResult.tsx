@@ -26,6 +26,7 @@ function AuthImg({ src, alt, token, className, style }: {
 }) {
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
+  const [isPdf, setIsPdf] = useState(false);
 
   useEffect(() => {
     if (!src) return;
@@ -34,14 +35,17 @@ function AuthImg({ src, alt, token, className, style }: {
     setBlobUrl(null);
     const authToken = token || getToken();
     fetch(src, { headers: { Authorization: `Bearer ${authToken}` } })
-      .then((r) => { if (!r.ok) throw new Error(`${r.status}`); return r.blob(); })
-      .then((blob) => { objectUrl = URL.createObjectURL(blob); setBlobUrl(objectUrl); })
+      .then((r) => { if (!r.ok) throw new Error(`${r.status}`); const ct = r.headers.get("content-type") || ""; return r.blob().then(blob => ({ blob, isPdf: ct.includes("pdf") })); })
+      .then(({ blob, isPdf: pdf }) => { objectUrl = URL.createObjectURL(blob); setBlobUrl(objectUrl); setIsPdf(pdf); })
       .catch(() => setFailed(true));
     return () => { if (objectUrl) URL.revokeObjectURL(objectUrl); };
   }, [src, token]);
 
   if (failed) return <div className={className} style={style}>Failed to load image</div>;
   if (!blobUrl) return <div className={className} style={style} />;
+  if (isPdf) {
+    return <embed src={blobUrl} type="application/pdf" className={className} style={{ ...style, width: "100%", minHeight: 600 }} />;
+  }
 
   return <img src={blobUrl} alt={alt} className={className} style={style} />;
 }

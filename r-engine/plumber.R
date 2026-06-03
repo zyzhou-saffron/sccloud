@@ -438,6 +438,7 @@ function(req) {
   project_path <- body$project_path
   # 前端参数嵌套在 body$params 内部 (由 FastAPI 路由封装)
   params <- body$params
+  plot_format <- params$plot_format %||% "png"
   task_id <- params$task_id
   report <- create_progress_reporter(task_id)
 
@@ -518,9 +519,13 @@ function(req) {
 
   # ---- 生成样本相关性散点图 (my_distPlot1) ----
   report(40, "生成样本相关性图...")
-  corr_archive <- make_output_name(project_path, "1", "qc", "correlation", "png")
+  corr_archive <- make_output_name(project_path, "1", "qc", "correlation", plot_format)
   corr_plot_path <- file.path(project_path, corr_archive)
-  png(corr_plot_path, width = 1400, height = 600, res = 150)
+if (plot_format == "pdf") {
+    pdf(corr_plot_path)
+  } else {
+    png(corr_plot_path, width = 1400, height = 600, res = 150)
+  }
   print(my_distPlot1(exp))
   dev.off()
 
@@ -565,9 +570,13 @@ function(req) {
 
   # ---- 生成过滤前后 VlnPlot 对比 (my_distPlot2) ----
   report(70, "生成质控小提琴图...")
-  vln_archive <- make_output_name(project_path, "1", "qc", "violin", "png")
+  vln_archive <- make_output_name(project_path, "1", "qc", "violin", plot_format)
   vln_plot_path <- file.path(project_path, vln_archive)
-  png(vln_plot_path, width = 1400, height = 1000, res = 150)
+if (plot_format == "pdf") {
+    pdf(vln_plot_path)
+  } else {
+    png(vln_plot_path, width = 1400, height = 1000, res = 150)
+  }
   print(my_distPlot2(exp, pro))
   dev.off()
 
@@ -647,6 +656,7 @@ function(req) {
   body <- jsonlite::fromJSON(req$postBody)
   project_path <- body$project_path
   params <- body$params
+  plot_format <- params$plot_format %||% "png"
   task_id <- params$task_id
   report <- create_progress_reporter(task_id)
 
@@ -705,6 +715,7 @@ function(req) {
   body <- jsonlite::fromJSON(req$postBody)
   project_path <- body$project_path
   params <- body$params
+  plot_format <- params$plot_format %||% "png"
   task_id <- params$task_id
   report <- create_progress_reporter(task_id)
 
@@ -732,9 +743,13 @@ function(req) {
   report(70, "生成降维图...")
 
   # 双命名：归档名 + 管道链名
-  plot_archive <- make_output_name(project_path, "3", "reduce", method, "png")
+  plot_archive <- make_output_name(project_path, "3", "reduce", method, plot_format)
   plot_path <- file.path(project_path, plot_archive)
-  png(plot_path, width = 1200, height = 800, res = 150)
+if (plot_format == "pdf") {
+    pdf(plot_path)
+  } else {
+    png(plot_path, width = 1200, height = 800, res = 150)
+  }
   my_distPlot3(pro, method, group_by, n_dims)
   dev.off()
 
@@ -782,6 +797,7 @@ function(req) {
   body <- jsonlite::fromJSON(req$postBody)
   project_path <- body$project_path
   params <- body$params
+  plot_format <- params$plot_format %||% "png"
   task_id <- params$task_id
   report <- create_progress_reporter(task_id)
 
@@ -812,21 +828,33 @@ function(req) {
   report(70, "生成聚类图...")
 
   # 双命名：归档名（3张图）
-  umap_archive <- make_output_name(project_path, "4", "cluster", "umap", "png")
+  umap_archive <- make_output_name(project_path, "4", "cluster", "umap", plot_format)
   plot_path <- file.path(project_path, umap_archive)
-  png(plot_path, width = 1200, height = 800, res = 150)
+if (plot_format == "pdf") {
+    pdf(plot_path)
+  } else {
+    png(plot_path, width = 1200, height = 800, res = 150)
+  }
   print(my_distPlot5(pro))
   dev.off()
 
-  sankey_archive <- make_output_name(project_path, "4", "cluster", "sankey", "png")
+  sankey_archive <- make_output_name(project_path, "4", "cluster", "sankey", plot_format)
   plot_path2 <- file.path(project_path, sankey_archive)
-  png(plot_path2, width = 1200, height = 1000, res = 150)
+if (plot_format == "pdf") {
+    pdf(plot_path2)
+  } else {
+    png(plot_path2, width = 1200, height = 1000, res = 150)
+  }
   print(my_distPlot4(pro@meta.data))
   dev.off()
 
-  group_archive <- make_output_name(project_path, "4", "cluster", "group_umap", "png")
+  group_archive <- make_output_name(project_path, "4", "cluster", "group_umap", plot_format)
   plot_path3 <- file.path(project_path, group_archive)
-  png(plot_path3, width = 1400, height = 1200, res = 150)
+if (plot_format == "pdf") {
+    pdf(plot_path3)
+  } else {
+    png(plot_path3, width = 1400, height = 1200, res = 150)
+  }
   print(my_distPlot6(pro, group_by))
   dev.off()
 
@@ -920,6 +948,7 @@ function(req) {
   body <- jsonlite::fromJSON(req$postBody)
   project_path <- body$project_path
   params <- body$params
+  plot_format <- params$plot_format %||% "png"
   task_id <- params$task_id
   report <- create_progress_reporter(task_id)
 
@@ -993,22 +1022,30 @@ function(req) {
 
   # 双命名：DotPlot
   ntop <- params$ntop %||% 5
-  dotplot_archive <- make_output_name(project_path, "5", "markers", "dotplot", "png")
+  dotplot_archive <- make_output_name(project_path, "5", "markers", "dotplot", plot_format)
   plot_path <- file.path(project_path, dotplot_archive)
-  png(plot_path, width = 1600, height = 800, res = 150)
+if (plot_format == "pdf") {
+    pdf(plot_path)
+  } else {
+    png(plot_path, width = 1600, height = 800, res = 150)
+  }
   print(my_distPlot7(pro, min_pct, logfc, test_use, only_pos, ntop, cluster))
   dev.off()
 
   report(80, "生成 Heatmap...")
 
   # 双命名：Heatmap
-  heatmap_archive <- make_output_name(project_path, "5", "markers", "heatmap", "png")
+  heatmap_archive <- make_output_name(project_path, "5", "markers", "heatmap", plot_format)
   heatmap_path <- file.path(project_path, heatmap_archive)
   tryCatch({
     heatmap_plot <- my_distPlot8(pro, min_pct, logfc, test_use, only_pos, ntop, cluster)
     n_clusters <- length(levels(pro))
     heatmap_h <- max(800, 120 * n_clusters)
+  if (plot_format == "pdf") {
+    pdf(heatmap_path)
+  } else {
     png(heatmap_path, width = 1600, height = heatmap_h, res = 150)
+  }
     print(heatmap_plot)
     dev.off()
   }, error = function(e) {
@@ -1053,6 +1090,7 @@ function(req) {
   body <- jsonlite::fromJSON(req$postBody)
   project_path <- body$project_path
   params <- body$params
+  plot_format <- params$plot_format %||% "png"
   task_id <- params$task_id
   report <- create_progress_reporter(task_id)
 
@@ -1093,9 +1131,13 @@ function(req) {
     calc_h <- max(1200, n_rows * 55 + 200)
     calc_w <- 2000
   }
-  plot_archive <- make_output_name(project_path, "6", "enrich", paste0(pathway, "_", direction), "png")
+  plot_archive <- make_output_name(project_path, "6", "enrich", paste0(pathway, "_", direction), plot_format)
   plot_path <- file.path(project_path, plot_archive)
-  png(plot_path, width = calc_w, height = calc_h, res = 150)
+if (plot_format == "pdf") {
+    pdf(plot_path)
+  } else {
+    png(plot_path, width = calc_w, height = calc_h, res = 150)
+  }
   # GSEA 的 create_gsea_plots 返回 grob (gridExtra::grid.arrange)
   # GO/KEGG 返回 ggplot — 需要不同的输出方式
   if (inherits(result$plot, "grob") || inherits(result$plot, "gtable")) {
@@ -1151,6 +1193,7 @@ function(req) {
   body <- jsonlite::fromJSON(req$postBody)
   project_path <- body$project_path
   params <- body$params
+  plot_format <- params$plot_format %||% "png"
   task_id <- params$task_id
   report <- create_progress_reporter(task_id)
 
@@ -1206,18 +1249,26 @@ function(req) {
     result <- my_distPlot9(pro, cl, min_pct, logfc, test_use, only_pos, ntop, custom_genes)
 
     # FeaturePlot
-    feature_archive <- make_output_name(project_path, "7", "plot_markers", paste0("feature_", cl), "png")
+    feature_archive <- make_output_name(project_path, "7", "plot_markers", paste0("feature_", cl), plot_format)
     plot_path_feature <- file.path(project_path, feature_archive)
+  if (plot_format == "pdf") {
+    pdf(plot_path_feature)
+  } else {
     png(plot_path_feature, width = 1600, height = calc_height, res = 150)
+  }
     print(result$feature)
     dev.off()
     # 创建固定名称副本，供前端用 canonical name 访问
     file.copy(plot_path_feature, file.path(project_path, paste0("plot_markers_feature_", cl, ".png")), overwrite = TRUE)
 
     # VlnPlot
-    vln_archive <- make_output_name(project_path, "7", "plot_markers", paste0("vln_", cl), "png")
+    vln_archive <- make_output_name(project_path, "7", "plot_markers", paste0("vln_", cl), plot_format)
     plot_path_vln <- file.path(project_path, vln_archive)
+  if (plot_format == "pdf") {
+    pdf(plot_path_vln)
+  } else {
     png(plot_path_vln, width = 1600, height = calc_height, res = 150)
+  }
     print(result$vln)
     dev.off()
     file.copy(plot_path_vln, file.path(project_path, paste0("plot_markers_vln_", cl, ".png")), overwrite = TRUE)
@@ -1323,6 +1374,7 @@ function(req) {
   body <- jsonlite::fromJSON(req$postBody)
   project_path <- body$project_path
   params <- body$params
+  plot_format <- params$plot_format %||% "png"
   task_id <- params$task_id
   report <- create_progress_reporter(task_id)
 
@@ -1412,10 +1464,14 @@ function(req) {
 
     # 生成组合图 (FeaturePlot / VlnPlot patchwork)
     plot_name <- paste0("plot_marker_expr_",
-                        gsub("[^a-zA-Z0-9_]", "_", cell_type), ".png")
+                        gsub("[^a-zA-Z0-9_]", "_", cell_type), ".", plot_format)
     plot_path <- file.path(project_path, plot_name)
 
+  if (plot_format == "pdf") {
+    pdf(plot_path)
+  } else {
     png(plot_path, width = calc_width, height = calc_height, res = 150)
+  }
     print(my_distPlot11(pro, mkfs, cell_type))
     dev.off()
 
@@ -1423,7 +1479,7 @@ function(req) {
 
     # 归档副本
     archive_name <- make_output_name(project_path, "7", "marker_expr",
-                                     cell_type, "png")
+                                     cell_type, plot_format)
     archive_path <- file.path(project_path, archive_name)
     file.copy(plot_path, archive_path, overwrite = TRUE)
 
@@ -1464,6 +1520,7 @@ function(req) {
   body <- jsonlite::fromJSON(req$postBody)
   project_path <- body$project_path
   params <- body$params
+  plot_format <- params$plot_format %||% "png"
   task_id <- params$task_id
   report <- create_progress_reporter(task_id)
 
@@ -1598,6 +1655,7 @@ function(req) {
   body <- jsonlite::fromJSON(req$postBody)
   project_path <- body$project_path
   params <- body$params
+  plot_format <- params$plot_format %||% "png"
   task_id <- params$task_id
   report <- create_progress_reporter(task_id)
 
@@ -1629,9 +1687,13 @@ function(req) {
   report(70, "生成注释图...")
 
   # 双命名：UMAP 注释图
-  umap_archive <- make_output_name(project_path, "8", "annotate", "umap", "png")
+  umap_archive <- make_output_name(project_path, "8", "annotate", "umap", plot_format)
   plot_path <- file.path(project_path, umap_archive)
-  png(plot_path, width = 1400, height = 800, res = 150)
+if (plot_format == "pdf") {
+    pdf(plot_path)
+  } else {
+    png(plot_path, width = 1400, height = 800, res = 150)
+  }
   print(DimPlot(pro, reduction = 'umap', group.by = 'CellType',
                 label = T, cols = clusterCols, repel = T))
   dev.off()
@@ -1711,6 +1773,7 @@ function(req) {
   body <- jsonlite::fromJSON(req$postBody)
   project_path <- body$project_path
   params <- body$params
+  plot_format <- params$plot_format %||% "png"
   task_id <- params$task_id
   report <- create_progress_reporter(task_id)
 
@@ -2277,6 +2340,7 @@ function(req) {
   body <- jsonlite::fromJSON(req$postBody)
   project_path <- body$project_path
   params <- body$params
+  plot_format <- params$plot_format %||% "png"
   task_id <- params$task_id
   report <- create_progress_reporter(task_id)
 
@@ -2316,10 +2380,14 @@ function(req) {
 
   for (i in seq_along(plot_keys)) {
     if (!is.null(result[[plot_keys[i]]])) {
-      fname <- make_output_name(project_path, "9", "monocle", plot_names[i], "png")
+      fname <- make_output_name(project_path, "9", "monocle", plot_names[i], plot_format)
       fpath <- file.path(project_path, fname)
       tryCatch({
-        png(fpath, width = 1400, height = 800, res = 150)
+      if (plot_format == "pdf") {
+    pdf(fpath)
+  } else {
+    png(fpath, width = 1400, height = 800, res = 150)
+  }
         if (inherits(result[[plot_keys[i]]], "Heatmap")) {
           draw(result[[plot_keys[i]]])
         } else {
@@ -2385,6 +2453,7 @@ function(req) {
   body <- jsonlite::fromJSON(req$postBody)
   project_path <- body$project_path
   params <- body$params
+  plot_format <- params$plot_format %||% "png"
   task_id <- params$task_id
   report <- create_progress_reporter(task_id)
   suppressMessages(library(ComplexHeatmap))
@@ -2424,18 +2493,26 @@ function(req) {
   if (!is.null(result$cellchat)) {
     cellchat <- result$cellchat
     tryCatch({
-      fname <- make_output_name(project_path, "10", "cellchat", "net_number", "png")
+      fname <- make_output_name(project_path, "10", "cellchat", "net_number", plot_format)
       fpath <- file.path(project_path, fname)
-      png(fpath, width = 1400, height = 700, res = 150)
+    if (plot_format == "pdf") {
+    pdf(fpath)
+  } else {
+    png(fpath, width = 1400, height = 700, res = 150)
+  }
       netVisual_circle(cellchat@net$count, vertex.weight = groupSize, weight.scale = T,
                        label.edge = F, title.name = "Number of interactions")
       dev.off()
       plot_paths$net_number <- fpath
     }, error = function(e) { dev.off(); message(paste0("Plot save error (net_number): ", e$message)) })
     tryCatch({
-      fname <- make_output_name(project_path, "10", "cellchat", "net_strength", "png")
+      fname <- make_output_name(project_path, "10", "cellchat", "net_strength", plot_format)
       fpath <- file.path(project_path, fname)
-      png(fpath, width = 1400, height = 700, res = 150)
+    if (plot_format == "pdf") {
+    pdf(fpath)
+  } else {
+    png(fpath, width = 1400, height = 700, res = 150)
+  }
       netVisual_circle(cellchat@net$weight, vertex.weight = groupSize, weight.scale = T,
                        label.edge = F, title.name = "Interaction weights/strength")
       dev.off()
@@ -2445,10 +2522,14 @@ function(req) {
 
   for (cfg in plot_configs) {
     if (!is.null(result[[cfg$key]])) {
-      fname <- make_output_name(project_path, "10", "cellchat", cfg$name, "png")
+      fname <- make_output_name(project_path, "10", "cellchat", cfg$name, plot_format)
       fpath <- file.path(project_path, fname)
       tryCatch({
-        png(fpath, width = cfg$w, height = cfg$h, res = 150)
+      if (plot_format == "pdf") {
+    pdf(fpath)
+  } else {
+    png(fpath, width = cfg$w, height = cfg$h, res = 150)
+  }
         if (inherits(result[[cfg$key]], "Heatmap")) {
           draw(result[[cfg$key]])
         } else {
@@ -2465,7 +2546,7 @@ function(req) {
 
   # 保存气泡图（ggplot 对象用 ggsave）
   if (!is.null(result$f1)) {
-    fname <- make_output_name(project_path, "10", "cellchat", "bubble", "png")
+    fname <- make_output_name(project_path, "10", "cellchat", "bubble", plot_format)
     fpath <- file.path(project_path, fname)
     tryCatch({
       ggsave(fpath, plot = result$f1, width = 10, height = 8, dpi = 150)
@@ -2516,6 +2597,7 @@ function(req) {
   body <- jsonlite::fromJSON(req$postBody)
   project_path <- body$project_path
   params <- body$params
+  plot_format <- params$plot_format %||% "png"
   task_id <- params$task_id
   report <- create_progress_reporter(task_id)
 
@@ -2594,6 +2676,7 @@ function(req) {
   body <- jsonlite::fromJSON(req$postBody)
   project_path <- body$project_path
   params <- body$params
+  plot_format <- params$plot_format %||% "png"
   task_id <- params$task_id
   report <- create_progress_reporter(task_id)
 
@@ -2656,7 +2739,9 @@ function(req) {
         n_hubs = n_hubs,
         n_genes_score = n_genes_score,
         progress_callback = function(pct, msg) {
-          report(round(idx/n_types * 100), paste0("[", ct, "] ", msg))
+          base_pct <- round((idx - 1) / n_types * 100)
+          overall_pct <- min(base_pct + round(pct / n_types), 100)
+          report(overall_pct, paste0("[", ct, "] ", msg))
         }
       )
     }, error = function(e) {
@@ -2667,11 +2752,20 @@ function(req) {
     if (!is.null(result)) {
       output_files <- list.files(outdir, full.names = TRUE)
       for (f in output_files) {
-        fname <- paste0(ct, "_", basename(f))
-        if (grepl("\\.png$", fname)) {
-          all_plot_paths[[fname]] <- f
+        bname <- basename(f)
+        suffix <- gsub("\\.(png|pdf|csv|rds)$", "", paste0(ct, "_", bname))
+        suffix <- gsub("[^a-zA-Z0-9_.-]", "_", suffix)
+        ext <- if (grepl("\\.png$", f)) "png"
+               else if (grepl("\\.pdf$", f)) "pdf"
+               else if (grepl("\\.csv$", f)) "csv"
+               else "rds"
+        fname <- make_output_name(project_path, "12", "wgcna", suffix, ext)
+        fname_full <- file.path(project_path, fname)
+        file.copy(f, fname_full, overwrite = TRUE)
+        if (grepl("\\.(png|pdf)$", fname)) {
+          all_plot_paths[[fname]] <- fname_full
         } else if (grepl("\\.(csv|rds)$", fname)) {
-          all_data_paths[[fname]] <- f
+          all_data_paths[[fname]] <- fname_full
         }
       }
       all_stats[[ct]] <- list(
@@ -2686,6 +2780,29 @@ function(req) {
     }
   }
 
+
+  # hdWGCNA always generates PNG internally.
+  # When user selects PDF, convert each PNG to a real PDF file.
+  if (plot_format == "pdf") {
+    library(png)
+    report(98, "Converting PNG charts to PDF...")
+    for (fname in names(all_plot_paths)) {
+      png_path <- all_plot_paths[[fname]]
+      if (grepl("[.]png$", png_path)) {
+        pdf_path <- sub("[.]png$", ".pdf", png_path)
+        img <- tryCatch(readPNG(png_path), error = function(e) NULL)
+        if (!is.null(img)) {
+          pdf(pdf_path)
+          grid::grid.raster(img)
+          dev.off()
+          pdf_fname <- sub("[.]png$", ".pdf", fname)
+          all_plot_paths[[pdf_fname]] <- pdf_path
+          all_plot_paths[[fname]] <- NULL
+          file.remove(png_path)
+        }
+      }
+    }
+  }
   setwd(old_wd)
   report(100, paste0("WGCNA 完成: ", sum(sapply(all_stats, function(x) !is.null(x))), "/", n_types))
 

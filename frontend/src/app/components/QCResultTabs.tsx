@@ -65,6 +65,7 @@ interface QCResult {
   umi_gene_after: UmiRow[];
   /** R 引擎生成的样本相关性散点图路径 */
   corr_plot_path?: string | string[];
+  corr_download_path?: string | string[];
   /** 散点原始数据（用于 WebGL 渲染） */
   corr_scatter_data?: {
     nCount_RNA?: number[];
@@ -76,6 +77,7 @@ interface QCResult {
   };
   /** R 引擎生成的过滤前后 VlnPlot 路径 */
   violin_plot_path?: string | string[];
+  violin_download_path?: string | string[];
   /** QC 后 RDS 的归档路径 */
   result_path?: string | string[];
   /** 线粒体统计 CSV 路径 */
@@ -99,6 +101,13 @@ function safeString(v: unknown): string | null {
 }
 
 /** 从 plot_path 提取文件名，构造 /api/tasks/{id}/plot?name= URL */
+function pdfUrl(plotPath: unknown): string | null {
+  const p = safeString(plotPath);
+  if (!p) return null;
+  const name = p.split("/").pop();
+  if (!name) return null;
+  return name.replace(/\.png$/, ".pdf");
+}
 function plotUrl(taskId: string, plotPath: unknown): string | null {
   const p = safeString(plotPath);
   if (!p) return null;
@@ -121,6 +130,7 @@ function AuthImg({ src, alt, token, className, style }: {
 }) {
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
+  const [isPdf, setIsPdf] = useState(false);
 
   useEffect(() => {
     if (!src) return;
@@ -128,14 +138,17 @@ function AuthImg({ src, alt, token, className, style }: {
     setFailed(false);
     setBlobUrl(null);
     fetch(src, { headers: { Authorization: `Bearer ${token}` } })
-      .then((r) => { if (!r.ok) throw new Error(`${r.status}`); return r.blob(); })
-      .then((blob) => { objectUrl = URL.createObjectURL(blob); setBlobUrl(objectUrl); })
+      .then((r) => { if (!r.ok) throw new Error(`${r.status}`); const ct = r.headers.get("content-type") || ""; return r.blob().then(blob => ({ blob, isPdf: ct.includes("pdf") })); })
+      .then(({ blob, isPdf: pdf }) => { const url = URL.createObjectURL(blob); setBlobUrl(url); setIsPdf(pdf); })
       .catch(() => setFailed(true));
     return () => { if (objectUrl) URL.revokeObjectURL(objectUrl); };
   }, [src, token]);
 
   if (!src || failed) return <div className="callout text-xs py-6 text-center" style={{ color: "var(--clr-text-faint)" }}>图片暂不可用</div>;
   if (!blobUrl) return <div className="flex justify-center py-8"><div className="w-5 h-5 border-2 rounded-full border-t-transparent animate-spin" style={{ borderColor: "var(--clr-amber)", borderTopColor: "transparent" }} /></div>;
+  if (isPdf) {
+    return <embed src={blobUrl} type="application/pdf" className={className} style={{ ...style, width: "100%", minHeight: 600 }} />;
+  }
   // eslint-disable-next-line @next/next/no-img-element
   return <img src={blobUrl} alt={alt} className={className} style={style} />;
 }
@@ -323,7 +336,7 @@ function CorrTab({ data, taskId, token, onDownload }: { data: QCResult; taskId: 
         <span>样本间 nCount_RNA / nFeature_RNA / percent.mt 相关性散点图。</span>
         <button
           style={{ background: "none", border: "none", cursor: "pointer", padding: "4px", flexShrink: 0, color: "var(--clr-amber)", transition: "color 0.2s" }}
-          onClick={() => onDownload(data.corr_plot_path, "qc_correlation.png")}
+          onClick={() => { const dp = data.corr_download_path || data.corr_plot_path; const fn = (typeof dp === "string" ? dp : Array.isArray(dp) ? dp[0] : "").replace(/\.png$/, ".pdf"); onDownload(dp, fn.endsWith(".pdf") ? "qc_correlation.pdf" : "qc_correlation.png"); }}
           title="下载 R 原版高清图"
           onMouseEnter={(e) => (e.currentTarget.style.color = "var(--clr-amber-dark)")}
           onMouseLeave={(e) => (e.currentTarget.style.color = "var(--clr-amber)")}
@@ -385,7 +398,7 @@ function SampleQCTab({ data, taskId, token, onDownload }: { data: QCResult; task
         <span><strong>过滤前（上）/ 过滤后（下）</strong> nCount_RNA / nFeature_RNA / percent.mt 对比。</span>
         <button
           style={{ background: "none", border: "none", cursor: "pointer", padding: "4px", flexShrink: 0, color: "var(--clr-amber)", transition: "color 0.2s" }}
-          onClick={() => onDownload(data.violin_plot_path, "qc_violin.png")}
+          onClick={() => { const dp = data.violin_download_path || data.violin_plot_path; const fn = (typeof dp === "string" ? dp : Array.isArray(dp) ? dp[0] : "").replace(/\.png$/, ".pdf"); onDownload(dp, fn.endsWith(".pdf") ? "qc_violin.pdf" : "qc_violin.png"); }}
           title="下载小提琴图"
           onMouseEnter={(e) => (e.currentTarget.style.color = "var(--clr-amber-dark)")}
           onMouseLeave={(e) => (e.currentTarget.style.color = "var(--clr-amber)")}

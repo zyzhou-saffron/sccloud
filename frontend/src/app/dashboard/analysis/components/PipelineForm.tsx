@@ -33,13 +33,13 @@ interface PipelineFormProps {
 }
 
 const DEFAULT_PARAMS: Record<string, Record<string, unknown>> = {
-  qc: { max_mt_ratio: 20, min_features: 200, max_features: 5000, umi_min_pct: 0, umi_max_pct: 1 },
-  normalize: {},
-  reduce: { method: "umap", n_pcs: 30, group_by: "Sample" },
-  cluster: { method: "harmony", resolution: 0.5, n_dims: 30, group_by: "Sample" },
-  markers: { cluster: "All", min_pct: 0.1, logfc_threshold: 0.25, p_val_adj: 0.05, test_use: "wilcox", only_pos: true, ntop: 5 },
-  annotate: { anno_type: "自动注释", group_by: "Sample", species: "Human", tissue: "Blood" },
-  wgcna: { interest_type: "", min_fraction: 0.05, sft_threshold: 0.8, module_score: "Seurat", k: 25, max_shared: 10, min_cells: 100, n_hubs: 10, n_genes_score: 25 },
+  qc: { max_mt_ratio: 20, min_features: 200, max_features: 5000, umi_min_pct: 0, umi_max_pct: 1, plot_format: "png" },
+  normalize: { plot_format: "png" },
+  reduce: { method: "umap", n_pcs: 30, group_by: "Sample", plot_format: "png" },
+  cluster: { method: "harmony", resolution: 0.5, n_dims: 30, group_by: "Sample", plot_format: "png" },
+  markers: { cluster: "All", min_pct: 0.1, logfc_threshold: 0.25, p_val_adj: 0.05, test_use: "wilcox", only_pos: true, ntop: 5, plot_format: "png" },
+  annotate: { anno_type: "自动注释", group_by: "Sample", species: "Human", tissue: "Blood", plot_format: "png" },
+  wgcna: { interest_type: "", min_fraction: 0.05, sft_threshold: 0.8, module_score: "Seurat", k: 25, max_shared: 10, min_cells: 100, n_hubs: 10, n_genes_score: 25, plot_format: "png" },
 };
 
 const STEP_LABELS: Record<string, string> = {
@@ -708,6 +708,16 @@ export default function PipelineForm({ projectId, token, onSubmit, uploadedFiles
               </div>
             </div>
           </div>
+        </div>
+
+        {/* 图片格式选择 */}
+        <div className="flex items-center gap-2 px-3 py-2 rounded text-xs" style={{ background: "rgba(200,96,25,0.04)", border: "1px solid rgba(200,96,25,0.15)" }}>
+          <span style={{ color: "var(--clr-text-muted)" }}>图片格式:</span>
+          <select value={(params.qc.plot_format as string) || "png"} onChange={(e) => { const v = e.target.value; setParams(prev => { const next = {...prev}; Object.keys(next).forEach(k => { next[k] = {...next[k], plot_format: v}; }); return next; }); }} style={{ border: "1px solid var(--clr-border)", borderRadius: 4, padding: "2px 6px", fontSize: 12, background: "white", color: "var(--clr-text)" }}>
+            <option value="png">PNG (默认)</option>
+            <option value="pdf">PDF</option>
+          </select>
+          <span style={{ color: "var(--clr-text-faint)", fontSize: 10 }}>不选默认PNG</span>
         </div>
 
         {/* 提示 */}

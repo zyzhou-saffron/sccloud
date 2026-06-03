@@ -188,7 +188,7 @@ async def download_project(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Download all project files as a ZIP archive."""
+    """Download all project files as a ZIP archive, organized by analysis step."""
     import zipfile
     import tempfile
 
@@ -207,16 +207,49 @@ async def download_project(
     timestamp = datetime.now().strftime("%Y%m%d")
     zip_name = f"{project.name}-{timestamp}.zip"
 
+    STEP_DIR = {
+        "qc": "1_Data_Preprocessing", "normalize": "1_Data_Preprocessing",
+        "reduce": "2_DimRed_Cluster", "cluster": "2_DimRed_Cluster",
+        "markers": "3_Differential_Genes", "marker": "3_Differential_Genes",
+        "annotate": "4_Cell_Annotation",
+        "enrich": "5_Pathway_Enrichment", "monocle": "6_Trajectory",
+        "cellchat": "7_CellChat", "infercnv": "8_inferCNV",
+        "wgcna": "9_WGCNA",
+    }
+    KNOWN_STEPS = list(STEP_DIR.keys())
+
+    def get_step(filename):
+        parts = filename.rsplit(".", 1)[0].split("_")
+        for p in parts:
+            if p in KNOWN_STEPS:
+                return p
+        if filename.endswith("_result.json"):
+            s = filename.replace("_result.json", "")
+            if s in KNOWN_STEPS:
+                return s
+        return None
+
+    # 收集所有文件，同名文件只保留最新修改时间
+    file_map = {}
+    for root, dirs, files in os.walk(project_dir):
+        dirs[:] = [d for d in dirs if d not in ("tasks", "__pycache__")]
+        for f in files:
+            file_path = os.path.join(root, f)
+            mtime = os.path.getmtime(file_path)
+            prev = file_map.get(f)
+            if prev is None or mtime > prev[0]:
+                file_map[f] = (mtime, file_path)
+
     tmp_path = os.path.join(tempfile.gettempdir(), f"sccloud_{project_id}_{timestamp}.zip")
     with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        for root, dirs, files in os.walk(project_dir):
-            for f in files:
-                file_path = os.path.join(root, f)
-                arcname = os.path.relpath(file_path, project_dir)
-                try:
-                    zf.write(file_path, arcname)
-                except OSError:
-                    pass
+        for filename, (mtime, file_path) in sorted(file_map.items()):
+            step = get_step(filename)
+            folder = os.path.join(project.name, STEP_DIR.get(step, "_Other")) if step else os.path.join(project.name, "_Other")
+            arc = os.path.join(folder, filename)
+            try:
+                zf.write(file_path, arc)
+            except OSError:
+                pass
 
     background_tasks.add_task(os.unlink, tmp_path)
     return FileResponse(
@@ -224,8 +257,6 @@ async def download_project(
         media_type="application/zip",
         filename=zip_name,
     )
-
-
 @router.get("/{project_id}/genes")
 async def get_project_genes(
     project_id: int,

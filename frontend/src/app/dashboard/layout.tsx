@@ -30,6 +30,7 @@ export default function DashboardLayout({
   const pathname = usePathname();
   const [username, setUsername] = useState("");
   const [guest, setGuest] = useState(false);
+  const [quotaInfo, setQuotaInfo] = useState({ total: 0, used: 0 });
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
@@ -44,6 +45,14 @@ export default function DashboardLayout({
     }
     setUsername(name || "用户");
     setGuest(isGuest());
+    // 获取操作配额
+    const token2 = localStorage.getItem("access_token");
+    if (token2) {
+      fetch("/api/auth/me", { headers: { Authorization: "Bearer " + token2 } })
+        .then(r => r.json())
+        .then(d => { if (d.total_quota !== undefined) setQuotaInfo({ total: d.total_quota, used: d.used_quota }); })
+        .catch(() => {});
+    }
     const role = localStorage.getItem("role") || "user";
     setNavItems(role === "admin" ? [...NAV_ITEMS, ADMIN_NAV_ITEM] : NAV_ITEMS);
     if (pathname === "/dashboard") {
@@ -171,6 +180,11 @@ export default function DashboardLayout({
                       <p className="text-[10px] mt-0.5" style={{ color: "var(--clr-text-faint)" }}>
                         {localStorage.getItem("role") === "admin" ? "管理员" : "普通用户"}
                       </p>
+                      {quotaInfo.total > 0 && (
+                        <p className="text-[10px] mt-0.5" style={{ color: "var(--clr-amber-dark)" }}>
+                          剩余上传: {Math.max(0, quotaInfo.total - quotaInfo.used)} / {quotaInfo.total} 次
+                        </p>
+                      )}
                     </div>
                     <button
                       onClick={() => { setUserDropdownOpen(false); router.push("/dashboard/settings"); }}

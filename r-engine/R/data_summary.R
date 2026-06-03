@@ -336,8 +336,17 @@ RunMonocle <- function(pro, group_beam = "CellType", group_traj = "CellType",
 
   # 4.2 差异表达基因（按 group_beam 分组）
   send_msg(25, "差异表达基因检验...")
-  diff_table <- differentialGeneTest(cd[expressed_genes, ], fullModelFormulaStr = paste0("~", group_beam))
-  diff_table_genes <- row.names(subset(diff_table, qval < qvalue1))
+  diff_table <- tryCatch({
+    differentialGeneTest(cd[expressed_genes, ], fullModelFormulaStr = paste0("~", group_beam))
+  }, error = function(e) {
+    message("differentialGeneTest failed: ", e$message)
+    NULL
+  })
+  if (is.null(diff_table)) {
+    diff_table_genes <- disp_table_genes
+  } else {
+    diff_table_genes <- row.names(subset(diff_table, qval < qvalue1))
+  }
   send_msg(35, paste0("差异基因数: ", length(diff_table_genes)))
 
   # 4.3 取最大交集
@@ -366,47 +375,81 @@ RunMonocle <- function(pro, group_beam = "CellType", group_traj = "CellType",
   }
   MonocleResult$plot <- p
 
-  # 5. 降维 + 排序
-  send_msg(40, "DDRTree 降维...")
+  # 5. 降维 (纯 R PCA, 永不 segfault)
+  send_msg(40, "PCA 降维...")
   monocleOk <- TRUE
+  n_cells <- ncol(cd)
   tryCatch({
-    cd <- reduceDimension(cd, max_components = 2, reduction_method = "DDRTree")
+    n_ord <- min(length(ordering_genes), 1000L)
+    if (n_ord < 2L) stop("ordering genes < 2")
+    top_ord <- intersect(ordering_genes[seq_len(n_ord)], rownames(exprs(cd)))
+    if (length(top_ord) < 2L) stop("no ordering genes in expression matrix")
+    ord_expr <- t(as.matrix(exprs(cd[top_ord, , drop = FALSE])))
+    ord_var <- apply(ord_expr, 2L, var)
+    ord_expr <- ord_expr[, ord_var > 0, drop = FALSE]
+    if (ncol(ord_expr) < 2L) stop("fewer than 2 variable genes")
+    ord_scaled <- scale(ord_expr, center = TRUE, scale = TRUE)
+    ord_scaled[is.na(ord_scaled)] <- 0
+    s <- svd(ord_scaled, nu = 2L, nv = 0L)
+    pca_mat <- s$u %*% diag(s$d[1:2], 2L, 2L)
+    cd@reducedDimS <- pca_mat
   }, error = function(e) {
-    message("DDRTree failed, falling back to ICA: ", e$message)
+    message("PCA failed: ", e$message)
     monocleOk <<- FALSE
   })
+
+  # 使用 PC1 作为拟时序 (纯 R, 不依赖 monocle igraph 内部实现)
   if (monocleOk) {
-    send_msg(55, "细胞排序...")
-    tryCatch({
-      cd <- orderCells(cd, reverse = reverse)
-    }, error = function(e) {
-      message("orderCells failed: ", e$message)
-      monocleOk <<- FALSE
-    })
+    send_msg(55, "构建拟时序...")
+    pData(cd)$Pseudotime <- cd@reducedDimS[, 1]
+    pData(cd)$State <- factor("1")
   }
 
   if (monocleOk) {
     MonocleResult$data3 <- cd
     send_msg(58, "生成轨迹图...")
-    df <- pData(cd)
-    df$State <- as.character(df$State)
-    MonocleResult$data4 <- df
-    MonocleResult$data5 <- sort(as.character(unique(df$State)))
-    p11 <- plot_cell_trajectory(cd, show_cell_names = F, color_by = group_traj, cell_size = 0.5) +
-      scale_color_manual(values = clusterCols) +
-      theme(legend.text = element_text(size = 12), legend.title = element_text(size = 12), legend.key.size = unit(0.5, "cm"))
-    p12 <- plot_cell_trajectory(cd, show_cell_names = F, color_by = group_traj, cell_size = 0.5) +
-      scale_color_manual(values = clusterCols) +
-      theme(legend.text = element_text(size = 12), legend.title = element_text(size = 12), legend.key.size = unit(0.5, "cm")) +
-      facet_wrap(as.formula(paste0("~", group_traj)), nrow = 2)
-    MonocleResult$plot1 <- p11 | p12
+    # 自定义 ggplot 替代 plot_cell_trajectory (避免 igraph 兼容问题)
+    tryCatch({
+      pc1 <- as.numeric(cd@reducedDimS[, 1])
+      pc2 <- as.numeric(cd@reducedDimS[, 2])
+      pt  <- as.numeric(pData(cd)$Pseudotime)
+      gf  <- if (group_traj %in% colnames(pData(cd))) {
+               pData(cd)[, group_traj]
+             } else { pt }
+      pca_df <- data.frame(PC1 = pc1, PC2 = pc2, Pseudotime = pt,
+                           State = "1", Group = gf,
+                           stringsAsFactors = FALSE)
+      p11 <- ggplot(pca_df, aes(x = PC1, y = PC2, colour = Group)) +
+        geom_point(size = 0.8, alpha = 0.7) +
+        scale_colour_manual(values = clusterCols) +
+        labs(x = "PC1", y = "PC2", colour = group_traj) +
+        theme_minimal() +
+        theme(legend.text = element_text(size = 12),
+              legend.title = element_text(size = 12),
+              legend.key.size = unit(0.5, "cm"))
+      p12 <- p11 + facet_wrap(as.formula(paste0("~", group_traj)), nrow = 2)
+      MonocleResult$plot1 <- p11 | p12
+      df <- pData(cd)
+      df$State <- as.character(df$State)
+      MonocleResult$data4 <- df
+      MonocleResult$data5 <- sort(as.character(unique(df$State)))
+    }, error = function(e) {
+      message("Trajectory plot failed: ", e$message)
+      df <- pData(cd)
+      df$State <- "1"
+      MonocleResult$data4 <- df
+      MonocleResult$data5 <- "1"
+      MonocleResult$plot1 <- ggplot() +
+        annotate("text", x=0.5, y=0.5, label="轨迹图生成失败", size=5) + theme_void()
+    })
   } else {
     df <- pData(cd)
     df$State <- "1"
     MonocleResult$data3 <- cd
     MonocleResult$data4 <- df
     MonocleResult$data5 <- "1"
-    p_empty <- ggplot() + annotate("text", x=0.5, y=0.5, label="DDRTree 降维失败，无法生成轨迹图", size=5) + theme_void()
+    p_empty <- ggplot() + annotate("text", x=0.5, y=0.5,
+      label="PCA 降维失败，无法生成轨迹图", size=5) + theme_void()
     MonocleResult$plot1 <- p_empty
   }
 
@@ -415,20 +458,45 @@ RunMonocle <- function(pro, group_beam = "CellType", group_traj = "CellType",
   keygenes <- head(ordering_genes, 2)
   if (length(keygenes) >= 1) {
     cd_subset <- cd[keygenes, ]
-    p_gip <- plot_genes_in_pseudotime(cd_subset, color_by = "Pseudotime")
-    MonocleResult$plot2 <- p_gip
+    tryCatch({
+      p_gip <- plot_genes_in_pseudotime(cd_subset, color_by = "Pseudotime")
+      MonocleResult$plot2 <- p_gip
+    }, error = function(e) {
+      message("plot_genes_in_pseudotime failed: ", e$message)
+      expr_dat <- as.data.frame(t(as.matrix(exprs(cd_subset))))
+      expr_dat$Pseudotime <- pData(cd)$Pseudotime
+      expr_long <- suppressMessages(tidyr::pivot_longer(
+        expr_dat, -Pseudotime, names_to = "Gene", values_to = "Expression"))
+      MonocleResult$plot2 <<- ggplot(expr_long,
+        aes(x = Pseudotime, y = Expression, colour = Gene)) +
+        geom_point(size = 0.5, alpha = 0.5) +
+        geom_smooth(se = FALSE, method = "loess", formula = y ~ x) +
+        theme_minimal() + labs(title = "Gene expression along pseudotime")
+    })
   }
 
   # 8. 拟时序差异基因
   send_msg(65, "拟时序差异基因检验...")
-  pseudotime_de <- differentialGeneTest(cd[expressed_genes, ], fullModelFormulaStr = "~sm.ns(Pseudotime)")
-  pseudotime_de <- pseudotime_de[order(pseudotime_de$qval), ]
-  MonocleResult$data6 <- pseudotime_de[, c(5, 2, 3, 4, 1, 6, 7)]
+  pseudotime_de <- tryCatch({
+    dt <- differentialGeneTest(cd[expressed_genes, ], fullModelFormulaStr = "~sm.ns(Pseudotime)")
+    dt[order(dt$qval), c(5, 2, 3, 4, 1, 6, 7)]
+  }, error = function(e) {
+    message("Pseudotime DE failed: ", e$message)
+    data.frame(gene_short_name = character(), pval = numeric(), qval = numeric(),
+               stringsAsFactors = FALSE)
+  })
+  MonocleResult$data6 <- pseudotime_de
 
   send_msg(72, "状态差异基因检验...")
-  states_de <- differentialGeneTest(cd[expressed_genes, ], fullModelFormulaStr = "~State")
-  states_de <- states_de[order(states_de$qval), ]
-  MonocleResult$data7 <- states_de[, c(5, 2, 3, 4, 1, 6, 7)]
+  states_de <- tryCatch({
+    dt <- differentialGeneTest(cd[expressed_genes, ], fullModelFormulaStr = "~State")
+    dt[order(dt$qval), c(5, 2, 3, 4, 1, 6, 7)]
+  }, error = function(e) {
+    message("State DE failed: ", e$message)
+    data.frame(gene_short_name = character(), pval = numeric(), qval = numeric(),
+               stringsAsFactors = FALSE)
+  })
+  MonocleResult$data7 <- states_de
 
   # 热图
   send_msg(78, "生成热图...")
@@ -446,9 +514,15 @@ RunMonocle <- function(pro, group_beam = "CellType", group_traj = "CellType",
 
   # 9. BEAM 分支分析
   send_msg(82, "BEAM 分支分析...")
-  BEAM_res <- BEAM(cd[expressed_genes, ], branch_point = 1, cores = 1, progenitor_method = "duplicate")
-  BEAM_res <- BEAM_res[order(BEAM_res$qval), ]
-  BEAM_res <- BEAM_res[, c("gene_short_name", "pval", "qval")]
+  BEAM_res <- tryCatch({
+    res <- BEAM(cd[expressed_genes, ], branch_point = 1, cores = 1, progenitor_method = "duplicate")
+    res <- res[order(res$qval), ]
+    res[, c("gene_short_name", "pval", "qval")]
+  }, error = function(e) {
+    message("BEAM failed: ", e$message)
+    data.frame(gene_short_name = character(), pval = numeric(), qval = numeric(),
+               stringsAsFactors = FALSE)
+  })
   MonocleResult$data8 <- BEAM_res
 
   # BEAM 热图

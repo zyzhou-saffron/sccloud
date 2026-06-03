@@ -47,14 +47,14 @@ const STEPS: StepDef[] = [
 /* ===== 各步骤参数定义 ===== */
 
 const DEFAULT_PARAMS: Record<string, Record<string, unknown>> = {
-  qc: { max_mt_ratio: 20, min_features: 200, max_features: 5000, umi_min_pct: 0, umi_max_pct: 1 },
-  normalize: {},
-  reduce: { method: "umap", n_pcs: 30, group_by: "Sample" },
-  cluster: { method: "harmony", resolution: 0.5, n_dims: 30, group_by: "Sample" },
-  markers: { cluster: "All", min_pct: 0.1, logfc_threshold: 0.25, p_val_adj: 0.05, test_use: "wilcox", only_pos: true, ntop: 5 },
-  enrich: { pathway: "GO", direction: "Up", p_adjust_method: "BH", pvalue_cutoff: 0.05, qvalue_cutoff: 0.2, n_term: 10 },
-  marker_expr: { cell_type: "" },
-  annotate: { anno_type: "自动注释", group_by: "Sample", species: "Human", tissue: "Blood" },
+  qc: { max_mt_ratio: 20, min_features: 200, max_features: 5000, umi_min_pct: 0, umi_max_pct: 1, plot_format: "png" },
+  normalize: { plot_format: "png" },
+  reduce: { method: "umap", n_pcs: 30, group_by: "Sample", plot_format: "png" },
+  cluster: { method: "harmony", resolution: 0.5, n_dims: 30, group_by: "Sample", plot_format: "png" },
+  markers: { cluster: "All", min_pct: 0.1, logfc_threshold: 0.25, p_val_adj: 0.05, test_use: "wilcox", only_pos: true, ntop: 5, plot_format: "png" },
+  enrich: { pathway: "GO", direction: "Up", p_adjust_method: "BH", pvalue_cutoff: 0.05, qvalue_cutoff: 0.2, n_term: 10, plot_format: "png" },
+  marker_expr: { cell_type: "", plot_format: "png" },
+  annotate: { anno_type: "自动注释", group_by: "Sample", species: "Human", tissue: "Blood", plot_format: "png" },
 };
 
 /* ===== 主组件 ===== */
@@ -153,6 +153,7 @@ function AnalysisPageContent() {
 
   // Marker 基因文件上传状态
   const [markerFile, setMarkerFile] = useState<{ name: string; path: string; cellTypes: string[] } | null>(null);
+  const [annoFile, setAnnoFile] = useState<{ name: string; data: Record<string,string>[] } | null>(null);
   const markerInputRef = useRef<HTMLInputElement>(null);
   // Phase A 解析完成标记：结果显示在右侧但不折叠参数面板
   const [markerParseOnly, setMarkerParseOnly] = useState(false);
@@ -374,6 +375,10 @@ function AnalysisPageContent() {
       if (step.id === "marker_expr" && markerFile) {
         finalParams = { ...finalParams, marker_file_path: markerFile.path };
       }
+      // 手动注释：注入 markers_table
+      if (step.id === "annotate" && stepParams.anno_type === "手动注释" && annoFile) {
+        finalParams = { ...finalParams, markers_table: annoFile.data };
+      }
 
       const task = await submitTask({ project_id: project.id, step: step.apiStep, params: finalParams });
       updateTaskCache(step.id, task);
@@ -478,11 +483,57 @@ function AnalysisPageContent() {
         <h1 className="text-2xl font-bold" style={{ fontFamily: "var(--font-serif)", color: "var(--clr-dark-deep)" }}>
           scRNA分析
         </h1>
-        <div className="w-72">
-          <ProjectSelector
-            selectedId={project?.id ?? (initialProjectId ? Number(initialProjectId) : null)}
-            onSelect={handleProjectSelect}
-          />
+        <div className="flex items-center gap-3">
+          {project && (
+            <button
+              onClick={async (e) => {
+                const btn = e.currentTarget;
+                const origHTML = btn.innerHTML;
+                btn.innerHTML = '<span class="w-3 h-3 border-2 border-t-transparent rounded-full animate-spin"></span> 打包中...';
+                btn.disabled = true;
+                try {
+                  const token = localStorage.getItem("access_token") || "";
+                  const res = await fetch(`/api/projects/${project.id}/download`, {
+                    headers: { Authorization: `Bearer ${token}` }
+                  });
+                  if (!res.ok) {
+                    const errText = await res.text();
+                    throw new Error(`HTTP ${res.status}: ${errText.slice(0, 100)}`);
+                  }
+                  const blob = await res.blob();
+                  if (blob.size === 0) throw new Error("打包文件为空，项目可能没有结果文件");
+                  const now = new Date();
+                  const ts = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,"0")}${String(now.getDate()).padStart(2,"0")}`;
+                  const filename = `${project.name}-${ts}.zip`;
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = filename;
+                  document.body.appendChild(a);
+                  a.click();
+                  document.body.removeChild(a);
+                  setTimeout(() => URL.revokeObjectURL(url), 1000);
+                } catch(e) {
+                  alert("打包下载失败: " + (e instanceof Error ? e.message : ""));
+                } finally {
+                  btn.innerHTML = origHTML;
+                  btn.disabled = false;
+                }
+              }}
+              className="inline-flex items-center gap-1 px-3 py-1.5 rounded text-xs font-medium transition-all hover:shadow-sm shrink-0"
+              style={{ border: "1px solid var(--clr-border)", color: "var(--clr-amber-dark)", background: "rgba(200,96,25,0.04)" }}
+              title="打包下载全部分析结果"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              导出项目
+            </button>
+          )}
+          <div className="w-72">
+            <ProjectSelector
+              selectedId={project?.id ?? (initialProjectId ? Number(initialProjectId) : null)}
+              onSelect={handleProjectSelect}
+            />
+          </div>
         </div>
       </div>
 
@@ -540,6 +591,7 @@ function AnalysisPageContent() {
             <PipelineView
               pipelineId={activePipelineId}
               token={localStorage.getItem("access_token") || ""}
+              projectName={project?.name}
             />
           )}
         </div>
@@ -1306,11 +1358,54 @@ function AnalysisPageContent() {
                     <div className="flex gap-4">
                       {["自动注释", "手动注释"].map((v) => (
                         <label key={v} className="flex items-center gap-1 text-sm cursor-pointer" style={{ color: "var(--clr-text)" }}>
-                          <input type="radio" name="anno_type" value={v} checked={stepParams.anno_type === v} onChange={() => updateParam("anno_type", v)} className="accent-[#C86019]" /> {v}
+                          <input type="radio" name="anno_type" value={v} checked={stepParams.anno_type === v} onChange={() => { updateParam("anno_type", v); if (v === "自动注释") setAnnoFile(null); }} className="accent-[#C86019]" /> {v}
                         </label>
                       ))}
                     </div>
                   </div>
+                  {/* 手动注释文件上传 */}
+                  {stepParams.anno_type === "手动注释" && (
+                    <div className="flex items-center gap-3 p-3 rounded-lg" style={{ background: "rgba(200,96,25,0.04)", border: "2px dashed rgba(200,96,25,0.3)" }}>
+                      <div className="flex-1">
+                        <p className="text-xs font-semibold" style={{ color: "var(--clr-amber-dark)" }}>上传注释文件</p>
+                        <p className="text-[11px] mt-0.5" style={{ color: "var(--clr-text-muted)" }}>
+                          CSV/TSV，列名: cluster_id, celltype, markers（gene1|gene2|...）
+                        </p>
+                      </div>
+                      <label className="px-4 py-2 rounded-lg text-xs font-bold text-white cursor-pointer transition-all hover:opacity-90" style={{ background: "linear-gradient(135deg, var(--clr-amber-dark), var(--clr-amber))", boxShadow: "0 2px 8px rgba(200,96,25,0.2)" }}>
+                        {annoFile ? annoFile.name : "选择文件"}
+                        <input type="file" accept=".csv,.tsv,.txt" className="hidden" onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          try {
+                            const text = await file.text();
+                            const lines = text.trim().split("\n").map(function(l) { return l.replace("\r", ""); });
+                            if (lines.length < 2) throw new Error("至少需要表头和数据行");
+                            const sep = lines[0].indexOf("\t") >= 0 ? "\t" : ",";
+                            const headers = lines[0].split(sep).map(function(h) { return h.trim().toLowerCase(); });
+                            const cidIdx = headers.indexOf("cluster_id");
+                            const ctIdx = headers.indexOf("celltype");
+                            const mkIdx = headers.indexOf("markers");
+                            if (cidIdx < 0) throw new Error("缺少 cluster_id 列");
+                            if (ctIdx < 0) throw new Error("缺少 celltype 列");
+                            var data = [];
+                            for (var i = 1; i < lines.length; i++) {
+                              var cols = lines[i].split(sep);
+                              var cid = cols[cidIdx] ? cols[cidIdx].trim() : "";
+                              var ct = cols[ctIdx] ? cols[ctIdx].trim() : "";
+                              var mk = mkIdx >= 0 ? (cols[mkIdx] ? cols[mkIdx].trim() : "") : "";
+                              if (cid && ct) data.push({ Cluster: cid, CellType: ct, Markers: mk });
+                            }
+                            if (data.length === 0) throw new Error("未解析到有效数据");
+                            setAnnoFile({ name: file.name, data: data });
+                          } catch(err) { setError("注释文件解析失败: " + (err instanceof Error ? err.message : "")); }
+                        }} />
+                      </label>
+                      {annoFile && (
+                        <button type="button" onClick={() => setAnnoFile(null)} className="text-xs px-2 py-1 rounded hover:bg-red-50" style={{ color: "var(--clr-text-faint)" }}>✕</button>
+                      )}
+                    </div>
+                  )}
                   <div>
                     <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>分组方式</label>
                     <select value={stepParams.group_by as string} onChange={(e) => updateParam("group_by", e.target.value)} className={selectCls} style={selectStyle}>
@@ -1335,10 +1430,20 @@ function AnalysisPageContent() {
                 };
                 const prereq = PREREQS[step.id];
                 const prereqMissing = prereq && taskCache[prereq.stepId]?.status !== "completed";
+
                 const isDisabled = submitting || !project || (step.id === "qc" && uploadedFiles.length === 0) || (step.id === "marker_expr" && !markerFile) || prereqMissing;
 
                 return (
                   <>
+                    {/* 图片格式选择 */}
+                    <div className="flex items-center gap-2 px-3 py-2 rounded text-xs mb-3" style={{ background: "rgba(200,96,25,0.04)", border: "1px solid rgba(200,96,25,0.15)" }}>
+                      <span style={{ color: "var(--clr-text-muted)" }}>图片格式:</span>
+                      <select value={stepParams.plot_format as string || "png"} onChange={(e) => updateParam("plot_format", e.target.value)} style={{ border: "1px solid var(--clr-border)", borderRadius: 4, padding: "2px 6px", fontSize: 12, background: "white", color: "var(--clr-text)" }}>
+                        <option value="png">PNG (默认)</option>
+                        <option value="pdf">PDF</option>
+                      </select>
+                      <span style={{ color: "var(--clr-text-faint)", fontSize: 10 }}>不选默认PNG</span>
+                    </div>
                     <button
                       onClick={handleSubmit}
                       disabled={isDisabled}
@@ -1410,7 +1515,7 @@ function AnalysisPageContent() {
                 </div>
               )}
 
-              <ResultViewer task={currentTask} stepId={step.id} stepLabel={step.label} StepIcon={step.Icon} taskCache={taskCache} clusterLevels={clusterLevels} />
+              <ResultViewer task={currentTask} stepId={step.id} stepLabel={step.label} StepIcon={step.Icon} taskCache={taskCache} clusterLevels={clusterLevels} projectName={project?.name} />
 
               {/* 底部导航 — 仅在当前步骤有任务时显示 */}
               {hasTaskForStep && (

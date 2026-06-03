@@ -108,6 +108,7 @@ function AuthImg({ src, alt, className, style }: {
 }) {
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [failed, setFailed]   = useState(false);
+  const [isPdf, setIsPdf] = useState(false);
 
   useEffect(() => {
     if (!src) return;
@@ -115,14 +116,17 @@ function AuthImg({ src, alt, className, style }: {
     setFailed(false);
     setBlobUrl(null);
     fetchWithAuth(src)
-      .then((r) => { if (!r.ok) throw new Error(`${r.status}`); return r.blob(); })
-      .then((blob) => { objectUrl = URL.createObjectURL(blob); setBlobUrl(objectUrl); })
+      .then((r) => { if (!r.ok) throw new Error(`${r.status}`); const ct = r.headers.get("content-type") || ""; return r.blob().then(blob => ({ blob, isPdf: ct.includes("pdf") })); })
+      .then(({ blob, isPdf: pdf }) => { objectUrl = URL.createObjectURL(blob); setBlobUrl(objectUrl); setIsPdf(pdf); })
       .catch(() => setFailed(true));
     return () => { if (objectUrl) URL.revokeObjectURL(objectUrl); };
   }, [src]);
 
   if (!src || failed) return <div className="callout text-xs py-6 text-center" style={{ color: "var(--clr-text-faint)" }}>图片暂不可用（请重新运行该步骤）</div>;
   if (!blobUrl) return <div className="flex justify-center py-8"><div className="w-5 h-5 border-2 rounded-full border-t-transparent animate-spin" style={{ borderColor: "var(--clr-amber)", borderTopColor: "transparent" }} /></div>;
+  if (isPdf) {
+    return <embed src={blobUrl} type="application/pdf" className={className} style={{ ...style, width: "100%", minHeight: 600 }} />;
+  }
   // eslint-disable-next-line @next/next/no-img-element
   return <img src={blobUrl} alt={alt} className={className} style={style} />;
 }
@@ -170,6 +174,7 @@ interface ResultViewerProps {
   StepIcon: ComponentType<{ className?: string; size?: number }>;
   taskCache?: Record<string, Task>;
   clusterLevels?: string[];
+  projectName?: string;
 }
 
 /** 从 localStorage 读取 token */
@@ -221,7 +226,7 @@ async function fetchTaskResult(taskId: string): Promise<Record<string, unknown> 
 // 由于 WebGL 重构提升了性能，现在所有有步骤均自动加载结果数据
 // 不再需要显式点击加载图表按钮。
 
-export default function ResultViewer({ task, stepId, stepLabel, StepIcon, taskCache, clusterLevels }: ResultViewerProps) {
+export default function ResultViewer({ task, stepId, stepLabel, StepIcon, taskCache, clusterLevels, projectName }: ResultViewerProps) {
   const [resultData, setResultData] = useState<Record<string, unknown> | null>(null);
   const [loadingResult, setLoadingResult] = useState(false);
   // 自动加载：任务完成后触发
@@ -700,16 +705,26 @@ function ClusterResult({ data, task }: { data: Record<string, unknown> | null; t
           <div className="flex gap-3">
             <button
               onClick={() => {
-                const hdr = Object.keys(clusterNum[0]||{}).join(",");
+                if (clusterNum.length === 0) { alert("暂无聚类统计数据"); return; }
+                try {
+                const hdr = Object.keys(clusterNum[0]).join(",");
                 const rows = clusterNum.map((r) => Object.values(r).join(","));
                 const csv = [hdr, ...rows].join("\n");
                 const rp = data?.result_path;
-                const name = typeof rp === "string" ? rp.split("/").pop().replace(".rds","_cluster_num.csv") : "cluster_num.csv";
+                const now2 = new Date();
+                const ts2 = `${now2.getFullYear()}${String(now2.getMonth()+1).padStart(2,"0")}${String(now2.getDate()).padStart(2,"0")}`;
+                const baseName = projectName || (typeof rp === "string" ? rp.split("/").pop()?.replace(/\.rds$/, "") : "") || "cluster";
+                const name = `${baseName}_cluster_num_${ts2}.csv`;
                 const blob = new Blob([csv], {type: "text/csv"});
+                const url = URL.createObjectURL(blob);
                 const a = document.createElement("a");
-                a.href = URL.createObjectURL(blob);
+                a.href = url;
                 a.download = name;
+                document.body.appendChild(a);
                 a.click();
+                document.body.removeChild(a);
+                setTimeout(() => URL.revokeObjectURL(url), 1000);
+                } catch(e) { alert("下载失败: " + (e instanceof Error ? e.message : String(e))); }
               }}
               className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-medium transition-all hover:shadow-sm"
               style={{ border: "1px solid var(--clr-border)", color: "var(--clr-amber-dark)", background: "rgba(200,96,25,0.04)" }}
@@ -719,16 +734,26 @@ function ClusterResult({ data, task }: { data: Record<string, unknown> | null; t
             </button>
             <button
               onClick={() => {
-                const hdr = Object.keys(freqTable[0]||{}).join(",");
+                if (freqTable.length === 0) { alert("暂无频率表数据"); return; }
+                try {
+                const hdr = Object.keys(freqTable[0]).join(",");
                 const rows = freqTable.map((r) => Object.values(r).join(","));
                 const csv = [hdr, ...rows].join("\n");
                 const rp = data?.result_path;
-                const name = typeof rp === "string" ? rp.split("/").pop().replace(".rds","_freq_table.csv") : "freq_table.csv";
+                const now3 = new Date();
+                const ts3 = `${now3.getFullYear()}${String(now3.getMonth()+1).padStart(2,"0")}${String(now3.getDate()).padStart(2,"0")}`;
+                const baseName2 = projectName || (typeof rp === "string" ? rp.split("/").pop()?.replace(/\.rds$/, "") : "") || "cluster";
+                const name = `${baseName2}_freq_table_${ts3}.csv`;
                 const blob = new Blob([csv], {type: "text/csv"});
+                const url = URL.createObjectURL(blob);
                 const a = document.createElement("a");
-                a.href = URL.createObjectURL(blob);
+                a.href = url;
                 a.download = name;
+                document.body.appendChild(a);
                 a.click();
+                document.body.removeChild(a);
+                setTimeout(() => URL.revokeObjectURL(url), 1000);
+                } catch(e) { alert("下载失败: " + (e instanceof Error ? e.message : String(e))); }
               }}
               className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-medium transition-all hover:shadow-sm"
               style={{ border: "1px solid var(--clr-border)", color: "var(--clr-amber-dark)", background: "rgba(200,96,25,0.04)" }}

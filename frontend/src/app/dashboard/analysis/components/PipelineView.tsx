@@ -41,9 +41,10 @@ const STATUS_DOT: Record<string, string> = {
 interface PipelineViewProps {
   pipelineId: string;
   token: string;
+  projectName?: string;
 }
 
-export default function PipelineView({ pipelineId, token }: PipelineViewProps) {
+export default function PipelineView({ pipelineId, token, projectName }: PipelineViewProps) {
   const [pipeline, setPipeline] = useState<Pipeline | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -408,6 +409,7 @@ export default function PipelineView({ pipelineId, token }: PipelineViewProps) {
 
                   {rcCurrentStatus === "completed" && rcCurrentTask && (
                     <ResultViewer
+                      projectName={projectName}
                       stepId={reduceClusterTab}
                       task={{
                         id: rcCurrentTask.id,
@@ -514,6 +516,7 @@ export default function PipelineView({ pipelineId, token }: PipelineViewProps) {
                     {/* 已完成 */}
                     {subStatus === "completed" && subTask && (
                       <ResultViewer
+                        projectName={projectName}
                         stepId={subId}
                         task={{
                           id: subTask.id,
