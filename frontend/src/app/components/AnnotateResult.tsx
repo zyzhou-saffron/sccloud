@@ -152,9 +152,9 @@ export default function AnnotateResult({
       if (lines.length < 2) throw new Error("文件至少需要包含表头和数据行");
       const sep = lines[0].includes("\t") ? "\t" : ",";
       const headers = lines[0].split(sep).map((h: string) => h.trim().toLowerCase());
-      const clusterIdx = headers.indexOf("cluster_id");
+      const clusterIdx = headers.indexOf("cluster_id") >= 0 ? headers.indexOf("cluster_id") : headers.indexOf("cluster");
       const celltypeIdx = headers.indexOf("celltype");
-      if (clusterIdx < 0) throw new Error("缺少 cluster_id 列（需要 cluster_id, celltype 列）");
+      if (clusterIdx < 0) throw new Error("缺少 cluster 列（需含 cluster 或 cluster_id, celltype 列）");
       const mapping: Record<string, string> = {};
       for (let i = 1; i < lines.length; i++) {
         const cols = lines[i].split(sep);
