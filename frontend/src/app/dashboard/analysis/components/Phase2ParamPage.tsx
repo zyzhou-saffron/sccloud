@@ -63,15 +63,22 @@ export default function Phase2ParamPage({ pipeline, token, onComplete, species =
     apiFetch<Record<string, unknown>>(`/api/tasks/${annotateTask.id}/result`)
       .then((data) => {
         if (!data) return;
-        // 从 freq_table 中提取唯一的 CellType 列表
+        // 优先从 scatter_data.celltype 提取（与 Seurat 对象一致）
+        // freq_table 可能在重命名后过时
+        const scatterCt = data.scatter_data?.celltype as string[] | undefined;
         const freqTable = data.freq_table as { CellType: string }[] | undefined;
-        if (freqTable && freqTable.length > 0) {
-          const types = [...new Set(freqTable.map(r => r.CellType))].sort();
+        let types: string[] = [];
+        if (scatterCt && scatterCt.length > 0) {
+          types = [...new Set(scatterCt)].sort();
+        } else if (freqTable && freqTable.length > 0) {
+          types = [...new Set(freqTable.map(r => r.CellType))].sort();
+        }
+        if (types.length > 0) {
           setAllCellTypes(types);
-          if (types.length > 0) setParams(prev => ({ ...prev, wgcna: { ...prev.wgcna, interest_types: [types[0]] } }));
+          setParams(prev => ({ ...prev, wgcna: { ...prev.wgcna, interest_types: [types[0]] } }));
           // 自动填充 infer_df：所有细胞类型默认为 query，用户手动标记 reference
           setParams(prev => {
-            if (prev.infercnv.infer_df.length > 0) return prev; // 已有配置则不覆盖
+            if (prev.infercnv.infer_df.length > 0) return prev;
             return { ...prev, infercnv: { ...prev.infercnv, infer_df: types.map(ct => ({ cellType: ct, refType: "query" })) } };
           });
         }

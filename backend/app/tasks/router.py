@@ -289,7 +289,7 @@ async def download_example_marker():
     from fastapi.responses import FileResponse
 
     # 示例文件存放在 r-engine data 卷中
-    example_path = "/app/r-engine-data/examples/example.marker.txt"
+    example_path = "/app/data/examples/example.marker.txt"
     if not os.path.exists(example_path):
         # 兼容开发环境
         alt_path = os.path.join(
@@ -314,7 +314,7 @@ async def download_example_cell_anno():
     import os
     from fastapi.responses import FileResponse
 
-    example_path = "/app/r-engine-data/examples/example.cellAnno.txt"
+    example_path = "/app/data/examples/example.cellAnno.txt"
     if not os.path.exists(example_path):
         alt_path = os.path.join(
             os.path.dirname(os.path.dirname(os.path.dirname(__file__))),

@@ -440,7 +440,7 @@ RunMonocle <- function(pro, group_beam = "CellType", group_traj = "CellType",
         theme(legend.text = element_text(size = 12),
               legend.title = element_text(size = 12),
               legend.key.size = unit(0.5, "cm"))
-      p12 <- p11 + facet_wrap(as.formula(paste0("~", group_traj)), nrow = 2)
+      p12 <- p11 + facet_wrap(~ Group, nrow = 2)
       MonocleResult$plot1 <- p11 | p12
       df <- pData(cd)
       df$State <- as.character(df$State)
@@ -715,9 +715,20 @@ RunInfercnv <- function(pro, inferDf, cutoff_gene = 0.1, outdir, numThreads = 1L
     stop("gene_name_pos.bed not found at: ", bedFile)
   }
 
-  colnames(inferDf) <- c("cellType", "refType")
-  inferDf$cellType <- as.character(inferDf$cellType)
-  inferDf$refType <- as.character(inferDf$refType)
+  # Handle both 2-column and multi-column inferDf
+  if (ncol(inferDf) >= 2) {
+    # Use first two columns as cellType and refType
+    inferDf <- data.frame(
+      cellType = as.character(inferDf[[1]]),
+      refType = as.character(inferDf[[2]]),
+      stringsAsFactors = FALSE
+    )
+  } else {
+    stop("inferDf must have at least 2 columns (cellType, refType), got: ",
+         paste(colnames(inferDf), collapse=", "))
+  }
+  message("[INFERCNV] inferDf cellTypes: ", paste(inferDf$cellType, collapse=","))
+  message("[INFERCNV] inferDf refTypes: ", paste(inferDf$refType, collapse=","))
   refGroupNames <- inferDf[which(inferDf$refType == "reference"), ]$cellType
 
   if (length(refGroupNames) == 0) {
@@ -727,17 +738,86 @@ RunInfercnv <- function(pro, inferDf, cutoff_gene = 0.1, outdir, numThreads = 1L
   send_msg(10, paste0("参考细胞: ", paste(refGroupNames, collapse = ", ")))
 
   send_msg(15, "提取子集...")
+  # Validate that requested cell types exist in Seurat object
+  available_types <- unique(as.character(Idents(pro)))
+  requested_types <- unique(inferDf$cellType)
+  missing_types <- setdiff(requested_types, available_types)
+  if (length(missing_types) > 0) {
+    message("[INFERCNV] WARNING: These cell types not found in Seurat object: ",
+            paste(missing_types, collapse=", "))
+    message("[INFERCNV] Available cell types: ", paste(available_types, collapse=", "))
+    # Try case-insensitive matching
+    matched <- character(0)
+    for (ct in requested_types) {
+      if (ct %in% available_types) {
+        matched <- c(matched, ct)
+      } else {
+        # Case-insensitive match
+        idx <- which(tolower(available_types) == tolower(ct))
+        if (length(idx) > 0) {
+          message("[INFERCNV] Auto-matched '", ct, "' -> '", available_types[idx[1]], "'")
+          inferDf$cellType[inferDf$cellType == ct] <- available_types[idx[1]]
+          matched <- c(matched, available_types[idx[1]])
+        } else {
+          message("[INFERCNV] No match found for '", ct, "', skipping")
+        }
+      }
+    }
+    if (length(matched) == 0) {
+      stop("None of the specified cell types exist in the Seurat object. ",
+           "Requested: ", paste(requested_types, collapse=", "),
+           " | Available: ", paste(available_types, collapse=", "))
+    }
+    # Remove unmatched types from inferDf
+    inferDf <- inferDf[inferDf$cellType %in% matched, ]
+    refGroupNames <- inferDf[which(inferDf$refType == "reference"), ]$cellType
+    message("[INFERCNV] After matching - cellTypes: ", paste(inferDf$cellType, collapse=","))
+    message("[INFERCNV] After matching - refGroupNames: ", paste(refGroupNames, collapse=","))
+    if (length(refGroupNames) == 0) {
+      stop("After matching, no reference cell types remain. ",
+           "Please re-select cell types that exist in your data.")
+    }
+  }
   prosub <- subset(pro, idents = inferDf$cellType)
+  if (ncol(prosub) == 0) {
+    stop("Subset resulted in 0 cells. Cell types in Seurat: ",
+         paste(available_types, collapse=", "))
+  }
   rm(pro)
 
-  annotationsDf <- data.frame(as.character(prosub@meta.data[, "CellType"]))
-  rownames(annotationsDf) <- rownames(prosub@meta.data)
+  cell_type_col <- NULL
+  if ("CellType" %in% colnames(prosub@meta.data)) {
+    cell_type_col <- as.character(prosub@meta.data[, "CellType"])
+  } else if ("cell_type" %in% colnames(prosub@meta.data)) {
+    cell_type_col <- as.character(prosub@meta.data[, "cell_type"])
+  } else {
+    # Try to find any column with 'cell' and 'type' in name
+    ct_cols <- grep("(?i)cell.?type", colnames(prosub@meta.data), value = TRUE)
+    if (length(ct_cols) > 0) {
+      cell_type_col <- as.character(prosub@meta.data[, ct_cols[1]])
+    }
+  }
+  if (is.null(cell_type_col)) {
+    stop("Cannot find CellType column in Seurat metadata. Available: ",
+         paste(colnames(prosub@meta.data), collapse=", "))
+  }
+  annotationsDf <- data.frame(V1 = cell_type_col, row.names = rownames(prosub@meta.data))
+  colnames(annotationsDf) <- NULL  # infercnv expects no column name
+  message("[INFERCNV] annotationsDf rows: ", nrow(annotationsDf),
+          " unique types: ", paste(unique(cell_type_col), collapse=", "))
 
   send_msg(20, "创建 inferCNV 对象...")
   counts_mat <- tryCatch(
     GetAssayData(prosub, assay = "SCT", layer = "counts"),
     error = function(e) GetAssayData(prosub, assay = "RNA", layer = "counts")
   )
+  # Ensure counts_mat is a type infercnv can handle (dgCMatrix, matrix, or data.frame)
+  if (!inherits(counts_mat, c("dgCMatrix", "matrix", "data.frame"))) {
+    message("[INFERCNV] Converting counts from class: ", paste(class(counts_mat), collapse=","))
+    counts_mat <- as.matrix(counts_mat)
+  }
+  message("[INFERCNV] counts_mat class: ", paste(class(counts_mat), collapse=","),
+          " dim: ", paste(dim(counts_mat), collapse="x"))
   infercnv_obj <- CreateInfercnvObject(raw_counts_matrix = counts_mat,
                                         annotations_file = annotationsDf,
                                         delim = "\t",
@@ -745,22 +825,33 @@ RunInfercnv <- function(pro, inferDf, cutoff_gene = 0.1, outdir, numThreads = 1L
                                         ref_group_names = refGroupNames)
 
   send_msg(25, "运行 inferCNV 分析...")
+  # Ensure parameter types are correct
+  cutoff_val <- as.numeric(cutoff_gene)
+  nthreads_val <- as.integer(numThreads)
+  message("[INFERCNV] cutoff: ", cutoff_val, " (class: ", class(cutoff_val), ")")
+  message("[INFERCNV] threads: ", nthreads_val, " (class: ", class(nthreads_val), ")")
+  message("[INFERCNV] outdir: ", outdir)
+  message("[INFERCNV] infercnv_obj class: ", paste(class(infercnv_obj), collapse=","))
+
   infercnv_obj <- tryCatch(
-    infercnv::run(infercnv_obj,
-                   cutoff = cutoff_gene,
-                   out_dir = outdir,
-                   num_threads = numThreads,
-                   cluster_by_groups = TRUE,
-                   denoise = TRUE,
-                   write_expr_matrix = TRUE,
-                   HMM = TRUE),
-    error = function(e) {
-      message("infercnv::run failed: ", e$message)
-      # Try without HMM (less memory, still useful)
+    {
+      message("[INFERCNV] Starting run() with HMM=TRUE...")
       infercnv::run(infercnv_obj,
-                     cutoff = cutoff_gene,
+                     cutoff = cutoff_val,
                      out_dir = outdir,
-                     num_threads = numThreads,
+                     num_threads = nthreads_val,
+                     cluster_by_groups = TRUE,
+                     denoise = TRUE,
+                     write_expr_matrix = TRUE,
+                     HMM = TRUE)
+    },
+    error = function(e) {
+      message("[INFERCNV] HMM=TRUE failed: ", e$message)
+      message("[INFERCNV] Retrying with HMM=FALSE...")
+      infercnv::run(infercnv_obj,
+                     cutoff = cutoff_val,
+                     out_dir = outdir,
+                     num_threads = nthreads_val,
                      cluster_by_groups = TRUE,
                      denoise = TRUE,
                      write_expr_matrix = TRUE,

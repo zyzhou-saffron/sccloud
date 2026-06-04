@@ -2610,14 +2610,31 @@ function(req) {
 
   # 构建 inferDf
   infer_df_data <- params$infer_df
+  message("[INFERCNV DEBUG] infer_df class: ", paste(class(infer_df_data), collapse=","))
+  message("[INFERCNV DEBUG] infer_df length: ", length(infer_df_data))
+  if (is.list(infer_df_data)) {
+    message("[INFERCNV DEBUG] infer_df names: ", paste(names(infer_df_data), collapse=","))
+    message("[INFERCNV DEBUG] infer_df[[1]] class: ", paste(class(infer_df_data[[1]]), collapse=","))
+  }
+  message("[INFERCNV DEBUG] cutoff_gene raw: ", params$cutoff_gene, " class: ", paste(class(params$cutoff_gene), collapse=","))
+  message("[INFERCNV DEBUG] num_threads raw: ", params$num_threads, " class: ", paste(class(params$num_threads), collapse=","))
+  message("[INFERCNV DEBUG] species: ", params$species)
+  message("[INFERCNV DEBUG] project_path: ", project_path)
+
   if (is.null(infer_df_data) || length(infer_df_data) == 0) {
     stop("请指定细胞类型的参考/查询分类 (infer_df)")
   }
   inferDf <- as.data.frame(infer_df_data)
+  message("[INFERCNV DEBUG] inferDf cols: ", paste(colnames(inferDf), collapse=","))
+  message("[INFERCNV DEBUG] inferDf rows: ", nrow(inferDf))
+  message("[INFERCNV DEBUG] inferDf print:")
+  print(head(inferDf))
 
-  cutoff_gene <- params$cutoff_gene %||% 0.1
-  num_threads <- params$num_threads %||% 1
+  cutoff_gene <- as.numeric(params$cutoff_gene %||% 0.1)
+  num_threads <- as.integer(params$num_threads %||% 1)
   species <- params$species %||% "Human"
+  message("[INFERCNV DEBUG] cutoff_gene final: ", cutoff_gene, " class: ", class(cutoff_gene))
+  message("[INFERCNV DEBUG] num_threads final: ", num_threads, " class: ", class(num_threads))
 
   # 创建输出目录
   outdir <- file.path(project_path, paste0("infercnv_output_", format(Sys.time(), "%Y%m%d%H%M%S")))
@@ -2628,9 +2645,21 @@ function(req) {
 
   progress_cb <- function(pct, msg) report(pct, msg)
 
-  result <- RunInfercnv(pro, inferDf = inferDf, cutoff_gene = cutoff_gene,
-                         outdir = outdir, numThreads = num_threads,
-                         species = species, progress_callback = progress_cb)
+  message("[INFERCNV DEBUG] About to call RunInfercnv...")
+  message("[INFERCNV DEBUG] pro class: ", paste(class(pro), collapse=","))
+  message("[INFERCNV DEBUG] pro assay: ", DefaultAssay(pro))
+  message("[INFERCNV DEBUG] pro ncol: ", ncol(pro), " nrow: ", nrow(pro))
+
+  result <- tryCatch(
+    RunInfercnv(pro, inferDf = inferDf, cutoff_gene = cutoff_gene,
+                           outdir = outdir, numThreads = num_threads,
+                           species = species, progress_callback = progress_cb),
+    error = function(e) {
+      message("[INFERCNV ERROR] ", e$message)
+      message("[INFERCNV ERROR] call: ", paste(deparse(e$call), collapse=""))
+      stop(e)
+    }
+  )
 
   report(95, "收集结果...")
 
