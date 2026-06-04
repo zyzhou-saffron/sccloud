@@ -1952,10 +1952,6 @@ function WGCNAResult({ data, taskId }: { data: Record<string, unknown> | null; t
 
   // 图表友好名称映射
   const formatPlotLabel = (filename: string) => {
-    // 提取细胞类型前缀（如 "B-cells_B-cells_SoftPower.png" → cellType="B-cells", rest="B-cells_SoftPower"）
-    const parts = filename.split('_');
-    const firstTwo = parts.slice(0, 2).join('_');
-    const rest = parts.slice(1).join('_').replace(/\.[^.]+$/, '');
     const labels: Record<string, string> = {
       'SoftPower': '软阈值选择',
       'Dendrogram': '模块树状图',
@@ -1964,15 +1960,21 @@ function WGCNAResult({ data, taskId }: { data: Record<string, unknown> | null; t
       'modules_hMEs_DotPlot': '模块表达点图',
       'modules_cor': '模块相关性热图',
     };
+    // 从 make_output_name 格式提取: proj_wgcna_时间戳_CellType_PlotType.ext
+    // 或旧格式: CellType_PlotType.ext
+    const nameOnly = filename.replace(/\.[^.]+$/, '');
     for (const [key, label] of Object.entries(labels)) {
-      if (rest.includes(key)) {
-        const ct = filename.replace(new RegExp('_' + rest.replace(key, '').replace(/_$/, '') + '_' + key + '.*$'), '').replace(/_$/, '');
-        return ct + ' — ' + label;
+      if (nameOnly.includes(key)) {
+        // 提取 key 之前的部分作为细胞类型（跳过 proj_wgcna_ 时间戳前缀）
+        const beforeKey = nameOnly.split(key)[0].replace(/_$/, '');
+        // 去掉 proj_wgcna_YYYYMMDDHHMMSS_ 前缀，保留细胞类型
+        const ct = beforeKey.replace(/^.*?_wgcna_\d{14}_/, '');
+        return ct ? ct + ' — ' + label : label;
       }
     }
-    // Fallback: remove first cell type prefix
-    const cleaned = filename.replace(/^[^_]*_/, '').replace(/\.[^.]+$/, '').replace(/_/g, ' ');
-    return cleaned;
+    // Fallback: 去掉所有前缀，保留可读名称
+    const cleaned = nameOnly.replace(/^.*?_wgcna_\d{14}_/, '').replace(/_/g, ' ');
+    return cleaned || nameOnly.replace(/_/g, ' ');
   };
 
   const plotEntries = plotPaths ? Object.entries(plotPaths) : [];
