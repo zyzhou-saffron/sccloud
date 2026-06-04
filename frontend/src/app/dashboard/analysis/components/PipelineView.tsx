@@ -74,7 +74,7 @@ export default function PipelineView({ pipelineId, token, projectName }: Pipelin
     };
   }, []);
   // 降维与聚类步骤内的子 tab：默认显示聚类结果
-  const [reduceClusterTab, setReduceClusterTab] = useState<"cluster" | "reduce">("cluster");
+  const [reduceClusterTab, setReduceClusterTab] = useState<"cluster" | "reduce">("reduce");
   // Phase 2 参数页显示状态
   const [showPhase2Param, setShowPhase2Param] = useState(false);
   const [showBackMenu, setShowBackMenu] = useState(false);
@@ -416,8 +416,8 @@ export default function PipelineView({ pipelineId, token, projectName }: Pipelin
                   {/* Tab 栏 */}
                   <div className="flex gap-1 p-0.5 rounded" style={{ background: "var(--clr-bg-alt)" }}>
                     {[
-                      { key: "cluster" as const, label: "批次聚类", status: clusterStatus },
                       { key: "reduce" as const, label: "数据降维", status: reduceStatus },
+{ key: "cluster" as const, label: "批次聚类", status: clusterStatus },
                     ].map((tab) => (
                       <button
                         key={tab.key}
