@@ -216,7 +216,7 @@ export default function PipelineForm({ projectId, token, onSubmit, uploadedFiles
         sample_groups: sampleGroups,
       };
       if (annoFile && params.annotate.anno_type === "手动注释") {
-        data.marker_file_path = annoFile.data;
+        data.params.annotate.markers_table = annoFile.data;
       }
 
       const response = await createPipeline(token, data);
@@ -740,7 +740,7 @@ export default function PipelineForm({ projectId, token, onSubmit, uploadedFiles
                     if (lines.length < 2) throw new Error("至少需要表头和数据行");
                     const sep = lines[0].indexOf("\t") >= 0 ? "\t" : ",";
                     const headers = lines[0].split(sep).map(function(h) { return h.trim().toLowerCase(); });
-                    const cidIdx = headers.indexOf("cluster");
+                    const cidIdx = headers.indexOf("cluster_id") >= 0 ? headers.indexOf("cluster_id") : headers.indexOf("cluster");
                     const ctIdx = headers.indexOf("celltype");
                     const mkIdx = headers.indexOf("markers");
                     if (cidIdx < 0) throw new Error("缺少 cluster 列");
