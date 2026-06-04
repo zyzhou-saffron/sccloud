@@ -698,7 +698,7 @@ RunCellChat <- function(pro, species = "Human", db_use = "Secreted", thresh = 0.
 #' @param numThreads 线程数
 #' @param progress_callback 进度回调函数
 #' @return list(infercnv_obj, outdir)
-RunInfercnv <- function(pro, inferDf, cutoff_gene = 0.1, outdir, numThreads = 1,
+RunInfercnv <- function(pro, inferDf, cutoff_gene = 0.1, outdir, numThreads = 1L,
                         species = "Human", progress_callback = NULL) {
   suppressMessages(library(infercnv))
   send_msg <- function(pct, msg) {
@@ -706,6 +706,7 @@ RunInfercnv <- function(pro, inferDf, cutoff_gene = 0.1, outdir, numThreads = 1,
     else message(sprintf("[%d%%] %s", pct, msg))
   }
 
+  numThreads <- as.integer(numThreads)
   send_msg(5, "准备参考文件...")
   options(scipen = 100)
   bedFileName <- if (species == "Mouse") "gene_name_pos_mouse.bed" else "gene_name_pos_human.bed"
@@ -715,6 +716,8 @@ RunInfercnv <- function(pro, inferDf, cutoff_gene = 0.1, outdir, numThreads = 1,
   }
 
   colnames(inferDf) <- c("cellType", "refType")
+  inferDf$cellType <- as.character(inferDf$cellType)
+  inferDf$refType <- as.character(inferDf$refType)
   refGroupNames <- inferDf[which(inferDf$refType == "reference"), ]$cellType
 
   if (length(refGroupNames) == 0) {
@@ -731,21 +734,39 @@ RunInfercnv <- function(pro, inferDf, cutoff_gene = 0.1, outdir, numThreads = 1,
   rownames(annotationsDf) <- rownames(prosub@meta.data)
 
   send_msg(20, "创建 inferCNV 对象...")
-  infercnv_obj <- CreateInfercnvObject(raw_counts_matrix = prosub$SCT@counts,
+  counts_mat <- tryCatch(
+    GetAssayData(prosub, assay = "SCT", layer = "counts"),
+    error = function(e) GetAssayData(prosub, assay = "RNA", layer = "counts")
+  )
+  infercnv_obj <- CreateInfercnvObject(raw_counts_matrix = counts_mat,
                                         annotations_file = annotationsDf,
                                         delim = "\t",
                                         gene_order_file = bedFile,
                                         ref_group_names = refGroupNames)
 
   send_msg(25, "运行 inferCNV 分析...")
-  infercnv_obj <- infercnv::run(infercnv_obj,
-                                 cutoff = cutoff_gene,
-                                 out_dir = outdir,
-                                 num_threads = numThreads,
-                                 cluster_by_groups = TRUE,
-                                 denoise = TRUE,
-                                 write_expr_matrix = TRUE,
-                                 HMM = TRUE)
+  infercnv_obj <- tryCatch(
+    infercnv::run(infercnv_obj,
+                   cutoff = cutoff_gene,
+                   out_dir = outdir,
+                   num_threads = numThreads,
+                   cluster_by_groups = TRUE,
+                   denoise = TRUE,
+                   write_expr_matrix = TRUE,
+                   HMM = TRUE),
+    error = function(e) {
+      message("infercnv::run failed: ", e$message)
+      # Try without HMM (less memory, still useful)
+      infercnv::run(infercnv_obj,
+                     cutoff = cutoff_gene,
+                     out_dir = outdir,
+                     num_threads = numThreads,
+                     cluster_by_groups = TRUE,
+                     denoise = TRUE,
+                     write_expr_matrix = TRUE,
+                     HMM = FALSE)
+    }
+  )
 
   send_msg(100, "inferCNV 分析完成")
   return(list(infercnv_obj = infercnv_obj, outdir = outdir))
