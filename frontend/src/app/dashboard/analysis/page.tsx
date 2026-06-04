@@ -1406,6 +1406,9 @@ function AnalysisPageContent() {
                       )}
                     </div>
                   )}
+                  <a href="/api/tasks/example-cell-anno" download="example.cellAnno.txt" className="text-[10px] mt-1 inline-block underline" style={{ color: "var(--clr-amber-dark)" }}>
+                    下载示例注释文件 (example.cellAnno.txt)
+                  </a>
                   <div>
                     <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>分组方式</label>
                     <select value={stepParams.group_by as string} onChange={(e) => updateParam("group_by", e.target.value)} className={selectCls} style={selectStyle}>

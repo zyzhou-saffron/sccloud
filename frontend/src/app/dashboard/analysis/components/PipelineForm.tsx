@@ -92,6 +92,7 @@ export default function PipelineForm({ projectId, token, onSubmit, uploadedFiles
   );
   const historyRef = useRef<HTMLDivElement>(null);
   const [showAddSample, setShowAddSample] = useState(false);
+  const [annoFile, setAnnoFile] = useState<{ name: string; data: { Cluster: string; CellType: string; Markers: string }[] } | null>(null);
 
   // 从所有上传文件的元数据列中聚合分组列
   const metadataColumns = [...new Set(uploadedFiles.flatMap(f => f.metadata_columns ?? []))];
@@ -214,6 +215,9 @@ export default function PipelineForm({ projectId, token, onSubmit, uploadedFiles
         params: pipelineParams,
         sample_groups: sampleGroups,
       };
+      if (annoFile && params.annotate.anno_type === "手动注释") {
+        data.marker_file_path = annoFile.data;
+      }
 
       const response = await createPipeline(token, data);
       if (!response || !response.pipeline_id) {
@@ -694,7 +698,7 @@ export default function PipelineForm({ projectId, token, onSubmit, uploadedFiles
                   <div className="flex gap-3">
                     {["自动注释", "手动注释"].map((v) => (
                       <label key={v} className="flex items-center gap-1 text-xs cursor-pointer" style={{ color: "var(--clr-text)" }}>
-                        <input type="radio" name="pipeline_anno_type" value={v} checked={params.annotate.anno_type === v} onChange={() => updateStepParam("annotate", "anno_type", v)} className="accent-[#C86019]" /> {v}
+                        <input type="radio" name="pipeline_anno_type" value={v} checked={params.annotate.anno_type === v} onChange={() => { updateStepParam("annotate", "anno_type", v); if (v === "自动注释") setAnnoFile(null); }} className="accent-[#C86019]" /> {v}
                       </label>
                     ))}
                   </div>
@@ -712,6 +716,60 @@ export default function PipelineForm({ projectId, token, onSubmit, uploadedFiles
             </div>
           </div>
         </div>
+
+
+        {/* 手动注释：文件上传 + 示例下载 */}
+        {params.annotate.anno_type === "手动注释" && (
+          <div className="px-3 py-2.5 rounded-lg" style={{ background: "rgba(200,96,25,0.04)", border: "2px dashed rgba(200,96,25,0.3)" }}>
+            <div className="flex items-center justify-between gap-3 mb-1.5">
+              <div>
+                <p className="text-xs font-semibold" style={{ color: "var(--clr-amber-dark)" }}>上传注释文件</p>
+                <p className="text-[11px] mt-0.5" style={{ color: "var(--clr-text-muted)" }}>
+                  CSV/TSV，列名: Cluster, CellType, Markers
+                </p>
+              </div>
+              <label className="px-4 py-2 rounded-lg text-xs font-bold text-white cursor-pointer transition-all hover:opacity-90 shrink-0"
+                style={{ background: "linear-gradient(135deg, var(--clr-amber-dark), var(--clr-amber))", boxShadow: "0 2px 8px rgba(200,96,25,0.2)" }}>
+                {annoFile ? annoFile.name : "选择文件"}
+                <input type="file" accept=".csv,.tsv,.txt" className="hidden" onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  try {
+                    const text = await file.text();
+                    const lines = text.trim().split("\n").map(function(l) { return l.replace("\r", ""); });
+                    if (lines.length < 2) throw new Error("至少需要表头和数据行");
+                    const sep = lines[0].indexOf("\t") >= 0 ? "\t" : ",";
+                    const headers = lines[0].split(sep).map(function(h) { return h.trim().toLowerCase(); });
+                    const cidIdx = headers.indexOf("cluster");
+                    const ctIdx = headers.indexOf("celltype");
+                    const mkIdx = headers.indexOf("markers");
+                    if (cidIdx < 0) throw new Error("缺少 cluster 列");
+                    if (ctIdx < 0) throw new Error("缺少 celltype 列");
+                    var data = [];
+                    for (var i = 1; i < lines.length; i++) {
+                      var cols = lines[i].split(sep);
+                      var cid = cols[cidIdx] ? cols[cidIdx].trim() : "";
+                      var ct = cols[ctIdx] ? cols[ctIdx].trim() : "";
+                      var mk = mkIdx >= 0 ? (cols[mkIdx] ? cols[mkIdx].trim() : "") : "";
+                      if (cid && ct) data.push({ Cluster: cid, CellType: ct, Markers: mk });
+                    }
+                    if (data.length === 0) throw new Error("未解析到有效数据");
+                    setAnnoFile({ name: file.name, data: data });
+                  } catch(err) { setError("注释文件解析失败: " + (err instanceof Error ? err.message : "")); }
+                }} />
+              </label>
+              {annoFile && (
+                <button type="button" onClick={() => setAnnoFile(null)}
+                  className="text-xs px-2 py-1 rounded hover:bg-red-50 shrink-0"
+                  style={{ color: "var(--clr-text-faint)" }}>✕</button>
+              )}
+            </div>
+            <a href="/api/tasks/example-cell-anno" download="example.cellAnno.txt"
+              className="text-[10px] underline" style={{ color: "var(--clr-amber-dark)" }}>
+              下载示例注释文件 (example.cellAnno.txt)
+            </a>
+          </div>
+        )}
 
         {/* 图片格式选择 */}
         <div className="flex items-center gap-2 px-3 py-2 rounded text-xs" style={{ background: "rgba(200,96,25,0.04)", border: "1px solid rgba(200,96,25,0.15)" }}>

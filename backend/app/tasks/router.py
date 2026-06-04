@@ -308,6 +308,30 @@ async def download_example_marker():
     )
 
 
+@router.get("/example-cell-anno")
+async def download_example_cell_anno():
+    """下载示例细胞注释文件（Cluster, CellType, Markers）。"""
+    import os
+    from fastapi.responses import FileResponse
+
+    example_path = "/app/r-engine-data/examples/example.cellAnno.txt"
+    if not os.path.exists(example_path):
+        alt_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+            "..", "r-engine", "data", "examples", "example.cellAnno.txt"
+        )
+        example_path = alt_path if os.path.exists(alt_path) else example_path
+
+    if not os.path.exists(example_path):
+        raise HTTPException(status_code=404, detail="示例文件不存在")
+
+    return FileResponse(
+        example_path,
+        media_type="text/plain",
+        filename="example.cellAnno.txt",
+    )
+
+
 @router.post("/marker-file")
 async def upload_marker_file(
     project_id: int,
