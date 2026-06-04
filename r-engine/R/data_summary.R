@@ -45,12 +45,25 @@ RunSCT <- function(data){
 
 # functions
 RenameIdents2 <- function(pro) {
+  current <- as.character(Idents(pro))
+  # 已经是 C 前缀（重跑场景），跳过重命名
+  if (all(grepl("^C[0-9]+$", current))) {
+    levels(pro) <- suppressWarnings(mixedsort(levels(pro)))
+    pro$Cluster <- Idents(pro)
+    return(pro)
+  }
   ident <- as.numeric(levels(pro))
-  newident <- ident + 1
-  names(newident) <- levels(pro)
-  pro <- RenameIdents(pro, newident)
-  Idents(pro) <- paste0('C', Idents(pro))
-  levels(pro) <- mixedsort(levels(pro))
+  if (anyNA(ident)) {
+    new_lvls <- paste0("C", seq_along(levels(pro)))
+    names(new_lvls) <- levels(pro)
+    pro <- RenameIdents(pro, new_lvls)
+  } else {
+    newident <- ident + 1
+    names(newident) <- levels(pro)
+    pro <- RenameIdents(pro, newident)
+    Idents(pro) <- paste0('C', Idents(pro))
+  }
+  levels(pro) <- suppressWarnings(mixedsort(levels(pro)))
   pro$Cluster <- Idents(pro)
   return(pro)
 }

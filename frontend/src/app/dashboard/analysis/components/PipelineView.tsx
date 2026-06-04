@@ -304,7 +304,7 @@ export default function PipelineView({ pipelineId, token, projectName }: Pipelin
       )}
 
       {/* 暂停提示 + 参数设置按钮 */}
-      {(pipeline.status === "paused" || pipeline.status === "failed" || pipeline.status === "completed") && !showPhase2Param && (
+      {(pipeline.status === "paused" || pipeline.status === "failed" || pipeline.status === "completed") && !showPhase2Param && pipeline.tasks.some(function(t) { return t.step === "annotate" && t.status === "completed"; }) && (
         <div className="w-full rounded-lg border px-4 py-3" style={{ borderColor: "#93c5fd", background: "rgba(59,130,246,0.05)" }}>
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-start gap-3 text-left">
@@ -325,7 +325,7 @@ export default function PipelineView({ pipelineId, token, projectName }: Pipelin
       )}
 
       {/* Phase 2 参数选择页 */}
-      {(pipeline.status === "paused" || pipeline.status === "failed" || pipeline.status === "completed") && showPhase2Param && (
+      {(pipeline.status === "paused" || pipeline.status === "failed" || pipeline.status === "completed") && showPhase2Param && pipeline.tasks.some(function(t) { return t.step === "annotate" && t.status === "completed"; }) && (
         <Phase2ParamPage
           pipeline={pipeline}
           token={token}
