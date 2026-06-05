@@ -264,7 +264,7 @@ async def download_example_rds():
     import os
     from fastapi.responses import FileResponse
 
-    example_path = "/app/r-engine-data/examples/example.Samples.rds"
+    example_path = "/app/data/examples/example.Samples.rds"
     if not os.path.exists(example_path):
         alt_path = os.path.join(
             os.path.dirname(os.path.dirname(os.path.dirname(__file__))),

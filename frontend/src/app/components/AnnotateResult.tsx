@@ -468,7 +468,8 @@ export default function AnnotateResult({
         </div>
       )}
 
-      {/* ── 手动注释文件上传 ── */}
+      {/* ── 手动注释文件上传 (暂时隐藏) ── */}
+      {false && (<>
       <div
         className="flex items-center gap-3 p-3 rounded-lg"
         style={{
@@ -519,6 +520,7 @@ export default function AnnotateResult({
           {uploadAnnotateMsg}
         </div>
       )}
+      </>)}
 
       {/* ── 合并模式提示 ── */}
       {mergeMode && (
