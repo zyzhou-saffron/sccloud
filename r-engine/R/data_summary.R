@@ -105,6 +105,7 @@ my_freqTable <- function(df){
 
 my_diffTable <- function(pro, rawC, minPct, logFc, test, pos) {
   # rawC 可以是 "All"、单个 cluster 名称、或多个 cluster 名称的向量
+  pro <- PrepSCTFindMarkers(pro)
   if (length(rawC) == 1 && rawC == "All") {
     # 对所有聚类逐一做 FindMarkers (1 vs rest)
     mergeDif <- data.frame()
@@ -145,6 +146,7 @@ my_diffTable <- function(pro, rawC, minPct, logFc, test, pos) {
 my_diffTable2 <- function(pro, minPct, logFc, test, pos, group1, group2) {
   # group1 和 group2 可以各自是一个或多个 cluster 的向量
   # Seurat FindMarkers 原生支持向量形式的 ident.1 / ident.2
+  pro <- PrepSCTFindMarkers(pro)
   tryCatch({
     if (length(group1) == 0 || length(group2) == 0) {
       return("Error: 两组均需至少选择一个聚类")

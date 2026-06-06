@@ -33,6 +33,12 @@ interface VolcanoPlotProps {
   height?: number;
   /** 分析对标签 */
   title?: string;
+  /** 图片输出格式: "png" | "pdf" */
+  plotFormat?: string;
+  /** 项目名（用于归档文件名） */
+  projectName?: string;
+  /** 任务完成时间（用于归档文件名） */
+  completedAt?: string | null;
 }
 
 /** log2FC clamp 上限（±MAX_FC） */
@@ -40,12 +46,17 @@ const MAX_FC = 10;
 
 
 
+import { jsPDF } from "jspdf";
+
 export default function VolcanoPlot({
   data,
   fcThreshold = 1,
   pThreshold = 0.05,
   height = 440,
   title,
+  plotFormat = "png",
+  projectName,
+  completedAt,
 }: VolcanoPlotProps) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const plotRef = useRef<any>(null);
@@ -137,27 +148,36 @@ export default function VolcanoPlot({
   // 动态 X 轴范围（基于 clamp 后 + padding）
   const xPad = MAX_FC + 1;
 
-  // 下载为 PNG
-  const handleDownloadPng = useCallback(async () => {
+  // 归档命名: {proj}_markers_{ts}_volcano_{suffix}.{ext}
+  const archiveName = useMemo(() => {
+    const proj = projectName || "project";
+    const ts = completedAt ? completedAt.replace(/[-:T]/g, "").slice(0, 14) : new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14);
+    const suffix = (title || "plot").replace(/\s+/g, "_");
+    return `${proj}_markers_${ts}_volcano_${suffix}`;
+  }, [projectName, completedAt, title]);
+
+  const handleDownload = useCallback(async () => {
     const el = plotRef.current?.el;
     if (!el) return;
     try {
       const Plotly = await import("plotly.js-dist-min");
-      const imgData = await Plotly.toImage(el, {
-        format: "png",
-        width: 1200,
-        height: 600,
-        scale: 2,
-      });
-      const a = document.createElement("a");
-      a.href = imgData;
-      a.download = `volcano_${title?.replace(/\s+/g, "_") || "plot"}.png`;
-      a.click();
-    } catch {
-      // fallback: Plotly.downloadImage
-      console.warn("PNG export failed");
+      const imgData = await Plotly.toImage(el, { format: "png", width: 1200, height: 600, scale: 2 });
+      if (plotFormat === "pdf") {
+        const pdf = new jsPDF({ orientation: "landscape", unit: "px", format: [1200, 600] });
+        pdf.addImage(imgData, "PNG", 0, 0, 1200, 600);
+        pdf.save(`${archiveName}.pdf`);
+      } else {
+        const a = document.createElement("a");
+        a.href = imgData;
+        a.download = `${archiveName}.png`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      }
+    } catch (e) {
+      console.warn("图片导出失败", e);
     }
-  }, [title]);
+  }, [plotFormat, archiveName]);
 
   return (
     <div style={{ width: "100%", position: "relative" }}>
@@ -239,8 +259,8 @@ export default function VolcanoPlot({
 
       {/* 右下角下载按钮 */}
       <button
-        onClick={handleDownloadPng}
-        title="下载火山图 PNG"
+        onClick={handleDownload}
+        title={`下载火山图 ${plotFormat.toUpperCase()}`}
         className="absolute bottom-2 right-2 z-10 inline-flex items-center justify-center w-9 h-9 rounded-lg transition-all hover:scale-110"
         style={{ background: "rgba(255,255,255,0.92)", boxShadow: "0 2px 8px rgba(0,0,0,0.10)", color: "var(--clr-amber)" }}
       >

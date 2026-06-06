@@ -188,6 +188,7 @@ my_distPlot7 <- function(pro, minPct, logFc, test, pos, ntop, rawC = "All") {
       pro <- subset(pro, idents = target_idents)
     }
 
+    pro <- PrepSCTFindMarkers(pro)
     difG <- data.frame()
     for (l in target_idents) {
       cluster.markers <- FindMarkers(
@@ -234,6 +235,7 @@ my_distPlot8 <- function(pro, minPct, logFc, test, pos, ntop, rawC = "All") {
       pro <- subset(pro, idents = target_idents)
     }
 
+    pro <- PrepSCTFindMarkers(pro)
     difG <- data.frame()
     for (l in target_idents) {
       cluster.markers <- FindMarkers(
@@ -291,6 +293,7 @@ my_distPlot9 <- function(pro, rawC, minPct, logFc, test, pos, ntop, custom_genes
   }
 
   # 对当前 cluster 运行 FindMarkers (1 vs rest)
+  pro <- PrepSCTFindMarkers(pro)
   cluster.markers <- FindMarkers(
     object = pro, ident.1 = rawC,
     min.pct = minPct, logfc.threshold = logFc,
@@ -747,7 +750,8 @@ my_distPlot11 <- function(pro,mkfs,cellType) {
         name    = "Expression"
       )
 
-    p2 <- VlnPlot(pro, features = markers, pt.size = 0, cols = clusterCols, ncol = n_col)
+    n_col_vln <- max(1, min(length(markers), 2))
+    p2 <- VlnPlot(pro, features = markers, pt.size = 0, cols = clusterCols, ncol = n_col_vln)
 
     return(p / p2)
   }else{

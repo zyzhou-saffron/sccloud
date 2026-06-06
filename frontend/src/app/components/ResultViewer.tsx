@@ -326,7 +326,7 @@ export default function ResultViewer({ task, stepId, stepLabel, StepIcon, taskCa
             {stepId === "normalize" && resultData && <NormalizeResult data={resultData} taskId={task.id} />}
             {stepId === "reduce"    && <ReduceResult data={resultData} taskId={task.id} />}
             {stepId === "cluster"   && <ClusterResult data={resultData} task={task} />}
-            {stepId === "markers"   && <MarkersResult data={resultData} task={task} taskCache={taskCache} clusterLevels={clusterLevels} />}
+            {stepId === "markers"   && <MarkersResult data={resultData} task={task} taskCache={taskCache} clusterLevels={clusterLevels} projectName={projectName} />}
             {stepId === "enrich"    && <EnrichResult data={resultData} taskId={task.id} />}
             {stepId === "wgcna"     && <WGCNAResult data={resultData} taskId={task.id} />}
             {stepId === "annotate" && <AnnotateResult data={resultData} task={task} token={getToken()} />}
@@ -1059,7 +1059,7 @@ function ClusterResult({ data, task }: { data: Record<string, unknown> | null; t
 }
 
 /** 差异基因结果 */
-function MarkersResult({ task, data, taskCache, clusterLevels: parentClusterLevels }: { task: Task; data: Record<string, unknown> | null; taskCache?: Record<string, Task>; clusterLevels?: string[] }) {
+function MarkersResult({ task, data, taskCache, clusterLevels: parentClusterLevels, projectName }: { task: Task; data: Record<string, unknown> | null; taskCache?: Record<string, Task>; clusterLevels?: string[]; projectName?: string }) {
   // 动态列表方式（与 meta.data 一致），兼容 R 返回的任意字段名
   type GeneRow = Record<string, unknown>;
   const topGenes = (data?.top_genes ?? []) as GeneRow[];
@@ -1435,8 +1435,9 @@ function MarkersResult({ task, data, taskCache, clusterLevels: parentClusterLeve
                  {/* 为每个选中的 cluster 渲染图片 */}
                  {tab3Selected.map(cl => {
                    // 这里的 featureName 和 vlnName 是用于请求图片 src 的 canonical 名称
-                   const featureName = `plot_markers_feature_${cl}.png`;
-                   const vlnName = `plot_markers_vln_${cl}.png`;
+                   const fmt = (task.params?.plot_format as string) || "png";
+                   const featureName = `plot_markers_feature_${cl}.${fmt}`;
+                   const vlnName = `plot_markers_vln_${cl}.${fmt}`;
                    const featureSrc = `/api/tasks/${tab3TaskId}/plot?name=${encodeURIComponent(featureName)}`;
                    const vlnSrc = `/api/tasks/${tab3TaskId}/plot?name=${encodeURIComponent(vlnName)}`;
                    
@@ -1446,8 +1447,8 @@ function MarkersResult({ task, data, taskCache, clusterLevels: parentClusterLeve
                    const vRaw: string | string[] | undefined = pps?.[cl]?.vln;
                    const fp = Array.isArray(fRaw) ? fRaw[0] : fRaw;
                    const vp = Array.isArray(vRaw) ? vRaw[0] : vRaw;
-                   const downloadFeatureName = (typeof fp === 'string' ? fp.split('/').pop()! : `plot_markers_feature_${cl}.png`);
-                   const downloadVlnName = (typeof vp === 'string' ? vp.split('/').pop()! : `plot_markers_vln_${cl}.png`);
+                   const downloadFeatureName = (typeof fp === 'string' ? fp.split('/').pop()! : `plot_markers_feature_${cl}.${fmt}`);
+                   const downloadVlnName = (typeof vp === 'string' ? vp.split('/').pop()! : `plot_markers_vln_${cl}.${fmt}`);
                    
                    return (
                    <div key={cl} className="mb-6">
@@ -1574,6 +1575,9 @@ function MarkersResult({ task, data, taskCache, clusterLevels: parentClusterLeve
                         data={tab4Volcano}
                         title={`${tab4G1.join('+')} vs ${tab4G2.join('+')}`}
                         height={550}
+                        plotFormat={(task.params?.plot_format as string) || "png"}
+                        projectName={projectName}
+                        completedAt={tab4Task?.completed_at}
                       />
                     </div>
                   )}
@@ -1608,11 +1612,14 @@ function MarkersResult({ task, data, taskCache, clusterLevels: parentClusterLeve
                     </div>
                   </div>
                   {(() => {
+                    const fmt4 = (task.params?.plot_format as string) || "png";
                     const ts = tab4Task?.completed_at ? tab4Task.completed_at.replace(/[-:T]/g, '').slice(0, 14) : "";
+                    const g1Label = tab4G1.join('_');
+                    const g2Label = tab4G2.join('_');
                     // 使用 task result_path 中的实际文件名（而非硬编码名）
                     const actualCsvName = tab4Task?.result_path
                       ? tab4Task.result_path.split('/').pop()!
-                      : `diff_genes_${tab4G1.join('+')}_vs_${tab4G2.join('+')}.csv`;
+                      : `markers_pairwise_${g1Label}_vs_${g2Label}.csv`;
                     const downloadCsvName = actualCsvName;
 
                     return (
@@ -1745,6 +1752,7 @@ function MarkerExprResult({ data, taskId, task }: { data: Record<string, unknown
   const cellTypes = data?.cell_types as string[] | undefined;
   const markerTable = data?.marker_table as Array<{ CellType: string; Markers: string }> | undefined;
   const plotPath  = unboxScalar<string | undefined>(data?.plot_path);
+  const archiveName = unboxScalar<string | undefined>(data?.archive_name);
   const nMarkers  = unboxScalar<number | undefined>(data?.n_markers);
 
   // Phase B 子 Tab 状态
@@ -1901,7 +1909,7 @@ function MarkerExprResult({ data, taskId, task }: { data: Record<string, unknown
               <div style={{ position: "absolute", bottom: 8, right: 8, display: "flex", gap: 4 }}>
                 <AuthDownloadLink
                   url={`/api/tasks/${taskId}/plot?name=${encodeURIComponent(plotFileName!)}`}
-                  filename={`marker_expr_${cellType}.png`}
+                  filename={archiveName ? archiveName.split('/').pop()! : (plotFileName || `marker_expr_${cellType}.png`)}
                   className="inline-flex items-center justify-center w-9 h-9 rounded-lg transition-all hover:scale-110"
                   style={{ background: "rgba(255,255,255,0.92)", boxShadow: "0 2px 8px rgba(0,0,0,0.10)", color: "var(--clr-amber)" }}
                 >
