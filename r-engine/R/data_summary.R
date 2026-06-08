@@ -190,6 +190,12 @@ is_upper_strict <- function(x) {
 RunAnno <- function(pro,mkfs,cellAnno,group,species="Human",tissue="Blood") {
   if(cellAnno=="自动注释"){
     clusters <- pro@meta.data$Cluster
+    # Seurat v5 split layers: merge before extracting
+    if (inherits(pro@assays[[DefaultAssay(pro)]], "Assay5")) {
+      tryCatch({
+        pro@assays[[DefaultAssay(pro)]] <- JoinLayers(pro@assays[[DefaultAssay(pro)]])
+      }, error = function(e) NULL)
+    }
     pro_for_SingleR <- GetAssayData(pro, layer="data")
 
     ref_list <- list()
@@ -312,6 +318,13 @@ RunMonocle <- function(pro, group_beam = "CellType", group_traj = "CellType",
 
   # 1. 从 Seurat 提取数据
   send_msg(5, "提取表达矩阵...")
+  # Seurat v5 split layers: merge before extracting
+  if (inherits(pro@assays$RNA, "Assay5")) {
+    tryCatch({
+      pro@assays$RNA <- JoinLayers(pro@assays$RNA)
+      message("[MONOCLE] Joined split layers")
+    }, error = function(e) message("[MONOCLE] JoinLayers skipped: ", e$message))
+  }
   if (as.character(packageVersion("Seurat")) >= "4.0") {
     expr_matrix <- LayerData(pro, assay = "RNA", layer = "counts")
   } else {
@@ -407,7 +420,29 @@ RunMonocle <- function(pro, group_beam = "CellType", group_traj = "CellType",
     ord_scaled[is.na(ord_scaled)] <- 0
     s <- svd(ord_scaled, nu = 2L, nv = 0L)
     pca_mat <- s$u %*% diag(s$d[1:2], 2L, 2L)
-    cd@reducedDimS <- pca_mat
+    # 确保 PCA 行数与细胞数一致
+    n_cells_cd <- ncol(cd)
+    if (nrow(pca_mat) == n_cells_cd) {
+      cd@reducedDimS <- t(pca_mat)
+    } else {
+      message(sprintf("PCA rows (%d) != cells (%d), padding with NA", nrow(pca_mat), n_cells_cd))
+      full_mat <- matrix(NA_real_, nrow = n_cells_cd, ncol = 2)
+      cell_names_cd <- colnames(cd)
+      cell_names_pca <- rownames(pca_mat)
+      if (!is.null(cell_names_pca) && !is.null(cell_names_cd)) {
+        common <- intersect(cell_names_cd, cell_names_pca)
+        if (length(common) > 0) {
+          idx_cd <- match(common, cell_names_cd)
+          idx_pca <- match(common, cell_names_pca)
+          full_mat[idx_cd, ] <- pca_mat[idx_pca, ]
+        }
+      } else {
+        n_match <- min(nrow(pca_mat), n_cells_cd)
+        full_mat[seq_len(n_match), ] <- pca_mat[seq_len(n_match), ]
+      }
+      cd@reducedDimS <- t(full_mat)
+    }
+
   }, error = function(e) {
     message("PCA failed: ", e$message)
     monocleOk <<- FALSE
@@ -416,7 +451,13 @@ RunMonocle <- function(pro, group_beam = "CellType", group_traj = "CellType",
   # 使用 PC1 作为拟时序 (纯 R, 不依赖 monocle igraph 内部实现)
   if (monocleOk) {
     send_msg(55, "构建拟时序...")
-    pData(cd)$Pseudotime <- cd@reducedDimS[, 1]
+    pc_scores <- cd@reducedDimS[1, ]
+    if (length(pc_scores) == ncol(cd)) {
+      pData(cd)$Pseudotime <- pc_scores
+    } else {
+      pData(cd)$Pseudotime <- rep(NA_real_, ncol(cd))
+      pData(cd)$Pseudotime[seq_along(pc_scores)] <- pc_scores
+    }
     pData(cd)$State <- factor("1")
   }
 
@@ -425,8 +466,8 @@ RunMonocle <- function(pro, group_beam = "CellType", group_traj = "CellType",
     send_msg(58, "生成轨迹图...")
     # 自定义 ggplot 替代 plot_cell_trajectory (避免 igraph 兼容问题)
     tryCatch({
-      pc1 <- as.numeric(cd@reducedDimS[, 1])
-      pc2 <- as.numeric(cd@reducedDimS[, 2])
+      pc1 <- as.numeric(cd@reducedDimS[1, ])
+      pc2 <- as.numeric(cd@reducedDimS[2, ])
       pt  <- as.numeric(pData(cd)$Pseudotime)
       gf  <- if (group_traj %in% colnames(pData(cd))) {
                pData(cd)[, group_traj]
@@ -467,6 +508,8 @@ RunMonocle <- function(pro, group_beam = "CellType", group_traj = "CellType",
       label="PCA 降维失败，无法生成轨迹图", size=5) + theme_void()
     MonocleResult$plot1 <- p_empty
   }
+
+
 
   # 7. Top 基因表达变化
   send_msg(62, "拟时序基因表达图...")
@@ -589,6 +632,13 @@ RunCellChat <- function(pro, species = "Human", db_use = "Secreted", thresh = 0.
 
   # 1. 创建 CellChat 对象
   send_msg(5, "创建 CellChat 对象...")
+  # Seurat v5 split layers: merge SCT before extracting
+  if (inherits(pro@assays$SCT, "Assay5")) {
+    tryCatch({
+      pro@assays$SCT <- JoinLayers(pro@assays$SCT)
+      message("[CELLCHAT] Joined split SCT layers")
+    }, error = function(e) message("[CELLCHAT] JoinLayers skipped: ", e$message))
+  }
   cellchat <- createCellChat(pro@assays$SCT@data, meta = pro@meta.data, group.by = "CellType")
   groupSize <- as.numeric(table(cellchat@idents))
 
@@ -809,6 +859,16 @@ RunInfercnv <- function(pro, inferDf, cutoff_gene = 0.1, outdir, numThreads = 1L
           " unique types: ", paste(unique(cell_type_col), collapse=", "))
 
   send_msg(20, "创建 inferCNV 对象...")
+  # Seurat v5 split layers: merge before extracting
+  for (aname in c("SCT", "RNA")) {
+    if (!is.null(prosub@assays[[aname]]) && inherits(prosub@assays[[aname]], "Assay5")) {
+      tryCatch({
+        prosub@assays[[aname]] <- JoinLayers(prosub@assays[[aname]])
+        message(sprintf("[INFERCNV] Joined split %s layers", aname))
+      }, error = function(e) NULL)
+    }
+  }
+
   counts_mat <- tryCatch(
     GetAssayData(prosub, assay = "SCT", layer = "counts"),
     error = function(e) GetAssayData(prosub, assay = "RNA", layer = "counts")
@@ -821,6 +881,8 @@ RunInfercnv <- function(pro, inferDf, cutoff_gene = 0.1, outdir, numThreads = 1L
   message("[INFERCNV] counts_mat class: ", paste(class(counts_mat), collapse=","),
           " dim: ", paste(dim(counts_mat), collapse="x"))
   infercnv_obj <- CreateInfercnvObject(raw_counts_matrix = counts_mat,
+
+
                                         annotations_file = annotationsDf,
                                         delim = "\t",
                                         gene_order_file = bedFile,

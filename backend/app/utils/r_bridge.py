@@ -21,6 +21,7 @@ async def call_r_engine(
     payload: dict,
     task: Task,
     db: Session,
+    timeout: float | None = None,
 ) -> dict:
     """
     异步调用 R Plumber API。
@@ -45,7 +46,7 @@ async def call_r_engine(
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(
                 connect=10.0,
-                read=float(settings.r_engine_timeout),
+                read=timeout or float(settings.r_engine_timeout),
                 write=30.0,
                 pool=10.0,
             )

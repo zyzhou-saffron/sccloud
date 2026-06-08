@@ -93,6 +93,15 @@ async def download_meta_csv(
 
 # ===== 后台任务执行函数 =====
 
+# 长耗时步骤的超时覆盖 (秒)
+STEP_TIMEOUT_OVERRIDES = {
+    "infercnv": 14400,  # 4 小时
+    "cellchat": 7200,   # 2 小时
+    "monocle": 7200,    # 2 小时
+    "wgcna": 7200,      # 2 小时
+}
+
+
 async def _run_task_background(task_id: str, step: str, payload: dict):
     """
     后台执行分析任务。
@@ -111,6 +120,7 @@ async def _run_task_background(task_id: str, step: str, payload: dict):
             payload=payload,
             task=task,
             db=db,
+            timeout=STEP_TIMEOUT_OVERRIDES.get(step),
         )
     except Exception as e:
         # 确保失败时更新状态

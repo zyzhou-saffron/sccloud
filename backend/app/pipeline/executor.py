@@ -20,6 +20,13 @@ PIPELINE_PHASE1 = ["qc", "normalize", "reduce", "annotate"]
 PIPELINE_PHASE2_ALL = ["markers", "enrich", "monocle", "cellchat", "infercnv", "wgcna"]
 # Phase 2 步骤全部串行执行 — R Plumber 单线程，并行会导致内存溢出和进程崩溃
 PARALLEL_PHASE2 = []
+# 长耗时步骤的超时覆盖 (秒)
+STEP_TIMEOUT_OVERRIDES = {
+    "infercnv": 14400,  # 4 小时
+    "cellchat": 7200,   # 2 小时
+    "monocle": 7200,    # 2 小时
+    "wgcna": 7200,      # 2 小时
+}
 # reduce 步骤内部依次执行 reduce + cluster 两个 R 引擎端点
 
 
@@ -197,7 +204,10 @@ async def resume_pipeline(pipeline_id: str, phase2_steps: List[str] = None) -> N
         # 确定 Phase 2 步骤
         if phase2_steps is None:
             enabled = pipeline.params.get("enabled_steps", [])
-            phase2_steps = [s for s in PIPELINE_PHASE2_ALL if s in enabled]
+        else:
+            enabled = phase2_steps
+        # 始终按 PIPELINE_PHASE2_ALL 正确顺序排列
+        phase2_steps = [s for s in PIPELINE_PHASE2_ALL if s in enabled]
 
         if not phase2_steps:
             phase2_steps = ["markers"]  # 默认至少跑 markers
@@ -268,6 +278,7 @@ async def _execute_step(db: Session, pipeline: Pipeline, step: str, step_params:
                 payload=payload,
                 task=task,
                 db=db,
+                timeout=STEP_TIMEOUT_OVERRIDES.get(step),
             )
         except Exception as e:
             # call_r_engine 已更新 task.status = "failed" 和 task.error_msg
