@@ -811,8 +811,11 @@ function(req) {
   resolution <- params$resolution %||% 0.5
   group_by <- params$group_by %||% "Sample"
 
-  # 如果分组变量只有 1 个水平，Harmony 会失败，回退到 Sample
-  if (group_by %in% colnames(pro@meta.data)) {
+  # 如果分组变量不存在或只有 1 个水平，Harmony 会失败，回退到 Sample
+  if (!(group_by %in% colnames(pro@meta.data))) {
+    report(18, paste0(group_by, " 列不存在于 metadata 中，回退为 Sample"))
+    group_by <- "Sample"
+  } else {
     n_levels <- length(unique(pro@meta.data[[group_by]]))
     if (n_levels < 2) {
       report(18, paste0(group_by, " 只有 ", n_levels, " 个分组，回退为 Sample"))

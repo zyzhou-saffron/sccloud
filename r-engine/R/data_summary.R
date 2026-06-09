@@ -887,6 +887,9 @@ RunInfercnv <- function(pro, inferDf, cutoff_gene = 0.1, outdir, numThreads = 1L
                                         delim = "\t",
                                         gene_order_file = bedFile,
                                         ref_group_names = refGroupNames)
+  # 释放不再需要的大对象，减少 infercnv::run() 内存峰值
+  rm(counts_mat, annotationsDf, prosub)
+  gc(verbose = FALSE)
 
   send_msg(25, "运行 inferCNV 分析...")
   # Ensure parameter types are correct
