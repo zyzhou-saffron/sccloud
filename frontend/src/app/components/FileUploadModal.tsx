@@ -80,26 +80,8 @@ export default function FileUploadModal({
         setUploadProgress(Math.round(((i + 1) / totalChunks) * 70));
       }
 
-      // 3. 解析文件信息
-      setInspecting(true);
-      setUploadProgress(75);
-
-      const inspectForm = new FormData();
-      inspectForm.append("upload_id", upload_id);
-      const inspectRes = await fetch("/api/upload/inspect", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-        body: inspectForm,
-      });
-      if (!inspectRes.ok) {
-        const errorData = await inspectRes.json().catch(() => ({}));
-        throw new Error(errorData.detail || "解析文件失败");
-      }
-      const info = (await inspectRes.json()) as FileInfo;
-      setFileInfo(info);
-
-      // 4. 完成上传
-      setUploadProgress(90);
+      // 3. 先完成上传（合并分片），不依赖 R 引擎
+      setUploadProgress(80);
       const completeForm = new FormData();
       completeForm.append("upload_id", upload_id);
       completeForm.append("project_id", String(projectId));
@@ -117,8 +99,28 @@ export default function FileUploadModal({
       }
       const { path: filePath } = (await completeRes.json()) as { path: string };
 
-      setUploadProgress(100);
+      setUploadProgress(90);
       setUploadedFile({ name: file.name, path: filePath });
+
+      // 4. 解析文件信息（不阻塞上传，失败时用户仍可使用文件）
+      setInspecting(true);
+      try {
+        const inspectForm = new FormData();
+        inspectForm.append("file_path", filePath);
+        const inspectRes = await fetch("/api/upload/inspect-path", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+          body: inspectForm,
+        });
+        if (inspectRes.ok) {
+          const info = (await inspectRes.json()) as FileInfo;
+          setFileInfo(info);
+        }
+      } catch {
+        // inspect 失败不影响上传结果
+      }
+
+      setUploadProgress(100);
       setTimeout(() => setUploadProgress(null), 500);
     } catch (e) {
       setError(e instanceof Error ? e.message : "上传失败");
@@ -294,7 +296,7 @@ export default function FileUploadModal({
           />
 
           {/* 已上传文件信息 */}
-          {uploadedFile && fileInfo && (
+          {uploadedFile && (
             <div className="space-y-4">
               {/* 文件基本信息 */}
               <div
@@ -321,10 +323,16 @@ export default function FileUploadModal({
                   </span>
                 </div>
                 <div className="text-sm" style={{ color: "var(--clr-text-muted)" }}>
-                  {fileInfo.filename} ({fileInfo.file_size_mb} MB)
+                  {fileInfo ? `${fileInfo.filename} (${fileInfo.file_size_mb} MB)` : uploadedFile.name}
                 </div>
               </div>
 
+              {!fileInfo && inspecting && (
+                <div className="p-4 rounded-lg border text-center" style={{ borderColor: "var(--clr-border)", background: "var(--clr-bg-alt)" }}>
+                  <div className="text-sm" style={{ color: "var(--clr-text-muted)" }}>正在解析文件信息...</div>
+                </div>
+              )}
+              {fileInfo && (<>
               {/* 文件维度信息 */}
               <div
                 className="p-4 rounded-lg border"
@@ -476,6 +484,7 @@ export default function FileUploadModal({
                 )}
               </div>
 
+              </>)}
               {/* 操作按钮 */}
               <div className="flex gap-3 pt-2">
                 <button
