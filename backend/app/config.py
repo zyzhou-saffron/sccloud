@@ -26,7 +26,7 @@ class Settings(BaseSettings):
 
     # ---- R 计算引擎 ----
     r_engine_url: str = "http://localhost:8787"
-    r_engine_timeout: int = 3600
+    r_engine_timeout: int = 7200
 
     # ---- 文件存储 ----
     projects_root: str = "/data/projects"

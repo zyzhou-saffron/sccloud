@@ -151,7 +151,7 @@ export default function GeneExpressionPopup({
     setLoading(true);
     setError(null);
 
-    const authToken = token || (typeof window !== "undefined" ? localStorage.getItem("token") || "" : "");
+    const authToken = token || (typeof window !== "undefined" ? localStorage.getItem("access_token") || "" : "");
 
     const params = new URLSearchParams({ gene });
     if (celltype) params.set("celltype", celltype);
@@ -180,7 +180,7 @@ export default function GeneExpressionPopup({
       });
 
     return () => { cancelled = true; };
-  }, [gene, projectId, token]);
+  }, [gene, celltype, projectId, token]);
 
   // deck.gl 图层
   const layers = useMemo(() => {
@@ -214,10 +214,13 @@ export default function GeneExpressionPopup({
     if (!data || data.x.length === 0) {
       return { target: [0, 0] as [number, number], zoom: 1 };
     }
-    const minX = Math.min(...data.x);
-    const maxX = Math.max(...data.x);
-    const minY = Math.min(...data.y);
-    const maxY = Math.max(...data.y);
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (let i = 0; i < data.x.length; i++) {
+      if (data.x[i] < minX) minX = data.x[i];
+      if (data.x[i] > maxX) maxX = data.x[i];
+      if (data.y[i] < minY) minY = data.y[i];
+      if (data.y[i] > maxY) maxY = data.y[i];
+    }
     const cx = (minX + maxX) / 2;
     const cy = (minY + maxY) / 2;
     const rangeX = maxX - minX || 1;

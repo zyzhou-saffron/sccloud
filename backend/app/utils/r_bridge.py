@@ -66,6 +66,8 @@ async def call_r_engine(
             raise Exception(r_msg)
 
         result = response.json()
+        if isinstance(result, list):
+            result = {"_raw": result, "status": "success"}
 
         # 保存完整结果数据到项目目录 (QC 表格等大数据)
         result_data_path = None
@@ -102,7 +104,7 @@ async def call_r_engine(
         task.progress = 100
         task.progress_message = "✅ 分析完成"
         # result_path 优先取 R 引擎返回值，否则用保存的 JSON 文件路径
-        task.result_path = result.get("result_path") or result_data_path
+        task.result_path = (result.get("result_path") if isinstance(result, dict) else None) or result_data_path
         task.completed_at = datetime.now(timezone.utc)
         db.commit()
 

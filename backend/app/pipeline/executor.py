@@ -22,10 +22,10 @@ PIPELINE_PHASE2_ALL = ["markers", "enrich", "monocle", "cellchat", "infercnv", "
 PARALLEL_PHASE2 = []
 # 长耗时步骤的超时覆盖 (秒)
 STEP_TIMEOUT_OVERRIDES = {
-    "infercnv": 14400,  # 4 小时
-    "cellchat": 7200,   # 2 小时
-    "monocle": 7200,    # 2 小时
-    "wgcna": 7200,      # 2 小时
+    "infercnv": 28800,  # 8 小时
+    "cellchat": 10800,  # 3 小时
+    "monocle": 14400,   # 4 小时
+    "wgcna": 14400,     # 4 小时
 }
 # reduce 步骤内部依次执行 reduce + cluster 两个 R 引擎端点
 

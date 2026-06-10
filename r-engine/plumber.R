@@ -1079,6 +1079,7 @@ if (plot_format == "pdf") {
     cluster_labels = paste(levels(Idents(pro)), collapse = ","),
     top_genes = head(diffTable, 20)
   )
+gc(verbose = FALSE)
 }
 
 
@@ -1182,6 +1183,7 @@ if (plot_format == "pdf") {
     ),
     enrich_data = enrich_data
   )
+gc(verbose = FALSE)
 }
 
 
@@ -2443,6 +2445,7 @@ function(req) {
       beam_genes = nrow(result$data8 %||% data.frame())
     )
   )
+gc(verbose = FALSE)
 }
 
 
@@ -2587,6 +2590,7 @@ function(req) {
       group_sizes = result$data3
     )
   )
+gc(verbose = FALSE)
 }
 
 
@@ -2700,6 +2704,7 @@ function(req) {
       cutoff = cutoff_gene
     )
   )
+gc(verbose = FALSE)
 }
 
 
@@ -2857,4 +2862,5 @@ function(req) {
     data_paths = all_data_paths,
     stats = all_stats
   )
+gc(verbose = FALSE)
 }

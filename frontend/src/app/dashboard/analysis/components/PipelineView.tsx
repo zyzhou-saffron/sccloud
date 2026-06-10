@@ -177,12 +177,11 @@ export default function PipelineView({ pipelineId, token, projectName }: Pipelin
     paused:    { bg: "rgba(59,130,246,0.1)", color: "#3b82f6" },
   }[pipeline.status] || {};
 
-  // 构建 taskMap：优先级 running > failed > pending > completed（避免重复任务时 map 被旧状态覆盖）
-  const STATUS_PRIORITY: Record<string, number> = { running: 4, pending: 3, failed: 2, completed: 1 };
+  // 构建 taskMap：同步骤多条记录时取最新的一条（按 created_at 时间）
   const taskMap = new Map<string, typeof pipeline.tasks[0]>();
   for (const t of pipeline.tasks) {
     const existing = taskMap.get(t.step);
-    if (!existing || (STATUS_PRIORITY[t.status] || 0) > (STATUS_PRIORITY[existing.status] || 0)) {
+    if (!existing || (t.created_at ?? "") > (existing.created_at ?? "")) {
       taskMap.set(t.step, t);
     }
   }
