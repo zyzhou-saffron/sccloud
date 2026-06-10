@@ -1066,6 +1066,7 @@ if (plot_format == "pdf") {
 
   report(100, "差异分析完成")
 
+  gc(verbose = FALSE)
   list(
     status = "success",
     result_path = output_csv,
@@ -1079,7 +1080,6 @@ if (plot_format == "pdf") {
     cluster_labels = paste(levels(Idents(pro)), collapse = ","),
     top_genes = head(diffTable, 20)
   )
-gc(verbose = FALSE)
 }
 
 
@@ -1172,6 +1172,7 @@ if (plot_format == "pdf") {
     )
   } else NULL
 
+  gc(verbose = FALSE)
   list(
     status = "success",
     plot_path = plot_path,
@@ -1183,7 +1184,6 @@ if (plot_format == "pdf") {
     ),
     enrich_data = enrich_data
   )
-gc(verbose = FALSE)
 }
 
 
@@ -2435,6 +2435,7 @@ function(req) {
 
   report(100, "Monocle 分析完成")
 
+  gc(verbose = FALSE)
   list(
     status = "success",
     plot_paths = plot_paths,
@@ -2445,7 +2446,6 @@ function(req) {
       beam_genes = nrow(result$data8 %||% data.frame())
     )
   )
-gc(verbose = FALSE)
 }
 
 
@@ -2606,6 +2606,7 @@ function(req) {
 
   report(100, "CellChat 分析完成")
 
+  gc(verbose = FALSE)
   list(
     status = "success",
     plot_paths = plot_paths,
@@ -2616,7 +2617,6 @@ function(req) {
       group_sizes = result$data3
     )
   )
-gc(verbose = FALSE)
 }
 
 
@@ -2719,6 +2719,7 @@ function(req) {
 
   report(100, "inferCNV 分析完成")
 
+  gc(verbose = FALSE)
   list(
     status = "success",
     outdir = outdir,
@@ -2730,7 +2731,6 @@ function(req) {
       cutoff = cutoff_gene
     )
   )
-gc(verbose = FALSE)
 }
 
 
@@ -2880,6 +2880,7 @@ function(req) {
   )
   jsonlite::write_json(result_data, result_json, auto_unbox = TRUE, pretty = TRUE)
 
+  gc(verbose = FALSE)
   list(
     status = "success",
     result_path = result_json,
@@ -2888,5 +2889,4 @@ function(req) {
     data_paths = all_data_paths,
     stats = all_stats
   )
-gc(verbose = FALSE)
 }

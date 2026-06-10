@@ -54,6 +54,7 @@ class PipelineResponse:
                 "progress_message": t.progress_message,
                 "result_path": t.result_path,
                 "error_msg": t.error_msg,
+                "created_at": t.created_at.isoformat() if t.created_at else None,
             }
             for t in pipeline.tasks
         ]

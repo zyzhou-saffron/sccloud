@@ -67,7 +67,12 @@ async def call_r_engine(
 
         result = response.json()
         if isinstance(result, list):
-            result = {"_raw": result, "status": "success"}
+            # R jsonlite wraps single-element dicts as [{...}]; extract dict candidates
+            dict_candidates = [item for item in result if isinstance(item, dict)]
+            if dict_candidates:
+                result = dict_candidates[0]
+            else:
+                result = {"_raw": result, "status": "success"}
 
         # 保存完整结果数据到项目目录 (QC 表格等大数据)
         result_data_path = None

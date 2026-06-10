@@ -326,11 +326,8 @@ async def download_example_cell_anno():
 
     example_path = "/app/data/examples/example.cellAnno.txt"
     if not os.path.exists(example_path):
-        alt_path = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-            "..", "r-engine", "data", "examples", "example.cellAnno.txt"
-        )
-        example_path = alt_path if os.path.exists(alt_path) else example_path
+        alt_path = os.path.join(os.path.dirname(__file__), "..", "data", "examples", "example.cellAnno.txt")
+        example_path = os.path.normpath(alt_path) if os.path.exists(os.path.normpath(alt_path)) else example_path
 
     if not os.path.exists(example_path):
         raise HTTPException(status_code=404, detail="示例文件不存在")
@@ -339,6 +336,27 @@ async def download_example_cell_anno():
         example_path,
         media_type="text/plain",
         filename="example.cellAnno.txt",
+    )
+
+
+@router.get("/example-sample-rds")
+async def download_example_sample_rds():
+    """下载示例数据文件（Samples.filter.rds）。"""
+    import os
+    from fastapi.responses import FileResponse
+
+    example_path = "/app/data/examples/Samples.filter.rds"
+    if not os.path.exists(example_path):
+        alt_path = os.path.join(os.path.dirname(__file__), "..", "data", "examples", "Samples.filter.rds")
+        example_path = os.path.normpath(alt_path) if os.path.exists(os.path.normpath(alt_path)) else example_path
+
+    if not os.path.exists(example_path):
+        raise HTTPException(status_code=404, detail="示例文件不存在")
+
+    return FileResponse(
+        example_path,
+        media_type="application/octet-stream",
+        filename="Samples.filter.rds",
     )
 
 
@@ -386,6 +404,16 @@ async def get_task(
     return task
 
 
+
+def _unbox_r_scalars(obj):
+    """R jsonlite wraps every scalar in a single-element list. Recursively unwrap."""
+    if isinstance(obj, list):
+        if len(obj) == 1:
+            return _unbox_r_scalars(obj[0])
+        return [_unbox_r_scalars(item) for item in obj]
+    if isinstance(obj, dict):
+        return {k: _unbox_r_scalars(v) for k, v in obj.items()}
+    return obj
 @router.get("/{task_id}/result")
 async def get_task_result(
     task_id: str,
@@ -432,7 +460,7 @@ async def get_task_result(
                         orig = orig[0] if orig else row.get("celltype", "")
                     row["original_celltype"] = orig
 
-    return result
+    return _unbox_r_scalars(result)
 
 
 @router.put("/{task_id}/result")

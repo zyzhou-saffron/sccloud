@@ -373,6 +373,15 @@ export default function PipelineForm({ projectId, token, onSubmit, uploadedFiles
         />
       </div>
 
+      {/* 示例数据下载 */}
+      <div className="flex items-center gap-2 mt-2 px-1">
+        <a href="/api/tasks/example-sample-rds" download="Samples.filter.rds"
+          className="text-[11px] underline" style={{ color: "var(--clr-amber-dark)" }}>
+          下载示例数据文件 (Samples.filter.rds)
+        </a>
+        <span className="text-[10px]" style={{ color: "var(--clr-text-faint)" }}>约 3.4 MB，可用于测试全流程分析</span>
+      </div>
+
       <form onSubmit={handleSubmit} className="space-y-3">
         {/* Steps 1-4: 基础分析参数 */}
         <div className="card p-4" style={{ borderColor: "var(--clr-border)" }}>
