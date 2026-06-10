@@ -5,6 +5,9 @@ FastAPI 通过 HTTP 调用 R Plumber API，异步非阻塞。
 """
 
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 import os
 import uuid
 from datetime import datetime, timezone
@@ -43,18 +46,31 @@ async def call_r_engine(
     db.commit()
 
     try:
-        async with httpx.AsyncClient(
-            timeout=httpx.Timeout(
-                connect=10.0,
-                read=timeout or float(settings.r_engine_timeout),
-                write=30.0,
-                pool=10.0,
-            )
-        ) as client:
-            response = await client.post(
-                f"{settings.r_engine_url}/{endpoint}",
-                json=payload,
-            )
+        r_url = f"{settings.r_engine_url}/{endpoint}"
+        effective_timeout = timeout or float(settings.r_engine_timeout)
+        last_error = None
+
+        for attempt in range(2):  # max 1 retry
+            try:
+                logger.info(f"[call_r_engine] {endpoint} attempt={attempt+1}, timeout={effective_timeout}s")
+                async with httpx.AsyncClient(
+                    timeout=httpx.Timeout(
+                        connect=10.0,
+                        read=effective_timeout,
+                        write=120.0,
+                        pool=10.0,
+                    )
+                ) as client:
+                    response = await client.post(r_url, json=payload)
+                break
+            except (httpx.ReadTimeout, httpx.RemoteProtocolError, httpx.ReadError) as e:
+                last_error = e
+                if attempt == 0:
+                    logger.warning(f"[call_r_engine] {endpoint} attempt {attempt+1} failed: {e}, retrying...")
+                    task.progress_message = "连接中断，正在重试..."
+                    db.commit()
+                    continue
+                raise
 
         if response.status_code != 200:
             # 尝试提取 R 引擎返回的原始错误消息

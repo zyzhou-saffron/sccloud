@@ -2697,15 +2697,58 @@ function(req) {
 
   report(95, "收集结果...")
 
-  # 收集输出文件
+  # infercnv 图文件中文标签映射
+  infercnv_label_map <- list(
+    "infercnv.png"                        = "最终热图 (去噪后)",
+    "infercnv.preliminary.png"            = "初步热图 (去噪前)",
+    "infercnv_subclusters.png"            = "亚群聚类热图"
+  )
+  get_infercnv_label <- function(fname) {
+    if (!is.null(infercnv_label_map[[fname]])) return(infercnv_label_map[[fname]])
+    # 动态匹配带编号的文件
+    if (grepl("HMM_pred.*Bayes_Net", fname)) return("贝叶斯网络 CNV 预测热图")
+    if (grepl("repr_intensities", fname))    return("表达强度热图 (HMM CNV)")
+    if (grepl("HMM_predHMMi6", fname))       return("HMM 预测 CNV 热图")
+    # 兜底: 去掉前缀和扩展名
+    sub("^infercnv\\.", "", sub("\\.png$", "", fname))
+  }
+
+  # PDF 转换函数: 将 PNG 嵌入 PDF 页面
+  convert_png_to_pdf <- function(png_path, pdf_path) {
+    tryCatch({
+      img <- magick::image_read(png_path)
+      magick::image_write(img, path = pdf_path, format = "pdf")
+      TRUE
+    }, error = function(e) {
+      message("[INFERCNV] PDF 转换失败: ", e$message)
+      FALSE
+    })
+  }
+
+  # 收集输出文件，使用中文标签，按需转换 PDF
   output_files <- list.files(outdir, full.names = TRUE)
   plot_paths <- list()
   data_paths <- list()
 
+  want_pdf <- identical(plot_format, "pdf")
+
   for (f in output_files) {
     fname <- basename(f)
     if (grepl("\\.png$", fname)) {
-      plot_paths[[fname]] <- f
+      label <- get_infercnv_label(fname)
+      if (want_pdf) {
+        pdf_path <- sub("\\.png$", ".pdf", f)
+        if (convert_png_to_pdf(f, pdf_path)) {
+          plot_paths[[label]] <- pdf_path
+        } else {
+          plot_paths[[label]] <- f
+        }
+      } else {
+        plot_paths[[label]] <- f
+      }
+    } else if (grepl("\\.pdf$", fname)) {
+      label <- get_infercnv_label(sub("\\.pdf$", ".png", fname))
+      plot_paths[[label]] <- f
     } else if (grepl("\\.(txt|csv)$", fname)) {
       data_paths[[fname]] <- f
     }

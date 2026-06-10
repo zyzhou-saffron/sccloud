@@ -95,10 +95,10 @@ async def download_meta_csv(
 
 # 长耗时步骤的超时覆盖 (秒)
 STEP_TIMEOUT_OVERRIDES = {
-    "infercnv": 14400,  # 4 小时
-    "cellchat": 7200,   # 2 小时
-    "monocle": 7200,    # 2 小时
-    "wgcna": 7200,      # 2 小时
+    "infercnv": 86400,  # 24 小时
+    "cellchat": 14400,  # 4 小时
+    "monocle": 21600,   # 6 小时
+    "wgcna": 21600,     # 6 小时
 }
 
 
