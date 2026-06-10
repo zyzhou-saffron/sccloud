@@ -39,6 +39,7 @@ const DEFAULT_PARAMS: Record<string, Record<string, unknown>> = {
   cluster: { method: "harmony", resolution: 0.5, n_dims: 30, group_by: "Sample", plot_format: "png" },
   markers: { cluster: "All", min_pct: 0.1, logfc_threshold: 0.25, p_val_adj: 0.05, test_use: "wilcox", only_pos: true, ntop: 5, plot_format: "png" },
   annotate: { anno_type: "自动注释", group_by: "Sample", species: "Human", tissue: "Blood", plot_format: "png" },
+  cellchat: { species: "Human", db_use: "Secreted", thresh: 0.05, min_cells: 10, prob_method: "triMean", top_pathways: 1, remove_isolate: false, plot_format: "png" },
   wgcna: { interest_type: "", min_fraction: 0.05, sft_threshold: 0.8, module_score: "Seurat", k: 25, max_shared: 10, min_cells: 100, n_hubs: 10, n_genes_score: 25, plot_format: "png" },
 };
 
@@ -632,8 +633,14 @@ export default function PipelineForm({ projectId, token, onSubmit, uploadedFiles
                 </div>
               </div>
             </div>
+
+            {/* 分隔线 */}
+            <div className="col-span-2" style={{ borderTop: "1px solid var(--clr-border)" }} />
+
           </div>
         </div>
+
+
 
 
         {/* 手动注释：文件上传 + 示例下载 */}

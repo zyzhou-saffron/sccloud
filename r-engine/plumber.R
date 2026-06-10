@@ -2475,6 +2475,10 @@ function(req) {
   species <- params$species %||% "Human"
   db_use <- params$db_use %||% "Secreted"
   thresh <- params$thresh %||% 0.05
+  min_cells <- as.integer(params$min_cells %||% 10)
+  prob_method <- params$prob_method %||% "triMean"
+  top_pathways <- as.integer(params$top_pathways %||% 1)
+  remove_isolate <- isTRUE(params$remove_isolate)
 
   old_wd <- getwd()
   setwd(project_path)
@@ -2482,6 +2486,8 @@ function(req) {
   progress_cb <- function(pct, msg) report(pct, msg)
 
   result <- RunCellChat(pro, species = species, db_use = db_use, thresh = thresh,
+                        min_cells = min_cells, prob_method = prob_method,
+                        top_pathways = top_pathways, remove_isolate = remove_isolate,
                         progress_callback = progress_cb)
 
   report(95, "保存图表...")
@@ -2549,6 +2555,26 @@ function(req) {
         message(paste0("Plot save error (", cfg$name, "): ", e$message))
       })
     }
+  }
+
+  # 保存多通路编号图表（plot4_1, plot5_1, p91_1, p92_1, ...）
+  for (pw_idx in 1:99) {
+    found <- FALSE
+    for (cfg in plot_configs) {
+      numbered_key <- paste0(cfg$key, "_", pw_idx)
+      if (!is.null(result[[numbered_key]])) {
+        found <- TRUE
+        fname <- make_output_name(project_path, "10", "cellchat", paste0(cfg$name, "_", pw_idx), plot_format)
+        fpath <- file.path(project_path, fname)
+        tryCatch({
+          if (plot_format == "pdf") { pdf(fpath) } else { png(fpath, width = cfg$w, height = cfg$h, res = 150) }
+          if (inherits(result[[numbered_key]], "Heatmap")) { draw(result[[numbered_key]]) } else { print(result[[numbered_key]]) }
+          dev.off()
+          plot_paths[[paste0(cfg$name, "_", pw_idx)]] <- fpath
+        }, error = function(e) { dev.off(); message(paste0("Plot save error (", numbered_key, "): ", e$message)) })
+      }
+    }
+    if (!found) break
   }
 
   # 保存气泡图（ggplot 对象用 ggsave）

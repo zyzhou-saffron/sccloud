@@ -23,7 +23,7 @@ const DEFAULT_PARAMS = {
   markers: { cluster: "All", min_pct: 0.1, logfc_threshold: 0.25, p_val_adj: 0.05, test_use: "wilcox", only_pos: true, ntop: 5, group_by: "CellType", plot_format: "png" },
   enrich: { pathway: "GO", direction: "Up", pvalue_cutoff: 0.05, qvalue_cutoff: 0.2, n_term: 10, plot_format: "png" },
   monocle: { group_beam: "CellType", group_traj: "CellType", min_expr_threshold: 0.5, min_cells_pct: 0.01, mean_expr: 0.3, qvalue1: 1e-5, reverse: false, plot_format: "png" },
-  cellchat: { db_use: "Secreted", thresh: 0.05, plot_format: "png" },
+  cellchat: { db_use: "Secreted", thresh: 0.05, min_cells: 10, prob_method: "triMean", top_pathways: 1, remove_isolate: false, plot_format: "png" },
   infercnv: { cutoff_gene: 0.1, num_threads: 4, species: "Human", infer_df: [] as { cellType: string; refType: string }[], plot_format: "png" },
   wgcna: { interest_types: [] as string[], min_fraction: 0.05, sft_threshold: 0.8, module_score: "Seurat", k: 25, max_shared: 10, min_cells: 100, n_hubs: 10, n_genes_score: 25, plot_format: "png" },
 };
@@ -401,17 +401,42 @@ export default function Phase2ParamPage({ pipeline, token, onComplete, species =
                           <option value="Secreted">Secreted Signaling</option>
                           <option value="ECM-Receptor">ECM-Receptor</option>
                           <option value="Cell-Cell Contact">Cell-Cell Contact</option>
+                          <option value="All">全部</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>概率计算方法</label>
+                        <select value={params.cellchat.prob_method} onChange={(e) => updateParam("cellchat", "prob_method", e.target.value)} className={selectCls} style={selectStyle}>
+                          <option value="triMean">triMean</option>
+                          <option value="truncatedMean">truncatedMean</option>
                         </select>
                       </div>
                       <div>
                         <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>通讯显著性阈值</label>
-                        <input type="number" value={params.cellchat.thresh} onChange={(e) => updateParam("cellchat", "thresh", Number(e.target.value))} min={0} max={1} step={0.01} className={numberCls} style={inputStyle} />
+                        <input type="number" value={params.cellchat.thresh} onChange={(e) => updateParam("cellchat", "thresh", Number(e.target.value))} min={0} max={0.5} step={0.01} className={numberCls} style={inputStyle} />
                       </div>
                       <div>
                         <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>物种</label>
                         <div className="px-2 py-1.5 rounded text-xs border" style={{ borderColor: "var(--clr-border)", background: "var(--clr-bg-alt)", color: "var(--clr-text-muted)" }}>
                           {species}（自动）
                         </div>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-x-4 gap-y-2">
+                      <div>
+                        <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>最少细胞数</label>
+                        <input type="number" value={params.cellchat.min_cells} onChange={(e) => updateParam("cellchat", "min_cells", Number(e.target.value))} min={1} max={500} className={numberCls} style={inputStyle} />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>展示通路数</label>
+                        <input type="number" value={params.cellchat.top_pathways} onChange={(e) => updateParam("cellchat", "top_pathways", Number(e.target.value))} min={1} max={20} className={numberCls} style={inputStyle} />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>隐藏无通讯类型</label>
+                        <select value={String(params.cellchat.remove_isolate)} onChange={(e) => updateParam("cellchat", "remove_isolate", e.target.value === "true")} className={selectCls} style={selectStyle}>
+                          <option value="false">否（显示全部）</option>
+                          <option value="true">是（仅显示有通讯）</option>
+                        </select>
                       </div>
                     </div>
                   </div>

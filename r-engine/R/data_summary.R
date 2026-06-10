@@ -616,7 +616,8 @@ RunMonocle <- function(pro, group_beam = "CellType", group_traj = "CellType",
 #' @param progress_callback 进度回调函数
 #' @return list(data1~data3, plot1, plot4~5, f1, p91~92)
 RunCellChat <- function(pro, species = "Human", db_use = "Secreted", thresh = 0.05,
-                        progress_callback = NULL) {
+                        min_cells = 10, prob_method = "triMean", top_pathways = 1,
+                        remove_isolate = FALSE, progress_callback = NULL) {
   suppressMessages(library(CellChat))
   send_msg <- function(pct, msg) {
     if (!is.null(progress_callback)) progress_callback(pct, msg)
@@ -670,8 +671,8 @@ RunCellChat <- function(pro, species = "Human", db_use = "Secreted", thresh = 0.
 
   # 4. 推断通讯网络
   send_msg(35, "推断通讯概率...")
-  cellchat <- computeCommunProb(cellchat, type = "triMean")
-  cellchat <- filterCommunication(cellchat, min.cells = 10)
+  cellchat <- computeCommunProb(cellchat, type = prob_method)
+  cellchat <- filterCommunication(cellchat, min.cells = min_cells)
 
   send_msg(50, "提取通讯结果...")
   df.net <- subsetCommunication(cellchat)
@@ -700,37 +701,48 @@ RunCellChat <- function(pro, species = "Human", db_use = "Secreted", thresh = 0.
   # 6. 信号通路可视化
   send_msg(75, "信号通路可视化...")
   pathways.show.all <- cellchat@netP$pathways
-  pathways.show <- pathways.show.all[1]
+  pathways.show <- pathways.show.all[1:min(top_pathways, length(pathways.show.all))]
 
   if (!is.null(pathways.show) && length(pathways.show) > 0) {
-    # 热图
-    p4 <- netVisual_heatmap(cellchat, signaling = pathways.show, color.heatmap = "Reds")
-    CellChatResult$plot4 <- p4
-
-    # 通路贡献
-    p5 <- netAnalysis_contribution(cellchat, signaling = pathways.show)
-    CellChatResult$plot5 <- p5
+    # 热图 + 通路贡献（每个通路单独保存）
+    for (pw_idx in seq_along(pathways.show)) {
+      pw <- pathways.show[pw_idx]
+      tryCatch({
+        p4 <- netVisual_heatmap(cellchat, signaling = pw, color.heatmap = "Reds")
+        if (pw_idx == 1) CellChatResult$plot4 <- p4
+        CellChatResult[[paste0("plot4_", pw_idx)]] <- p4
+      }, error = function(e) message(paste0("Heatmap error for ", pw, ": ", e$message)))
+      tryCatch({
+        p5 <- netAnalysis_contribution(cellchat, signaling = pw)
+        if (pw_idx == 1) CellChatResult$plot5 <- p5
+        CellChatResult[[paste0("plot5_", pw_idx)]] <- p5
+      }, error = function(e) message(paste0("Contribution error for ", pw, ": ", e$message)))
+    }
   }
 
   # 7. 气泡图（所有细胞类型间的相互作用）
   send_msg(82, "生成气泡图...")
   tryCatch({
-    f1 <- netVisual_bubble(cellchat, remove.isolate = FALSE)
+    f1 <- netVisual_bubble(cellchat, remove.isolate = remove_isolate)
     CellChatResult$f1 <- f1
   }, error = function(e) send_msg(82, paste0("Bubble plot error: ", e$message)))
 
   # 8. 基因表达
   send_msg(90, "基因表达图...")
   if (!is.null(pathways.show) && length(pathways.show) > 0) {
-    tryCatch({
-      p91 <- plotGeneExpression(cellchat, signaling = pathways.show)
-      CellChatResult$p91 <- p91
-    }, error = function(e) send_msg(90, paste0("Gene expression plot error: ", e$message)))
-
-    tryCatch({
-      p92 <- plotGeneExpression(cellchat, signaling = pathways.show, type = "dot", color.use = clusterCols)
-      CellChatResult$p92 <- p92
-    }, error = function(e) send_msg(90, paste0("Gene expression dot plot error: ", e$message)))
+    for (pw_idx in seq_along(pathways.show)) {
+      pw <- pathways.show[pw_idx]
+      tryCatch({
+        p91 <- plotGeneExpression(cellchat, signaling = pw)
+        if (pw_idx == 1) CellChatResult$p91 <- p91
+        CellChatResult[[paste0("p91_", pw_idx)]] <- p91
+      }, error = function(e) message(paste0("Gene expression error for ", pw, ": ", e$message)))
+      tryCatch({
+        p92 <- plotGeneExpression(cellchat, signaling = pw, type = "dot", color.use = clusterCols)
+        if (pw_idx == 1) CellChatResult$p92 <- p92
+        CellChatResult[[paste0("p92_", pw_idx)]] <- p92
+      }, error = function(e) message(paste0("Gene expression dot error for ", pw, ": ", e$message)))
+    }
   }
 
   # 保存 cellchat 对象供后续使用
