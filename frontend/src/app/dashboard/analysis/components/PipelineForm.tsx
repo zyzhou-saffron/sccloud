@@ -555,95 +555,13 @@ export default function PipelineForm({ projectId, token, onSubmit, uploadedFiles
                 </div>
               </div>
             </div>
-          </div>
-        </div>
-
-        {/* Steps 5-6: 高级分析参数 */}
-        <div className="card p-4" style={{ borderColor: "var(--clr-border)" }}>
-          <div className="text-xs font-semibold mb-3" style={{ color: "var(--clr-amber-dark)" }}>
-            高级分析参数
-          </div>
-          <div className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-4">
-            {/* Step 3 Markers */}
-            <div className="text-xs font-semibold pt-1 whitespace-nowrap" style={{ color: "var(--clr-text-muted)" }}>
-              Step 3: 差异基因
-            </div>
-            <div className="space-y-2">
-              <div className="flex flex-wrap gap-x-6 gap-y-3">
-                <div>
-                  <label className="flex items-center gap-1 text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>
-                    <span>最小细胞比例</span>
-                    <Tooltip content="变量: min_pct\n\n只在各对比组内最少 x% 分数的细胞中表达的基因才会参与统计检验。">
-                      <IconQuestion size={14} className="text-stone-400 hover:text-[#C86019] transition-colors" />
-                    </Tooltip>
-                  </label>
-                  <input type="number" value={params.markers.min_pct as number} onChange={(e) => updateStepParam("markers", "min_pct", Number(e.target.value))} min={0} max={1} step={0.01} className={numberCls} style={inputStyle} />
-                </div>
-                <div>
-                  <label className="flex items-center gap-1 text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>
-                    <span>log2FC 阈值</span>
-                    <Tooltip content="变量: logfc_threshold\n\n两簇间平均基因表达量差异。差异绝对值必须超过此限制才被定性为差异表达基因。">
-                      <IconQuestion size={14} className="text-stone-400 hover:text-[#C86019] transition-colors" />
-                    </Tooltip>
-                  </label>
-                  <input type="number" value={params.markers.logfc_threshold as number} onChange={(e) => updateStepParam("markers", "logfc_threshold", Number(e.target.value))} step={0.05} className={numberCls} style={inputStyle} />
-                </div>
-                <div>
-                  <label className="flex items-center gap-1 text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>
-                    <span>P value 阈值</span>
-                    <Tooltip content="变量: p_val_adj\n\n经 Bonferroni 校正后的 P 值阈值。默认: 0.05。">
-                      <IconQuestion size={14} className="text-stone-400 hover:text-[#C86019] transition-colors" />
-                    </Tooltip>
-                  </label>
-                  <input type="number" value={params.markers.p_val_adj as number ?? 0.05} onChange={(e) => updateStepParam("markers", "p_val_adj", Number(e.target.value))} step={0.01} min={0} max={1} className={numberCls} style={inputStyle} />
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-x-6 gap-y-3">
-                <div>
-                  <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>检验方法</label>
-                  <select value={params.markers.test_use as string} onChange={(e) => updateStepParam("markers", "test_use", e.target.value)} className={selectCls} style={selectStyle}>
-                    <option value="wilcox">Wilcoxon</option><option value="t">t-test</option><option value="bimod">Bimod</option><option value="roc">ROC</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="flex items-center gap-1 text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>
-                    <span>Top 基因数</span>
-                    <Tooltip content="变量: ntop\n\n在热图和点图中提取每个簇的前多少个最显著基因进行展示。">
-                      <IconQuestion size={14} className="text-stone-400 hover:text-[#C86019] transition-colors" />
-                    </Tooltip>
-                  </label>
-                  <input type="number" value={params.markers.ntop as number ?? 5} onChange={(e) => updateStepParam("markers", "ntop", Number(e.target.value))} min={1} max={50} className={numberCls} style={inputStyle} />
-                </div>
-                <div>
-                  <label className="flex items-center gap-1 text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>
-                    <span>仅正向差异</span>
-                    <Tooltip content="变量: only_pos\n\n若为 TRUE，则只返回上调基因。">
-                      <IconQuestion size={14} className="text-stone-400 hover:text-[#C86019] transition-colors" />
-                    </Tooltip>
-                  </label>
-                  <select value={String(params.markers.only_pos ?? true)} onChange={(e) => updateStepParam("markers", "only_pos", e.target.value === "true")} className={selectCls} style={selectStyle}>
-                    <option value="true">TRUE（仅上调）</option>
-                    <option value="false">FALSE（上下调均返回）</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>分析聚类</label>
-                  <div
-                    className="px-2 py-1.5 rounded text-[11px] border"
-                    style={{ borderColor: "var(--clr-border)", background: "var(--clr-bg-alt)", color: "var(--clr-text-muted)" }}
-                  >
-                    All（全部聚类）
-                  </div>
-                </div>
-              </div>
-            </div>
 
             {/* 分隔线 */}
             <div className="col-span-2" style={{ borderTop: "1px solid var(--clr-border)" }} />
 
-            {/* Step 4 Annotate */}
+            {/* Step 3 Annotate */}
             <div className="text-xs font-semibold pt-1 whitespace-nowrap" style={{ color: "var(--clr-text-muted)" }}>
-              Step 4: 细胞注释
+              Step 3: 细胞注释
             </div>
             <div className="space-y-3">
               {/* 物种 + 组织选择 */}
