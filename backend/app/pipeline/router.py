@@ -264,10 +264,10 @@ async def resume_pipeline_endpoint(
     if pipeline.status not in ("paused", "failed", "completed"):
         raise HTTPException(
             status_code=400,
-            detail=f"Pipeline 状态为 '{pipeline.status}'，无法继续（需要 'paused' 或 'failed' 状态）",
+            detail=f"Pipeline 状态为 '{pipeline.status}'，无法继续（需要 'paused'、'failed' 或 'completed' 状态）",
         )
-    # 从 failed 恢复时，清除失败的步骤参数以允许重新配置
-    if pipeline.status == "failed":
+    # 从 failed/completed 恢复时，清除步骤参数以允许重新配置
+    if pipeline.status in ("failed", "completed"):
         pipeline.current_step = None
         pipeline.error_step = None
         pipeline.error_msg = None

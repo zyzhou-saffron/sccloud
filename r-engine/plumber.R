@@ -2910,7 +2910,8 @@ function(req) {
       output_files <- list.files(outdir, full.names = TRUE)
       for (f in output_files) {
         bname <- basename(f)
-        suffix <- gsub("\\.(png|pdf|csv|rds)$", "", paste0(ct, "_", bname))
+        bname_clean <- sub(paste0("^", ct, "_?"), "", bname)
+        suffix <- gsub("\\.(png|pdf|csv|rds)$", "", paste0(ct, "_", bname_clean))
         suffix <- gsub("[^a-zA-Z0-9_.-]", "_", suffix)
         ext <- if (grepl("\\.png$", f)) "png"
                else if (grepl("\\.pdf$", f)) "pdf"
