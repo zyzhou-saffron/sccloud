@@ -2532,10 +2532,14 @@ function(req) {
     list(key = "p92", name = "gene_dot", w = 1400, h = 800)
   )
 
-  # net_number / net_strength: grid.grab() 无法在新设备中重绘，直接重新渲染
-  groupSize <- result$group_sizes
+  # 初始化 cellchat 引用（后续数据保存也需要用到）
+  cellchat <- NULL
+
+  # net_number / net_strength: 直接重新渲染，从 cellchat 对象提取带名称的 groupSize
   if (!is.null(result$cellchat)) {
     cellchat <- result$cellchat
+    groupSize <- as.numeric(table(cellchat@idents))
+    names(groupSize) <- levels(cellchat@idents)
     tryCatch({
       fname <- make_output_name(project_path, "10", "cellchat", "net_number", plot_format)
       fpath <- file.path(project_path, fname)
@@ -2588,8 +2592,8 @@ function(req) {
     }
   }
 
-  # 保存多通路编号图表（plot4_1, plot5_1, p91_1, p92_1, ...）
-  for (pw_idx in 1:99) {
+  # 保存多通路编号图表（pw_idx >= 2，避免与主图重复）
+  for (pw_idx in 2:99) {
     found <- FALSE
     for (cfg in plot_configs) {
       numbered_key <- paste0(cfg$key, "_", pw_idx)
@@ -2633,6 +2637,28 @@ function(req) {
     fpath <- file.path(project_path, fname)
     write.csv(result$data2, fpath, row.names = FALSE)
     data_paths$net_pathway <- fpath
+  }
+  # 通讯网络矩阵
+  if (!is.null(cellchat)) {
+    tryCatch({
+      fname <- make_output_name(project_path, "10", "cellchat", "net_count", "csv")
+      fpath <- file.path(project_path, fname)
+      write.csv(cellchat@net$count, fpath)
+      data_paths$net_count <- fpath
+    }, error = function(e) message("Save net_count error: ", e$message))
+    tryCatch({
+      fname <- make_output_name(project_path, "10", "cellchat", "net_weight", "csv")
+      fpath <- file.path(project_path, fname)
+      write.csv(cellchat@net$weight, fpath)
+      data_paths$net_weight <- fpath
+    }, error = function(e) message("Save net_weight error: ", e$message))
+    # 保存完整 CellChat 对象
+    tryCatch({
+      fname <- make_output_name(project_path, "10", "cellchat", "cellchat_obj", "rds")
+      fpath <- file.path(project_path, fname)
+      saveRDS(cellchat, fpath)
+      data_paths$cellchat_obj <- fpath
+    }, error = function(e) message("Save cellchat rds error: ", e$message))
   }
 
   report(100, "CellChat 分析完成")

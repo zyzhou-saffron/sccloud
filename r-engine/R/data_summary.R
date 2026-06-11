@@ -687,6 +687,7 @@ RunCellChat <- function(pro, species = "Human", db_use = "Secreted", thresh = 0.
   cellchat <- aggregateNet(cellchat)
 
   groupSizes <- as.numeric(table(cellchat@idents))
+  names(groupSizes) <- levels(cellchat@idents)
   CellChatResult$data3 <- groupSizes
 
   # 5. 通讯数量和强度图
