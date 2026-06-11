@@ -2713,11 +2713,15 @@ function(req) {
     sub("^infercnv\\.", "", sub("\\.png$", "", fname))
   }
 
-  # PDF 转换函数: 将 PNG 嵌入 PDF 页面
+  # PDF 转换函数: 使用 R 原生 pdf() + png 包 (无需 magick)
   convert_png_to_pdf <- function(png_path, pdf_path) {
     tryCatch({
-      img <- magick::image_read(png_path)
-      magick::image_write(img, path = pdf_path, format = "pdf")
+      img <- png::readPNG(png_path)
+      h <- dim(img)[1]
+      w <- dim(img)[2]
+      pdf(pdf_path, width = w / 72, height = h / 72)
+      grid::grid.raster(img)
+      dev.off()
       TRUE
     }, error = function(e) {
       message("[INFERCNV] PDF 转换失败: ", e$message)
@@ -2753,6 +2757,21 @@ function(req) {
       data_paths[[fname]] <- f
     }
   }
+
+  # 使用 make_output_name 重命名图表文件
+  renamed_plots <- list()
+  for (label in names(plot_paths)) {
+    fpath <- plot_paths[[label]]
+    fbase <- basename(fpath)
+    ext <- tools::file_ext(fbase)
+        suffix <- sub("^infercnv\\.", "", sub("\\.[^.]+$", "", fbase))
+    if (suffix == "" || suffix == "infercnv") suffix <- "heatmap"
+    new_name <- make_output_name(project_path, "11", "infercnv", suffix, ext)
+    new_path <- file.path(project_path, new_name)
+    file.copy(fpath, new_path, overwrite = TRUE)
+    renamed_plots[[label]] <- new_path
+  }
+  plot_paths <- renamed_plots
 
   # 保存 infercnv 对象
   obj_name <- make_output_name(project_path, "11", "infercnv", "object", "rds")
