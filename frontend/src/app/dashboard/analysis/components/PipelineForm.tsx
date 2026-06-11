@@ -207,8 +207,10 @@ export default function PipelineForm({ projectId, token, onSubmit, uploadedFiles
     try {
       // 将上传文件路径注入 QC 参数
       const pipelineParams = { ...params };
-      if (uploadedFiles.length > 0 && uploadedFiles[0].path) {
+      if (uploadedFiles.length === 1 && uploadedFiles[0].path) {
         pipelineParams.qc = { ...pipelineParams.qc, rds_file_path: uploadedFiles[0].path };
+      } else if (uploadedFiles.length > 1) {
+        pipelineParams.qc = { ...pipelineParams.qc, rds_file_paths: uploadedFiles.map(f => f.path) };
       }
 
       const data: any = {

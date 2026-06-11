@@ -444,29 +444,60 @@ function(req) {
 
   report(5, "加载数据...")
 
-  # 优先使用前端传入的 rds_file_path（上传后直接指定的路径）
-  rds_file_path <- params$rds_file_path
-  if (!is.null(rds_file_path) && nchar(rds_file_path) > 0 && file.exists(rds_file_path)) {
-    load_file <- rds_file_path
-  } else {
-    # 退而求其次: 扫描项目目录中的数据文件
-    data_files <- list.files(project_path, pattern = "\\.(rds|h5ad|h5|h5seurat|rdata|loom|csv|tsv)$", full.names = TRUE, ignore.case = TRUE)
-    if (length(data_files) == 0) stop("项目目录中未找到数据文件，请先上传数据文件")
-    load_file <- data_files[1]
+  # 多文件合并模式：前端传入 rds_file_paths 数组
+  rds_file_paths <- params$rds_file_paths
+  multi_file_merged <- FALSE
+  if (!is.null(rds_file_paths) && length(rds_file_paths) > 1) {
+    report(8, paste0("合并 ", length(rds_file_paths), " 个文件..."))
+    seurat_list <- list()
+    sample_names <- character(0)
+    for (i in seq_along(rds_file_paths)) {
+      fp <- rds_file_paths[[i]]
+      if (!file.exists(fp)) stop(paste0("文件不存在: ", fp))
+      ext_i <- tolower(tools::file_ext(fp))
+      obj <- if (ext_i == "rds") readRDS(fp) else convert_to_rds(fp, ext_i)
+      sname <- sub("\\.(rds|h5ad|h5|h5seurat|rdata)$", "", basename(fp), ignore.case = TRUE)
+      # 如果文件内没有 Sample 列或只有一个样本，用文件名作 Sample
+      if (!"Sample" %in% colnames(obj@meta.data) || length(unique(obj$Sample)) <= 1) {
+        obj$Sample <- sname
+      }
+      seurat_list[[sname]] <- obj
+      sample_names <- c(sample_names, sname)
+    }
+    exp <- merge(seurat_list[[1]], y = seurat_list[-1],
+                 add.cell.ids = names(seurat_list),
+                 project = "Merged_MultiSample")
+    rds_file_path <- rds_file_paths[[1]]  # 用于后续 _groups.json 路径回退
+    load_file <- rds_file_paths[[1]]
+    multi_file_merged <- TRUE
   }
 
-  # 自动检测文件格式，非 RDS 文件先转换为 RDS
-  ext <- tolower(tools::file_ext(load_file))
-  if (ext != "rds") {
-    report(8, paste0("检测到 ", ext, " 格式，正在转换为 RDS..."))
-    rds_out <- file.path(project_path, paste0("_converted_", basename(load_file), ".rds"))
-    if (!file.exists(rds_out)) {
-      exp <- convert_to_rds(load_file, ext, rds_out)
-      save_with_canonical(rds_out, rds_out, exp)
+  # 单文件模式：原有逻辑
+  if (!multi_file_merged) {
+    # 优先使用前端传入的 rds_file_path（上传后直接指定的路径）
+    rds_file_path <- params$rds_file_path
+    if (!is.null(rds_file_path) && nchar(rds_file_path) > 0 && file.exists(rds_file_path)) {
+      load_file <- rds_file_path
+    } else {
+      # 退而求其次: 扫描项目目录中的数据文件
+      data_files <- list.files(project_path, pattern = "\\.(rds|h5ad|h5|h5seurat|rdata|loom|csv|tsv)$", full.names = TRUE, ignore.case = TRUE)
+      if (length(data_files) == 0) stop("项目目录中未找到数据文件，请先上传数据文件")
+      load_file <- data_files[1]
     }
-    exp <- readRDS(rds_out)
-  } else {
-    exp <- readRDS(load_file)
+
+    # 自动检测文件格式，非 RDS 文件先转换为 RDS
+    ext <- tolower(tools::file_ext(load_file))
+    if (ext != "rds") {
+      report(8, paste0("检测到 ", ext, " 格式，正在转换为 RDS..."))
+      rds_out <- file.path(project_path, paste0("_converted_", basename(load_file), ".rds"))
+      if (!file.exists(rds_out)) {
+        exp <- convert_to_rds(load_file, ext, rds_out)
+        save_with_canonical(rds_out, rds_out, exp)
+      }
+      exp <- readRDS(rds_out)
+    } else {
+      exp <- readRDS(load_file)
+    }
   }
 
   # --- 样本分组信息处理 ---
