@@ -21,7 +21,7 @@ interface Phase2ParamPageProps {
 
 const DEFAULT_PARAMS = {
   markers: { cluster: "All", min_pct: 0.1, logfc_threshold: 0.25, p_val_adj: 0.05, test_use: "wilcox", only_pos: true, ntop: 5, group_by: "CellType", plot_format: "png" },
-  enrich: { pathway: "GO", direction: "Up", pvalue_cutoff: 0.05, qvalue_cutoff: 0.2, n_term: 10, plot_format: "png" },
+  enrich: { pathway: "GO", direction: "Up", pvalue_cutoff: 0.05, qvalue_cutoff: 0.2, n_term: 10, p_adjust_method: "BH", plot_format: "png" },
   monocle: { group_beam: "CellType", group_traj: "CellType", min_expr_threshold: 0.5, min_cells_pct: 0.01, mean_expr: 0.3, qvalue1: 1e-5, reverse: false, plot_format: "png" },
   cellchat: { db_use: "Secreted", thresh: 0.05, min_cells: 10, prob_method: "triMean", top_pathways: 1, remove_isolate: false, plot_format: "png" },
   infercnv: { cutoff_gene: 0.1, num_threads: 4, species: "Human", infer_df: [] as { cellType: string; refType: string }[], plot_format: "png" },
@@ -288,6 +288,21 @@ export default function Phase2ParamPage({ pipeline, token, onComplete, species =
                         <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>log2FC 阈值</label>
                         <input type="number" value={params.markers.logfc_threshold} onChange={(e) => updateParam("markers", "logfc_threshold", Number(e.target.value))} step={0.05} className={numberCls} style={inputStyle} />
                       </div>
+                      <div>
+                        <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>校正 P 值</label>
+                        <input type="number" value={params.markers.p_val_adj} onChange={(e) => updateParam("markers", "p_val_adj", Number(e.target.value))} min={0} max={1} step={0.01} className={numberCls} style={inputStyle} />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>仅显著上调</label>
+                        <select value={String(params.markers.only_pos)} onChange={(e) => updateParam("markers", "only_pos", e.target.value === "true")} className={selectCls} style={selectStyle}>
+                          <option value="true">是</option>
+                          <option value="false">否（含下调）</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>每组展示基因数</label>
+                        <input type="number" value={params.markers.ntop} onChange={(e) => updateParam("markers", "ntop", Number(e.target.value))} min={1} max={100} className={numberCls} style={inputStyle} />
+                      </div>
                     </div>
                   </div>
                 )}
@@ -322,6 +337,17 @@ export default function Phase2ParamPage({ pipeline, token, onComplete, species =
                       <div>
                         <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>显示条数</label>
                         <input type="number" value={params.enrich.n_term} onChange={(e) => updateParam("enrich", "n_term", Number(e.target.value))} min={1} max={50} className={numberCls} style={inputStyle} />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>P 值校正方法</label>
+                        <select value={params.enrich.p_adjust_method} onChange={(e) => updateParam("enrich", "p_adjust_method", e.target.value)} className={selectCls} style={selectStyle}>
+                          <option value="BH">BH (FDR)</option>
+                          <option value="bonferroni">Bonferroni</option>
+                          <option value="holm">Holm</option>
+                          <option value="hochberg">Hochberg</option>
+                          <option value="hommel">Hommel</option>
+                          <option value="BY">BY</option>
+                        </select>
                       </div>
                     </div>
                   </div>
@@ -541,6 +567,46 @@ export default function Phase2ParamPage({ pipeline, token, onComplete, species =
                         <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>最近邻 K</label>
                         <input type="number" value={params.wgcna.k} onChange={(e) => updateParam("wgcna", "k", Number(e.target.value))} min={1} max={100} className={numberCls} style={inputStyle} />
                       </div>
+                    </div>
+
+                    {/* WGCNA 高级选项 */}
+                    <div>
+                      <button
+                        type="button"
+                        onClick={() => setShowAdvanced(prev => ({ ...prev, wgcna: !prev.wgcna }))}
+                        className="text-xs flex items-center gap-1 transition-colors"
+                        style={{ color: "var(--clr-amber-dark)", cursor: "pointer" }}
+                      >
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ transform: isAdvanced ? "rotate(90deg)" : "none", transition: "transform 0.2s" }}><polyline points="9 6 15 12 9 18" /></svg>
+                        高级选项
+                      </button>
+                      {isAdvanced && (
+                        <div className="mt-3 flex flex-wrap gap-x-6 gap-y-3">
+                          <div>
+                            <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>模块评分方法</label>
+                            <select value={params.wgcna.module_score} onChange={(e) => updateParam("wgcna", "module_score", e.target.value)} className={selectCls} style={selectStyle}>
+                              <option value="Seurat">Seurat</option>
+                              <option value="UCell">UCell</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>最大共享邻居数</label>
+                            <input type="number" value={params.wgcna.max_shared} onChange={(e) => updateParam("wgcna", "max_shared", Number(e.target.value))} min={1} max={50} className={numberCls} style={inputStyle} />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>最少细胞数</label>
+                            <input type="number" value={params.wgcna.min_cells} onChange={(e) => updateParam("wgcna", "min_cells", Number(e.target.value))} min={10} max={1000} className={numberCls} style={inputStyle} />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>Hub 基因数</label>
+                            <input type="number" value={params.wgcna.n_hubs} onChange={(e) => updateParam("wgcna", "n_hubs", Number(e.target.value))} min={1} max={50} className={numberCls} style={inputStyle} />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>评分基因数</label>
+                            <input type="number" value={params.wgcna.n_genes_score} onChange={(e) => updateParam("wgcna", "n_genes_score", Number(e.target.value))} min={5} max={100} className={numberCls} style={inputStyle} />
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
