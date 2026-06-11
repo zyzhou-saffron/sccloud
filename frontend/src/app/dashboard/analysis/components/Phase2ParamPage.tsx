@@ -422,7 +422,7 @@ export default function Phase2ParamPage({ pipeline, token, onComplete, species =
                   <div className="space-y-3">
                     <div className="flex flex-wrap gap-x-4 gap-y-2">
                       <div>
-                        <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>信号通路数据库</label>
+                        <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>通讯类型</label>
                         <select value={params.cellchat.db_use} onChange={(e) => updateParam("cellchat", "db_use", e.target.value)} className={selectCls} style={selectStyle}>
                           <option value="Secreted">Secreted Signaling</option>
                           <option value="ECM-Receptor">ECM-Receptor</option>
