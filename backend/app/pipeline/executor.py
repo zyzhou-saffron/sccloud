@@ -83,6 +83,17 @@ async def _run_steps(pipeline_id: str, steps: List[str], db: Session, pipeline: 
             r_steps = ["reduce", "cluster"]
 
         for r_step in r_steps:
+            # 每步开始前检查配额
+            from app.db.models import User
+            quota_user = db.query(User).filter(User.id == pipeline.user_id).first()
+            if quota_user and quota_user.total_quota and quota_user.used_quota >= quota_user.total_quota:
+                pipeline.status = "paused"
+                pipeline.current_step = None
+                pipeline.error_msg = "操作配额使用结束，无法继续进行。"
+                db.commit()
+                logger.warning(f"Pipeline {pipeline_id}: quota exhausted before step {r_step}, pausing")
+                return False
+
             pipeline.current_step = r_step
             db.commit()
 

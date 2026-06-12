@@ -60,7 +60,7 @@ export default function FileUploadModal({
         headers: { Authorization: `Bearer ${token}` },
         body: initForm,
       });
-      if (!initRes.ok) throw new Error("初始化上传失败");
+      if (!initRes.ok) { const errData = await initRes.json().catch(() => ({})); throw new Error(errData.detail || "初始化上传失败"); }
       const { upload_id } = (await initRes.json()) as { upload_id: string };
 
       // 2. 分片上传

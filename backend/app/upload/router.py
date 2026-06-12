@@ -56,6 +56,13 @@ async def init_upload(
     初始化分片上传 — 返回 upload_id 用于后续分片标识。
     默认分片大小 5MB，前端据此切分文件。
     """
+    # 配额检查（上传前）
+    if current_user.total_quota and current_user.used_quota >= current_user.total_quota:
+        raise HTTPException(
+            status_code=403,
+            detail="操作配额使用结束，无法继续进行。",
+        )
+
     # 验证文件类型
     allowed_ext = {".rds", ".h5seurat", ".h5ad", ".h5", ".rdata", ".loom"}
     ext = os.path.splitext(filename)[1].lower()
