@@ -132,6 +132,14 @@ async def complete_upload(
     from app.db.models import Project, SessionLocal
 
     settings = get_settings()
+
+    # 配额检查
+    if current_user.total_quota and current_user.used_quota >= current_user.total_quota:
+        raise HTTPException(
+            status_code=403,
+            detail=f"上传配额已用完（{current_user.used_quota}/{current_user.total_quota}）",
+        )
+
     chunk_dir = os.path.join(CHUNK_DIR, upload_id)
 
     if not os.path.exists(chunk_dir):
@@ -233,6 +241,18 @@ async def complete_upload(
                 status_code=400,
                 detail=f"格式转换失败: {str(e)}",
             )
+
+    # 递增上传配额
+    db2 = SessionLocal()
+    try:
+        user = db2.query(User).filter(User.id == current_user.id).first()
+        if user:
+            user.used_quota = (user.used_quota or 0) + 1
+            db2.commit()
+    except Exception:
+        db2.rollback()
+    finally:
+        db2.close()
 
     return CompleteUploadResponse(
         status="completed",

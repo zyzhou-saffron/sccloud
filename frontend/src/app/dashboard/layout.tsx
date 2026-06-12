@@ -162,7 +162,17 @@ export default function DashboardLayout({
             ) : (
               <div className="flex items-center gap-3 pl-2 user-dropdown" style={{ borderLeft: "1px solid rgba(255,255,255,0.15)", position: "relative" }}>
                 <button
-                  onClick={() => setUserDropdownOpen(!userDropdownOpen)}
+                  onClick={() => {
+                    const opening = !userDropdownOpen;
+                    setUserDropdownOpen(opening);
+                    if (opening) {
+                      const tk = localStorage.getItem("access_token");
+                      if (tk) fetch("/api/auth/me", { headers: { Authorization: "Bearer " + tk } })
+                        .then(r => r.json())
+                        .then(d => { if (d.total_quota !== undefined) setQuotaInfo({ total: d.total_quota, used: d.used_quota }); })
+                        .catch(() => {});
+                    }
+                  }}
                   className="flex items-center gap-1.5 cursor-pointer hover:opacity-80 transition-opacity"
                 >
                   <span className="text-sm font-medium text-white/90">{username}</span>
