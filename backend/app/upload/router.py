@@ -137,7 +137,7 @@ async def complete_upload(
     if current_user.total_quota and current_user.used_quota >= current_user.total_quota:
         raise HTTPException(
             status_code=403,
-            detail=f"上传配额已用完（{current_user.used_quota}/{current_user.total_quota}）",
+            detail="操作配额使用结束，无法继续进行。",
         )
 
     chunk_dir = os.path.join(CHUNK_DIR, upload_id)

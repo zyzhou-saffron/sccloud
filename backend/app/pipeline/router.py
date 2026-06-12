@@ -119,6 +119,13 @@ async def create_pipeline(
         # 检查项目权限（简化版本，实际应该更复杂）
         # 这里假设 user_id 等于当前 token 的 user_id
 
+        # 配额检查
+        if user.total_quota and user.used_quota >= user.total_quota:
+            raise HTTPException(
+                status_code=403,
+                detail="操作配额使用结束，无法继续进行。",
+            )
+
         pipeline_id = str(uuid4())
 
         # 若有 marker 文件，先执行 Phase A（同步）
@@ -271,6 +278,13 @@ async def resume_pipeline_endpoint(
         pipeline.current_step = None
         pipeline.error_step = None
         pipeline.error_msg = None
+
+    # 配额检查
+    if user.total_quota and user.used_quota >= user.total_quota:
+        raise HTTPException(
+            status_code=403,
+            detail="操作配额使用结束，无法继续进行。",
+        )
 
     from app.pipeline.executor import resume_pipeline
 

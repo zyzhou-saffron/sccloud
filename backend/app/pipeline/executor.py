@@ -310,6 +310,17 @@ async def _execute_step(db: Session, pipeline: Pipeline, step: str, step_params:
         # 成功完成
         db.refresh(task)
         logger.info(f"Pipeline {pipeline.id}: step {step} completed successfully")
+
+        # 递增操作配额
+        try:
+            from app.db.models import User
+            user = db.query(User).filter(User.id == pipeline.user_id).first()
+            if user:
+                user.used_quota = (user.used_quota or 0) + 1
+                db.commit()
+        except Exception:
+            db.rollback()
+
         return True
 
     except Exception as e:
