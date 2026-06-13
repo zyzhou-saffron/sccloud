@@ -213,9 +213,9 @@ async def download_project(
     STEP_DIR = {
         "qc": "1_Data_Preprocessing", "normalize": "1_Data_Preprocessing",
         "reduce": "2_DimRed_Cluster", "cluster": "2_DimRed_Cluster",
-        "markers": "3_Differential_Genes", "marker": "3_Differential_Genes",
-        "plot_markers": "3_Differential_Genes",
-        "annotate": "4_Cell_Annotation",
+        "markers": "4_Differential_Genes", "marker": "4_Differential_Genes",
+        "plot_markers": "4_Differential_Genes",
+        "annotate": "3_Cell_Annotation",
         "enrich": "5_Pathway_Enrichment", "monocle": "6_Trajectory",
         "cellchat": "7_CellChat", "infercnv": "9_inferCNV",
         "wgcna": "8_WGCNA", "subset": "2_DimRed_Cluster",
