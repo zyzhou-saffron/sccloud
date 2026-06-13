@@ -208,66 +208,59 @@ async def download_project(
     timestamp = datetime.now().strftime("%Y%m%d")
     zip_name = f"{project.name}-{timestamp}.zip"
 
+    import re as _re
+
     STEP_DIR = {
         "qc": "1_Data_Preprocessing", "normalize": "1_Data_Preprocessing",
         "reduce": "2_DimRed_Cluster", "cluster": "2_DimRed_Cluster",
         "markers": "3_Differential_Genes", "marker": "3_Differential_Genes",
+        "plot_markers": "3_Differential_Genes",
         "annotate": "4_Cell_Annotation",
         "enrich": "5_Pathway_Enrichment", "monocle": "6_Trajectory",
-        "cellchat": "7_CellChat", "infercnv": "8_inferCNV",
-        "wgcna": "9_WGCNA",
+        "cellchat": "7_CellChat", "infercnv": "9_inferCNV",
+        "wgcna": "8_WGCNA", "subset": "2_DimRed_Cluster",
     }
-    KNOWN_STEPS = list(STEP_DIR.keys())
+    _ts_re = _re.compile(r"_\d{14}_")
+    _steps = set(STEP_DIR.keys())
 
-    def get_step(filename):
-        parts = filename.rsplit(".", 1)[0].split("_")
-        for p in parts:
-            if p in KNOWN_STEPS:
+    def _get_step(fn):
+        base = fn.rsplit(".", 1)[0]
+        if fn.endswith("_result.json"):
+            s = fn.replace("_result.json", "")
+            return s if s in _steps else None
+        for p in base.split("_"):
+            if p in _steps:
                 return p
-        if filename.endswith("_result.json"):
-            s = filename.replace("_result.json", "")
-            if s in KNOWN_STEPS:
-                return s
         return None
 
-    import re as _re
+    def _clean_name(fn):
+        return _ts_re.sub("_", fn)
 
-    # RDS 文件按 step 去重：只保留每个逻辑名（去掉时间戳）的最新版本
-    # 非 RDS 文件全部保留，使用相对路径避免重名
-    _ts_pattern = _re.compile(r"_\d{14}_")
-
-    def _strip_ts(filename):
-        return _ts_pattern.sub("_", filename)
-
-    rds_map = {}      # logical_name -> (mtime, file_path, relpath)
-    other_files = []  # (file_path, relpath)
+    # (step, clean_name) -> (mtime, file_path)
+    file_map = {}
 
     for root, dirs, files in os.walk(project_dir):
-        dirs[:] = [d for d in dirs if d not in ("tasks", "__pycache__") and "_output_" not in d]
+        dirs[:] = [d for d in dirs if d not in ("tasks", "__pycache__",) and "_output_" not in d]
         for f in files:
-            file_path = os.path.join(root, f)
-            relpath = os.path.relpath(file_path, project_dir)
-            if f.endswith(".rds"):
-                mtime = os.path.getmtime(file_path)
-                logical = _strip_ts(f)
-                prev = rds_map.get(logical)
-                if prev is None or mtime > prev[0]:
-                    rds_map[logical] = (mtime, file_path, relpath)
-            else:
-                other_files.append((file_path, relpath))
+            if f == ".gitkeep":
+                continue
+            step = _get_step(f)
+            if step is None:
+                step = "_Other"
+            clean = _clean_name(f)
+            key = (step, clean)
+            fp = os.path.join(root, f)
+            mt = os.path.getmtime(fp)
+            if key not in file_map or mt > file_map[key][0]:
+                file_map[key] = (mt, fp)
 
     tmp_path = os.path.join(tempfile.gettempdir(), f"sccloud_{project_id}_{timestamp}.zip")
     with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        for logical, (mtime, file_path, relpath) in sorted(rds_map.items()):
-            arc = os.path.join(project.name, relpath)
+        for (step, clean), (mt, fp) in sorted(file_map.items()):
+            folder = STEP_DIR.get(step, "_Other")
+            arc = os.path.join(project.name, folder, clean)
             try:
-                zf.write(file_path, arc)
-            except OSError:
-                pass
-        for file_path, relpath in sorted(other_files):
-            arc = os.path.join(project.name, relpath)
-            try:
-                zf.write(file_path, arc)
+                zf.write(fp, arc)
             except OSError:
                 pass
 
