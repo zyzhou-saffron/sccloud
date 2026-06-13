@@ -27,8 +27,8 @@ const STEPS = [
   { id: "enrich", num: 5, label: "通路富集分析", desc: "GO / KEGG / GSEA", Icon: IconPathway, subSteps: ["enrich"] },
   { id: "monocle", num: 6, label: "拟时序分析", desc: "Monocle 2", Icon: IconBranch, subSteps: ["monocle"] },
   { id: "cellchat", num: 7, label: "细胞通讯", desc: "CellChat", Icon: IconNetwork, subSteps: ["cellchat"] },
-  { id: "infercnv", num: 8, label: "拷贝数变异", desc: "inferCNV", Icon: IconDNA, subSteps: ["infercnv"] },
-  { id: "wgcna", num: 9, label: "WGCNA分析", desc: "加权基因共表达网络", Icon: IconNetwork, subSteps: ["wgcna"] },
+  { id: "wgcna", num: 8, label: "WGCNA分析", desc: "加权基因共表达网络", Icon: IconNetwork, subSteps: ["wgcna"] },
+  { id: "infercnv", num: 9, label: "拷贝数变异", desc: "inferCNV", Icon: IconDNA, subSteps: ["infercnv"] },
 ];
 
 const STATUS_DOT: Record<string, string> = {

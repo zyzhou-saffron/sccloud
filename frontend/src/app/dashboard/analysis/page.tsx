@@ -446,6 +446,7 @@ function AnalysisPageContent() {
     setTaskCache({});
     setParams(JSON.parse(JSON.stringify(DEFAULT_PARAMS)));
     _setActiveStep(0);
+    setActivePipelineId(null);
     saveSession({
       project: p,
       uploadedFiles: [],
@@ -454,6 +455,7 @@ function AnalysisPageContent() {
       taskCache: {},
       params: JSON.parse(JSON.stringify(DEFAULT_PARAMS)),
       activeStep: 0,
+      activePipelineId: null,
     });
     setError(null);
   };

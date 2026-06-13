@@ -184,16 +184,16 @@ export default function Phase2ParamPage({ pipeline, token, onComplete, species =
       Icon: IconNetwork,
     },
     {
-      key: "infercnv",
-      label: "拷贝数变异分析",
-      desc: "inferCNV — 基于基因表达推断 CNV（需标记参考细胞）",
-      Icon: IconDNA,
-    },
-    {
       key: "wgcna",
       label: "WGCNA 分析",
       desc: "加权基因共表达网络 — 识别基因模块与细胞类型关联",
       Icon: IconNetwork,
+    },
+    {
+      key: "infercnv",
+      label: "拷贝数变异分析",
+      desc: "inferCNV — 基于基因表达推断 CNV（需标记参考细胞）",
+      Icon: IconDNA,
     },
   ];
 

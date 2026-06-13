@@ -53,7 +53,7 @@ const STEP_LABELS: Record<string, string> = {
 /** 合并后的步骤序号映射 */
 const STEP_INDEX: Record<string, number> = {
   qc: 1, normalize: 1, reduce: 2, cluster: 2, annotate: 3,
-  markers: 4, enrich: 5, monocle: 6, cellchat: 7, infercnv: 8, wgcna: 9,
+  markers: 4, enrich: 5, monocle: 6, cellchat: 7, wgcna: 8, infercnv: 9,
 };
 
 /** 计算 Pipeline 总步骤数（Phase1 合并后 3 步 + Phase2 步数） */
@@ -62,7 +62,7 @@ const PHASE1_COUNT = 4;
 const PHASE1_ORDER: Record<string, number> = {
   qc: 1, normalize: 2, reduce: 3, annotate: 4,
 };
-const PHASE2_STEPS = ["markers", "enrich", "monocle", "cellchat", "infercnv", "wgcna"];
+const PHASE2_STEPS = ["markers", "enrich", "monocle", "cellchat", "wgcna", "infercnv"];
 
 function getTotalSteps(params?: Record<string, unknown>): number {
   const enabled = (params?.enabled_steps as string[] | undefined) || [];
@@ -750,7 +750,7 @@ export default function PipelineForm({ projectId, token, onSubmit, uploadedFiles
             </>
           ) : (
             <>
-              🚀 开始全流程分析
+              开始全流程分析
             </>
           )}
         </button>
