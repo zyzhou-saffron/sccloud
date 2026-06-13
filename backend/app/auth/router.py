@@ -87,9 +87,10 @@ async def register(req: RegisterRequest, db: Session = Depends(get_db)):
     token_data = {"sub": user.username, "role": user.role}
     return TokenResponse(
         access_token=create_access_token(token_data),
-        role=current_user.role,
+        role=user.role,
         refresh_token=create_refresh_token(token_data),
         username=user.username,
+        is_guest=user.is_guest,
     )
 
 
@@ -267,7 +268,8 @@ async def upgrade_guest(
     token_data = {"sub": current_user.username, "role": current_user.role}
     return TokenResponse(
         access_token=create_access_token(token_data),
-        role=user.role,
+        role=current_user.role,
         refresh_token=create_refresh_token(token_data),
         username=current_user.username,
+        is_guest=current_user.is_guest,
     )

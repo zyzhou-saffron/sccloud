@@ -90,6 +90,8 @@ export default function PipelineView({ pipelineId, token, projectName }: Pipelin
   const [showFailDialog, setShowFailDialog] = useState(false);
   // 配额耗尽对话框
   const [showQuotaDialog, setShowQuotaDialog] = useState(false);
+  const [showUpgradeDialog, setShowUpgradeDialog] = useState(false);
+  const quotaDismissedRef = useRef(false);
   const [failStepInfo, setFailStepInfo] = useState<{ stepId: string; stepLabel: string; errorMsg: string; taskParams: Record<string, unknown> } | null>(null);
   // 避免重复弹出同一个失败对话框
   const dismissedFailsRef = useRef<Set<string>>(new Set());
@@ -118,9 +120,10 @@ export default function PipelineView({ pipelineId, token, projectName }: Pipelin
           }
         }
 
-        // 检测配额耗尽暂停
-        if (data.status === "paused" && data.error_msg && data.error_msg.includes("操作配额使用结束")) {
+        // 检测配额耗尽暂停（只在首次检测到时弹出）
+        if (data.status === "paused" && data.error_msg && data.error_msg.includes("操作配额使用结束") && !quotaDismissedRef.current) {
           setShowQuotaDialog(true);
+          quotaDismissedRef.current = true;
         }
 
         // 自动选中：运行中步骤 > 最后一个已完成步骤 > 第一个步骤
@@ -317,7 +320,7 @@ export default function PipelineView({ pipelineId, token, projectName }: Pipelin
       )}
 
       {/* 暂停提示 + 参数设置按钮 */}
-      {(pipeline.status === "paused" || pipeline.status === "failed" || pipeline.status === "completed" || pipeline.status === "cancelled") && !showPhase2Param && hasPhase2Access() && pipeline.tasks.some(function(t) { return t.step === "annotate" && t.status === "completed"; }) && (
+      {(pipeline.status === "paused" || pipeline.status === "failed" || pipeline.status === "completed" || pipeline.status === "cancelled") && !showPhase2Param && pipeline.tasks.some(function(t) { return t.step === "annotate" && t.status === "completed"; }) && (
         <div className="w-full rounded-lg border px-4 py-3" style={{ borderColor: "#93c5fd", background: "rgba(59,130,246,0.05)" }}>
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-start gap-3 text-left">
@@ -327,7 +330,7 @@ export default function PipelineView({ pipelineId, token, projectName }: Pipelin
               </span>
             </div>
             <button
-              onClick={() => setShowPhase2Param(true)}
+              onClick={() => { if (!hasPhase2Access()) { setShowUpgradeDialog(true); } else { setShowPhase2Param(true); } }}
               className="px-4 py-1.5 text-sm rounded font-medium shrink-0"
               style={{ background: "#3b82f6", color: "white", cursor: "pointer" }}
             >
@@ -338,7 +341,7 @@ export default function PipelineView({ pipelineId, token, projectName }: Pipelin
       )}
 
       {/* Phase 2 参数选择页 */}
-      {(pipeline.status === "paused" || pipeline.status === "failed" || pipeline.status === "completed" || pipeline.status === "cancelled") && showPhase2Param && hasPhase2Access() && pipeline.tasks.some(function(t) { return t.step === "annotate" && t.status === "completed"; }) && (
+      {(pipeline.status === "paused" || pipeline.status === "failed" || pipeline.status === "completed" || pipeline.status === "cancelled") && showPhase2Param && pipeline.tasks.some(function(t) { return t.step === "annotate" && t.status === "completed"; }) && (
         <Phase2ParamPage
           pipeline={pipeline}
           token={token}
@@ -775,6 +778,42 @@ export default function PipelineView({ pipelineId, token, projectName }: Pipelin
                 style={{ background: "var(--clr-amber)", color: "#fff" }}
               >
                 知道了
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+      {/* Phase 2 升级提示对话框 */}
+      {showUpgradeDialog && createPortal(
+        <div className="fixed inset-0 z-[60] flex items-center justify-center">
+          <div className="absolute inset-0" style={{ background: "rgba(0,0,0,0.35)" }} onClick={() => setShowUpgradeDialog(false)} />
+          <div className="relative w-full max-w-md rounded-xl shadow-2xl p-6" style={{ background: "var(--clr-bg-card)", border: "1px solid var(--clr-border)" }}>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: "rgba(200,96,25,0.1)" }}>
+                <svg className="w-5 h-5" style={{ color: "var(--clr-amber)" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold" style={{ color: "var(--clr-text)" }}>权限不足</h3>
+            </div>
+            <p className="text-sm mb-4" style={{ color: "var(--clr-text-secondary)" }}>
+              Phase 2 分析需更高权限，请联系管理员进行升级。
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setShowUpgradeDialog(false)}
+                className="px-4 py-2 text-sm font-medium rounded-lg cursor-pointer"
+                style={{ background: "var(--clr-bg-alt)", color: "var(--clr-text)", border: "1px solid var(--clr-border)" }}
+              >
+                确定
+              </button>
+              <button
+                onClick={() => { setShowUpgradeDialog(false); }}
+                className="px-4 py-2 text-sm font-medium rounded-lg cursor-pointer"
+                style={{ background: "var(--clr-amber)", color: "#fff" }}
+              >
+                退出
               </button>
             </div>
           </div>
