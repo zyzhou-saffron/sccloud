@@ -102,6 +102,12 @@ async def _run_steps(pipeline_id: str, steps: List[str], db: Session, pipeline: 
             try:
                 step_params = dict(pipeline.params.get(r_step, {}))
 
+                # QC step: inject sample_groups from pipeline top-level params
+                if r_step == "qc":
+                    sg = (pipeline.params or {}).get("sample_groups", {})
+                    if sg and isinstance(sg, dict):
+                        step_params["sample_groups"] = sg
+
                 # markers 强制覆盖 cluster = "All"（运行前不知道 cluster 列表）
                 if r_step == "markers":
                     step_params["cluster"] = "All"

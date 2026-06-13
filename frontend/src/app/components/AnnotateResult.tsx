@@ -580,7 +580,7 @@ export default function AnnotateResult({
             onColorByChange={setCurrentColorBy}
             mergeIdKey={deckMergeIdKey}
             colorBy={deckColorBy}
-            excludeGroups={["group"]}
+            
           />
         </div>
       ) : plotSrc && (

@@ -319,7 +319,8 @@ function LegendSidebar({
                       <button
                         key={v}
                         onClick={() => {
-                          if (isActive && onToggleMerge) {
+                          if (!isActive) return;
+                          if (mergeMode && onToggleMerge) {
                             // Toggle all merge IDs for this value
                             const uniqueIds = [...new Set(mergeIdsForVal)];
                             const allSelected = uniqueIds.every(id => selectedForMerge?.has(id));
@@ -328,7 +329,7 @@ function LegendSidebar({
                                 onToggleMerge(id);
                               }
                             }
-                          } else if (isActive) {
+                          } else {
                             toggleCluster(v);
                           }
                         }}
@@ -474,7 +475,12 @@ export default function DeckScatterPlot({
     return GROUP_OPTIONS.filter(g => {
       if (excludeGroups?.includes(g.key)) return false;
       if (g.key === "cluster") return true;
-      return !!(data as Record<string, unknown>)[g.key];
+      const arr = (data as Record<string, unknown>)[g.key];
+      if (!arr || !Array.isArray(arr)) return false;
+      // 如果所有值都相同，该分组无意义
+      const unique = new Set(arr as string[]);
+      if (unique.size <= 1) return false;
+      return true;
     }).map(g => {
       if (g.key === "cluster" && !hasCelltype) return { ...g, label: "CellType" };
       return g;

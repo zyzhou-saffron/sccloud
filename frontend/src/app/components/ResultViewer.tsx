@@ -67,7 +67,11 @@ function safeScatter(raw: unknown): ScatterData | undefined {
   const y = (r.y ?? r.Y) as number[] | undefined;
   const cluster = (r.cluster ?? r.Cluster ?? r.label) as string[] | undefined;
   if (!Array.isArray(x) || !Array.isArray(y)) return undefined;
-  return { x, y, cluster: Array.isArray(cluster) ? cluster : x.map(() => "0") };
+  const result: ScatterData = { x, y, cluster: Array.isArray(cluster) ? cluster : x.map(() => "0") };
+  if (Array.isArray(r.celltype)) result.celltype = r.celltype as string[];
+  if (Array.isArray(r.sample)) result.sample = r.sample as string[];
+  if (Array.isArray(r.group)) result.group = r.group as string[];
+  return result;
 }
 
 /**
@@ -87,12 +91,22 @@ function downsampleScatter(data: ScatterData, maxN = 3000): ScatterData {
   const x: number[] = [];
   const y: number[] = [];
   const cluster: string[] = [];
+  const celltype: string[] = [];
+  const sample: string[] = [];
+  const group: string[] = [];
   for (let i = 0; i < data.x.length; i += step) {
     x.push(data.x[i]);
     y.push(data.y[i]);
     cluster.push(data.cluster[i]);
+    if (data.celltype) celltype.push(data.celltype[i]);
+    if (data.sample) sample.push(data.sample[i]);
+    if (data.group) group.push(data.group[i]);
   }
-  return { x, y, cluster };
+  const result: ScatterData = { x, y, cluster };
+  if (data.celltype) result.celltype = celltype;
+  if (data.sample) result.sample = sample;
+  if (data.group) result.group = group;
+  return result;
 }
 
 /**
@@ -500,7 +514,7 @@ function ReduceResult({ data, taskId }: { data: Record<string, unknown> | null; 
           <p className="text-xs font-medium" style={{ color: "var(--clr-amber-dark)" }}>
             {method} 可视化
           </p>
-          <DeckScatterPlot data={rawScatter} method={method as "UMAP" | "tSNE" | "PCA"} height={520}>
+          <DeckScatterPlot data={rawScatter} method={method as "UMAP" | "tSNE" | "PCA"} height={520} excludeGroups={["cluster", "sample"]}>
             {plotSrc && (
               <AuthDownloadLink
                 url={plotSrc}
@@ -656,7 +670,7 @@ function ClusterResult({ data, task }: { data: Record<string, unknown> | null; t
               <p className="text-xs font-medium" style={{ color: "var(--clr-amber-dark)" }}>
                 Cluster UMAP 图
               </p>
-              <DeckScatterPlot data={rawScatter} method="UMAP" height={560}>
+              <DeckScatterPlot data={rawScatter} method="UMAP" height={560} excludeGroups={["cluster", "sample"]}>
                 {umapSrc && (
                   <AuthDownloadLink
                     url={umapSrc}

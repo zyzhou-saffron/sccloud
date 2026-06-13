@@ -793,13 +793,17 @@ if (plot_format == "pdf") {
 
   report(100, "降维完成")
 
-  # 提取降维坐标供前端 Plotly 渲染
+  # 提取降维坐标供前端渲染
   reduction_key <- if (method == "umap") "umap" else "tsne"
   embeddings <- Embeddings(pro, reduction = reduction_key)
+  md <- pro@meta.data
   scatter_data <- list(
     x       = as.numeric(embeddings[, 1]),
     y       = as.numeric(embeddings[, 2]),
-    cluster = as.character(pro@meta.data[[group_by]])
+    cluster  = as.character(md[[group_by]]),
+    celltype = as.character(md$CellType %||% md[[group_by]]),
+    sample   = as.character(md$Sample %||% "unknown"),
+    group    = as.character(md$Group %||% md$Sample %||% "unknown")
   )
 
   list(
