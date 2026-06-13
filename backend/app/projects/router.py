@@ -230,23 +230,42 @@ async def download_project(
                 return s
         return None
 
-    # 收集所有文件，同名文件只保留最新修改时间
-    file_map = {}
+    import re as _re
+
+    # RDS 文件按 step 去重：只保留每个逻辑名（去掉时间戳）的最新版本
+    # 非 RDS 文件全部保留，使用相对路径避免重名
+    _ts_pattern = _re.compile(r"_\d{14}_")
+
+    def _strip_ts(filename):
+        return _ts_pattern.sub("_", filename)
+
+    rds_map = {}      # logical_name -> (mtime, file_path, relpath)
+    other_files = []  # (file_path, relpath)
+
     for root, dirs, files in os.walk(project_dir):
-        dirs[:] = [d for d in dirs if d not in ("tasks", "__pycache__")]
+        dirs[:] = [d for d in dirs if d not in ("tasks", "__pycache__") and "_output_" not in d]
         for f in files:
             file_path = os.path.join(root, f)
-            mtime = os.path.getmtime(file_path)
-            prev = file_map.get(f)
-            if prev is None or mtime > prev[0]:
-                file_map[f] = (mtime, file_path)
+            relpath = os.path.relpath(file_path, project_dir)
+            if f.endswith(".rds"):
+                mtime = os.path.getmtime(file_path)
+                logical = _strip_ts(f)
+                prev = rds_map.get(logical)
+                if prev is None or mtime > prev[0]:
+                    rds_map[logical] = (mtime, file_path, relpath)
+            else:
+                other_files.append((file_path, relpath))
 
     tmp_path = os.path.join(tempfile.gettempdir(), f"sccloud_{project_id}_{timestamp}.zip")
     with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        for filename, (mtime, file_path) in sorted(file_map.items()):
-            step = get_step(filename)
-            folder = os.path.join(project.name, STEP_DIR.get(step, "_Other")) if step else os.path.join(project.name, "_Other")
-            arc = os.path.join(folder, filename)
+        for logical, (mtime, file_path, relpath) in sorted(rds_map.items()):
+            arc = os.path.join(project.name, relpath)
+            try:
+                zf.write(file_path, arc)
+            except OSError:
+                pass
+        for file_path, relpath in sorted(other_files):
+            arc = os.path.join(project.name, relpath)
             try:
                 zf.write(file_path, arc)
             except OSError:
