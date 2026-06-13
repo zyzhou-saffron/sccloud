@@ -83,7 +83,7 @@ async def _run_steps(pipeline_id: str, steps: List[str], db: Session, pipeline: 
             r_steps = ["reduce", "cluster"]
 
         for r_step in r_steps:
-            # 每步开始前检查配额
+            # 每步开始前检查配额（仅 super/admin）
             from app.db.models import User
             quota_user = db.query(User).filter(User.id == pipeline.user_id).first()
             if quota_user and quota_user.total_quota and quota_user.used_quota >= quota_user.total_quota:
@@ -197,6 +197,11 @@ async def run_pipeline(pipeline_id: str) -> None:
         # Phase 1 完成，暂停
         pipeline.status = "paused"
         pipeline.current_step = None
+        # 标记项目已分析（用于 guest/user/super 上传限制）
+        from app.db.models import Project
+        project = db.query(Project).filter(Project.id == pipeline.project_id).first()
+        if project and not project.has_analyzed:
+            project.has_analyzed = True
         db.commit()
         logger.info(f"Pipeline {pipeline_id} paused after annotation (Phase 1 complete)")
 
@@ -322,7 +327,7 @@ async def _execute_step(db: Session, pipeline: Pipeline, step: str, step_params:
         db.refresh(task)
         logger.info(f"Pipeline {pipeline.id}: step {step} completed successfully")
 
-        # 递增操作配额
+        # 递增操作配额（仅 super/admin）
         try:
             from app.db.models import User
             user = db.query(User).filter(User.id == pipeline.user_id).first()

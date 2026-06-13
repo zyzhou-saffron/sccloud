@@ -119,7 +119,7 @@ async def create_pipeline(
         # 检查项目权限（简化版本，实际应该更复杂）
         # 这里假设 user_id 等于当前 token 的 user_id
 
-        # 配额检查
+        # 配额检查（仅 super/admin）
         if user.total_quota and user.used_quota >= user.total_quota:
             raise HTTPException(
                 status_code=403,
@@ -268,6 +268,12 @@ async def resume_pipeline_endpoint(
     pipeline = db.query(Pipeline).filter(Pipeline.id == pipeline_id).first()
     if not pipeline:
         raise HTTPException(status_code=404, detail="Pipeline not found")
+    # Phase 2 access control
+    if user.role in ("guest", "user"):
+        raise HTTPException(
+            status_code=403,
+            detail="您的账户类型不支持 Phase 2 高级分析。请升级账户后重试。",
+        )
     if pipeline.status not in ("paused", "failed", "completed"):
         raise HTTPException(
             status_code=400,
@@ -279,7 +285,7 @@ async def resume_pipeline_endpoint(
         pipeline.error_step = None
         pipeline.error_msg = None
 
-    # 配额检查
+    # 配额检查（仅 super/admin）
     if user.total_quota and user.used_quota >= user.total_quota:
         raise HTTPException(
             status_code=403,

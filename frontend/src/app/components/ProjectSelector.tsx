@@ -10,6 +10,7 @@ import {
   createProject,
   deleteProject,
   isGuest,
+  getUserRole,
   listProjects,
   type Project,
 } from "../lib/api";
@@ -63,7 +64,8 @@ export default function ProjectSelector({
   }, [loading, selectedId, projects, onSelect]);
 
   /** 游客是否已达到 1 个项目限制 */
-  const guestLimitReached = guest && projects.length >= 1;
+  const role = getUserRole();
+  const guestLimitReached = (guest || role === "user") && projects.length >= 1;
 
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {

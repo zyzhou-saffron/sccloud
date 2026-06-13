@@ -136,12 +136,30 @@ async def update_user(
             detail="不能取消自己的管理员权限",
         )
 
-    if data.role is not None:
+    # 角色校验
+    VALID_ROLES = {"guest", "user", "super", "admin"}
+    if data.role is not None and data.role not in VALID_ROLES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"无效角色: {data.role}，可选: {', '.join(sorted(VALID_ROLES))}",
+        )
+
+    # 改角色时自动设默认值（除非管理员显式指定）
+    if data.role is not None and data.role != user.role:
         user.role = data.role
-    if data.max_projects is not None:
-        user.max_projects = data.max_projects
-    if data.total_quota is not None:
-        user.total_quota = data.total_quota
+        from app.db.models import ROLE_DEFAULTS
+        defaults = ROLE_DEFAULTS.get(data.role, {})
+        if data.max_projects is None:
+            user.max_projects = defaults.get("max_projects", user.max_projects)
+        if data.total_quota is None:
+            user.total_quota = defaults.get("total_quota", user.total_quota)
+        user.is_guest = (data.role == "guest")
+    else:
+        if data.max_projects is not None:
+            user.max_projects = data.max_projects
+        if data.total_quota is not None:
+            user.total_quota = data.total_quota
+
     if data.used_quota is not None:
         user.used_quota = data.used_quota
     if data.is_active is not None:

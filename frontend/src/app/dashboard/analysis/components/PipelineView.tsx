@@ -8,7 +8,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { getPipeline, resumePipeline, type Pipeline, type PipelineTask } from "../../../lib/pipeline-api";
-import { submitTask } from "../../../lib/api";
+import { submitTask, hasPhase2Access, isGuest } from "../../../lib/api";
 import { apiFetch } from "../../../lib/api";
 import ProgressTracker from "../../../components/ProgressTracker";
 import ResultViewer from "../../../components/ResultViewer";
@@ -317,7 +317,7 @@ export default function PipelineView({ pipelineId, token, projectName }: Pipelin
       )}
 
       {/* 暂停提示 + 参数设置按钮 */}
-      {(pipeline.status === "paused" || pipeline.status === "failed" || pipeline.status === "completed" || pipeline.status === "cancelled") && !showPhase2Param && pipeline.tasks.some(function(t) { return t.step === "annotate" && t.status === "completed"; }) && (
+      {(pipeline.status === "paused" || pipeline.status === "failed" || pipeline.status === "completed" || pipeline.status === "cancelled") && !showPhase2Param && hasPhase2Access() && pipeline.tasks.some(function(t) { return t.step === "annotate" && t.status === "completed"; }) && (
         <div className="w-full rounded-lg border px-4 py-3" style={{ borderColor: "#93c5fd", background: "rgba(59,130,246,0.05)" }}>
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-start gap-3 text-left">
@@ -338,7 +338,7 @@ export default function PipelineView({ pipelineId, token, projectName }: Pipelin
       )}
 
       {/* Phase 2 参数选择页 */}
-      {(pipeline.status === "paused" || pipeline.status === "failed" || pipeline.status === "completed" || pipeline.status === "cancelled") && showPhase2Param && pipeline.tasks.some(function(t) { return t.step === "annotate" && t.status === "completed"; }) && (
+      {(pipeline.status === "paused" || pipeline.status === "failed" || pipeline.status === "completed" || pipeline.status === "cancelled") && showPhase2Param && hasPhase2Access() && pipeline.tasks.some(function(t) { return t.step === "annotate" && t.status === "completed"; }) && (
         <Phase2ParamPage
           pipeline={pipeline}
           token={token}

@@ -35,6 +35,7 @@ class TokenResponse(BaseModel):
     refresh_token: str
     token_type: str = "bearer"
     username: str
+    is_guest: bool = False
 
 
 class RefreshRequest(BaseModel):
@@ -50,6 +51,7 @@ class UserInfo(BaseModel):
     total_quota: int = 0
     used_quota: int = 0
     is_active: bool = True
+    is_guest: bool = False
 
 
 # ===== 路由 =====
@@ -73,6 +75,9 @@ async def register(req: RegisterRequest, db: Session = Depends(get_db)):
         username=req.username,
         email=req.email,
         password_hash=hash_password(req.password),
+        role="user",
+        max_projects=1,
+        total_quota=10,
     )
     db.add(user)
     db.commit()
@@ -82,7 +87,7 @@ async def register(req: RegisterRequest, db: Session = Depends(get_db)):
     token_data = {"sub": user.username, "role": user.role}
     return TokenResponse(
         access_token=create_access_token(token_data),
-        role=user.role,
+        role=current_user.role,
         refresh_token=create_refresh_token(token_data),
         username=user.username,
     )
@@ -107,6 +112,7 @@ async def login(
         role=user.role,
         refresh_token=create_refresh_token(token_data),
         username=user.username,
+        is_guest=user.is_guest,
     )
 
 
@@ -134,6 +140,7 @@ async def refresh_token(req: RefreshRequest, db: Session = Depends(get_db)):
         role=user.role,
         refresh_token=create_refresh_token(token_data),
         username=user.username,
+        is_guest=user.is_guest,
     )
 
 
@@ -149,6 +156,7 @@ async def get_me(current_user: User = Depends(get_current_user)):
         total_quota=current_user.total_quota,
         used_quota=current_user.used_quota,
         is_active=current_user.is_active,
+        is_guest=current_user.is_guest,
     )
 
 
@@ -196,7 +204,9 @@ async def guest_login(db: Session = Depends(get_db)):
         username=guest_username,
         password_hash=hash_password(random_password),
         is_guest=True,
-        max_projects=1,  # 游客限制 1 个项目
+        role="guest",
+        max_projects=1,
+        total_quota=10,
     )
     db.add(user)
     db.commit()
@@ -208,6 +218,7 @@ async def guest_login(db: Session = Depends(get_db)):
         role=user.role,
         refresh_token=create_refresh_token(token_data),
         username=user.username,
+        is_guest=user.is_guest,
     )
 
 
@@ -246,7 +257,9 @@ async def upgrade_guest(
     current_user.username = req.username
     current_user.password_hash = hash_password(req.password)
     current_user.is_guest = False
-    current_user.max_projects = 5
+    current_user.role = "user"
+    current_user.max_projects = 1
+    current_user.total_quota = 10
     db.commit()
     db.refresh(current_user)
 

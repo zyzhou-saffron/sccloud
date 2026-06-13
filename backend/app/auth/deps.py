@@ -53,3 +53,14 @@ async def get_admin_user(
             detail='需要管理员权限',
         )
     return current_user
+
+
+async def get_super_or_admin_user(
+    current_user: User = Depends(get_current_user),
+) -> User:
+    if current_user.role not in ("super", "admin"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="需要高级账户权限",
+        )
+    return current_user

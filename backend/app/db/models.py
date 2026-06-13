@@ -61,6 +61,16 @@ class Base(DeclarativeBase):
     pass
 
 
+# ===== 角色默认配置 =====
+ROLE_DEFAULTS = {
+    "guest": {"max_projects": 1, "total_quota": 10, "is_guest": True},
+    "user":  {"max_projects": 1, "total_quota": 10, "is_guest": False},
+    "super": {"max_projects": 5, "total_quota": 100, "is_guest": False},
+    "admin": {"max_projects": 99, "total_quota": 99999, "is_guest": False},
+}
+VALID_ROLES = {"guest", "user", "super", "admin"}
+
+
 # ===== 用户表 =====
 
 class User(Base):
@@ -73,10 +83,7 @@ class User(Base):
     email = Column(String(255), nullable=True)
     password_hash = Column(String(255), nullable=False)  # bcrypt 内置 salt
     is_guest = Column(Boolean, default=False)  # 游客临时用户标记
-    role = Column(
-        Enum("admin", "user", name="user_role"),
-        default="user",
-    )
+    role = Column(String(20), default="user")
     max_projects = Column(Integer, default=5)
     projects_created = Column(Integer, default=0)
     total_quota = Column(Integer, default=10)
@@ -116,6 +123,7 @@ class Project(Base):
     updated_at = Column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
     )
+    has_analyzed = Column(Boolean, default=False)
 
     # 关系
     owner = relationship("User", back_populates="projects")

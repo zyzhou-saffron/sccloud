@@ -176,7 +176,14 @@ export default function AdminPage() {
             disabled={batchLoading}
             className="px-2.5 py-1 rounded text-[11px] font-medium bg-white/20 hover:bg-white/30 transition-all"
           >
-            批量设为普通用户
+            批量设为注册用户
+          </button>
+          <button
+            onClick={() => batchSetRole("super")}
+            disabled={batchLoading}
+            className="px-2.5 py-1 rounded text-[11px] font-medium bg-white/20 hover:bg-white/30 transition-all"
+          >
+            批量设为付费用户
           </button>
           <button
             onClick={() => batchSetRole("admin")}
@@ -351,12 +358,29 @@ export default function AdminPage() {
                 </label>
                 <select
                   value={editUser.role}
-                  onChange={(e) => setEditUser({ ...editUser, role: e.target.value })}
+                  onChange={(e) => {
+                    const newRole = e.target.value;
+                    const defaults: Record<string, { max_projects: number; total_quota: number }> = {
+                      guest: { max_projects: 1, total_quota: 0 },
+                      user:  { max_projects: 1, total_quota: 0 },
+                      super: { max_projects: 5, total_quota: 100 },
+                      admin: { max_projects: 99, total_quota: 99999 },
+                    };
+                    const d = defaults[newRole] || {};
+                    setEditUser({
+                      ...editUser,
+                      role: newRole,
+                      max_projects: d.max_projects ?? editUser.max_projects,
+                      total_quota: d.total_quota ?? editUser.total_quota,
+                    });
+                  }}
                   className={inputCls}
                   style={inputStyle}
                 >
-                  <option value="user">user</option>
-                  <option value="admin">admin</option>
+                  <option value="guest">guest (游客)</option>
+                  <option value="user">user (注册用户)</option>
+                  <option value="super">super (付费用户)</option>
+                  <option value="admin">admin (管理员)</option>
                 </select>
               </div>
               <div className="grid grid-cols-2 gap-3">

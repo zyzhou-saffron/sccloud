@@ -56,6 +56,7 @@ class ProjectResponse(BaseModel):
     storage_path: str | None
     created_at: datetime
     updated_at: datetime
+    has_analyzed: bool = False
 
     model_config = {"from_attributes": True}
 

@@ -247,6 +247,23 @@ export function saveAuthData(data: AuthResponse, guest = false): void {
 export function isGuest(): boolean {
   return localStorage.getItem("is_guest") === "true";
 }
+
+export function getUserRole(): string {
+  return localStorage.getItem("role") || "user";
+}
+
+export function hasPhase2Access(): boolean {
+  const role = getUserRole();
+  return role === "super" || role === "admin";
+}
+
+export const ROLE_LABELS: Record<string, string> = {
+  guest: "游客",
+  user: "注册用户",
+  super: "付费用户",
+  admin: "管理员",
+};
+
 /* ===== Projects ===== */
 
 export interface Project {
@@ -258,6 +275,7 @@ export interface Project {
   storage_path: string | null;
   created_at: string;
   updated_at: string;
+  has_analyzed?: boolean;
 }
 
 interface ProjectList {

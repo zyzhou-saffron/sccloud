@@ -56,7 +56,7 @@ async def init_upload(
     初始化分片上传 — 返回 upload_id 用于后续分片标识。
     默认分片大小 5MB，前端据此切分文件。
     """
-    # 配额检查（上传前）
+    # 配额检查（仅 super/admin）
     if current_user.total_quota and current_user.used_quota >= current_user.total_quota:
         raise HTTPException(
             status_code=403,
@@ -140,7 +140,7 @@ async def complete_upload(
 
     settings = get_settings()
 
-    # 配额检查
+    # 配额检查（仅 super/admin）
     if current_user.total_quota and current_user.used_quota >= current_user.total_quota:
         raise HTTPException(
             status_code=403,
@@ -151,6 +151,22 @@ async def complete_upload(
 
     if not os.path.exists(chunk_dir):
         raise HTTPException(status_code=404, detail="Upload ID 不存在")
+
+    # 分析后禁止上传（非 admin）
+    if current_user.role != "admin":
+        from app.db.models import Project
+        db_check = SessionLocal()
+        try:
+            user_projects = db_check.query(Project).filter(
+                Project.user_id == current_user.id
+            ).order_by(Project.created_at.desc()).all()
+            if user_projects and user_projects[0].has_analyzed:
+                raise HTTPException(
+                    status_code=403,
+                    detail="分析已开始，当前账户类型无法继续上传新文件。",
+                )
+        finally:
+            db_check.close()
 
     # 读取元数据
     meta_path = os.path.join(chunk_dir, "_meta.txt")
@@ -249,7 +265,7 @@ async def complete_upload(
                 detail=f"格式转换失败: {str(e)}",
             )
 
-    # 递增上传配额
+    # 递增上传配额（仅 super/admin）
     db2 = SessionLocal()
     try:
         user = db2.query(User).filter(User.id == current_user.id).first()
