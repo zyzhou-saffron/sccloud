@@ -992,6 +992,30 @@ export default function AnnotateResult({
               — {freqRows.length} 种细胞类型 × {freqHeaders.length} 个样本
             </span>
           </p>
+          <button
+            onClick={() => {
+              const header = ["CellType", ...freqHeaders];
+              const csvRows = freqRows.map(r => [r.celltype, ...freqHeaders.map(s => r[s])]);
+              const csv = [header.join(","), ...csvRows.map(r => r.join(","))].join("\n");
+              const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              const baseFromPlot = plotName.replace(/_umap\.(png|pdf)$/i, "") || "annotate";
+              a.download = `${baseFromPlot}_celltype_proportion.csv`;
+              a.click();
+              URL.revokeObjectURL(url);
+            }}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs"
+            style={{ border: "1px solid var(--clr-border)", background: "var(--clr-bg-alt)", color: "var(--clr-amber-dark)", cursor: "pointer" }}
+            title="下载细胞类型占比表 CSV"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" style={{ width: 14, height: 14 }}>
+              <path d="M10.75 2.75a.75.75 0 00-1.5 0v8.614L6.295 8.235a.75.75 0 10-1.09 1.03l4.25 4.5a.75.75 0 001.09 0l4.25-4.5a.75.75 0 00-1.09-1.03l-2.955 3.129V2.75z" />
+              <path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z" />
+            </svg>
+            下载占比表
+          </button>
           <div className="overflow-x-auto rounded-lg border" style={{ borderColor: "var(--clr-border)" }}>
             <table className="w-full text-xs" style={{ background: "var(--clr-bg-alt)" }}>
               <thead>
