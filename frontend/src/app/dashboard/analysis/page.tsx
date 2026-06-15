@@ -1110,14 +1110,14 @@ function AnalysisPageContent() {
                       </Tooltip>
                     </label>
                     <select value={(stepParams.p_adjust_method as string) ?? "BH"} onChange={(e) => updateParam("p_adjust_method", e.target.value)} className={selectCls} style={selectStyle}>
-                      <option value="BH">BH (FDR)</option>
+                      <option value="BH">BH</option>
+                      <option value="fdr">FDR</option>
+                      <option value="none">None</option>
                       <option value="holm">Holm</option>
                       <option value="hochberg">Hochberg</option>
                       <option value="hommel">Hommel</option>
                       <option value="bonferroni">Bonferroni</option>
                       <option value="BY">BY</option>
-                      <option value="fdr">fdr</option>
-                      <option value="none">none</option>
                     </select>
                   </div>
                   {/* P值阈值 */}

@@ -341,7 +341,9 @@ export default function Phase2ParamPage({ pipeline, token, onComplete, species =
                       <div>
                         <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>P 值校正方法</label>
                         <select value={params.enrich.p_adjust_method} onChange={(e) => updateParam("enrich", "p_adjust_method", e.target.value)} className={selectCls} style={selectStyle}>
-                          <option value="BH">BH (FDR)</option>
+                          <option value="BH">BH</option>
+                          <option value="fdr">FDR</option>
+                          <option value="none">None</option>
                           <option value="bonferroni">Bonferroni</option>
                           <option value="holm">Holm</option>
                           <option value="hochberg">Hochberg</option>
