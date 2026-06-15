@@ -244,6 +244,33 @@ export default function AnnotateResult({
   const markerPageData = markerTable.slice(markerPage * pageSize, (markerPage + 1) * pageSize);
   const markerTotalPages = Math.ceil(markerTable.length / pageSize);
 
+  // ── 细胞类型占比表（CellType × Sample pivot） ──
+  const freqRaw = annotateData?.freq_table ?? [];
+  const [freqPage, setFreqPage] = useState(0);
+  const freqPageSize = 15;
+  const { freqHeaders, freqRows } = useMemo(() => {
+    if (!freqRaw.length) return { freqHeaders: [] as string[], freqRows: [] as { celltype: string; [k: string]: string | number }[] };
+    const samples = Array.from(new Set(freqRaw.map(r => r.Sample ?? "").filter(Boolean)));
+    const ctMap: Record<string, Record<string, number>> = {};
+    for (const r of freqRaw) {
+      const ct = r.CellType ?? "";
+      const s = r.Sample ?? "";
+      const f = r.Freq ?? 0;
+      if (!ctMap[ct]) ctMap[ct] = {};
+      ctMap[ct][s] = f;
+    }
+    const rows = Object.entries(ctMap).map(([ct, sMap]) => {
+      const row: { celltype: string; [k: string]: string | number } = { celltype: ct };
+      for (const s of samples) {
+        row[s] = sMap[s] !== undefined ? (sMap[s] * 100).toFixed(2) + "%" : "—";
+      }
+      return row;
+    });
+    return { freqHeaders: samples, freqRows: rows };
+  }, [freqRaw]);
+  const freqTotalPages = Math.ceil(freqRows.length / freqPageSize);
+  const freqPageData = freqRows.slice(freqPage * freqPageSize, (freqPage + 1) * freqPageSize);
+
   // 重置编辑状态（合并模式退出时）
   useEffect(() => {
     if (!mergeMode) {
@@ -948,6 +975,77 @@ export default function AnnotateResult({
                   background: markerPage >= markerTotalPages - 1 ? "transparent" : "var(--clr-bg-alt)",
                   cursor: markerPage >= markerTotalPages - 1 ? "default" : "pointer",
                 }}
+              >
+                下一页
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── 细胞类型占比表 ── */}
+      {freqRows.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs font-semibold" style={{ color: "var(--clr-amber-dark)" }}>
+            每个样本的细胞类型占比
+            <span className="font-normal ml-1" style={{ color: "var(--clr-text-muted)" }}>
+              — {freqRows.length} 种细胞类型 × {freqHeaders.length} 个样本
+            </span>
+          </p>
+          <div className="overflow-x-auto rounded-lg border" style={{ borderColor: "var(--clr-border)" }}>
+            <table className="w-full text-xs" style={{ background: "var(--clr-bg-alt)" }}>
+              <thead>
+                <tr style={{ borderBottom: "1px solid var(--clr-border)", background: "var(--clr-bg)" }}>
+                  <th className="px-3 py-2 text-left font-semibold sticky left-0" style={{ color: "var(--clr-amber-dark)", background: "var(--clr-bg)", zIndex: 1 }}>
+                    CellType
+                  </th>
+                  {freqHeaders.map(s => (
+                    <th key={s} className="px-3 py-2 text-right font-semibold" style={{ color: "var(--clr-amber-dark)" }}>
+                      {s}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {freqPageData.map((row, idx) => (
+                  <tr
+                    key={row.celltype}
+                    style={{
+                      borderBottom: "1px solid var(--clr-border)",
+                      background: idx % 2 === 0 ? "transparent" : "rgba(255,255,255,0.4)",
+                    }}
+                  >
+                    <td className="px-3 py-1.5 font-medium sticky left-0" style={{ color: "var(--clr-text)", background: idx % 2 === 0 ? "var(--clr-bg-alt)" : "rgba(255,255,255,0.4)", zIndex: 1 }}>
+                      {row.celltype}
+                    </td>
+                    {freqHeaders.map(s => (
+                      <td key={s} className="px-3 py-1.5 text-right" style={{ color: "var(--clr-text-muted)", fontVariantNumeric: "tabular-nums" }}>
+                        {row[s]}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {freqTotalPages > 1 && (
+            <div className="flex justify-center gap-2 text-xs">
+              <button
+                disabled={freqPage === 0}
+                onClick={() => setFreqPage(Math.max(0, freqPage - 1))}
+                className="px-2 py-1 rounded disabled:opacity-50"
+                style={{ border: "1px solid var(--clr-border)", background: freqPage === 0 ? "transparent" : "var(--clr-bg-alt)", cursor: freqPage === 0 ? "default" : "pointer" }}
+              >
+                上一页
+              </button>
+              <span style={{ color: "var(--clr-text-muted)" }}>
+                第 {freqPage + 1} / {freqTotalPages} 页
+              </span>
+              <button
+                disabled={freqPage >= freqTotalPages - 1}
+                onClick={() => setFreqPage(Math.min(freqTotalPages - 1, freqPage + 1))}
+                className="px-2 py-1 rounded disabled:opacity-50"
+                style={{ border: "1px solid var(--clr-border)", background: freqPage >= freqTotalPages - 1 ? "transparent" : "var(--clr-bg-alt)", cursor: freqPage >= freqTotalPages - 1 ? "default" : "pointer" }}
               >
                 下一页
               </button>
