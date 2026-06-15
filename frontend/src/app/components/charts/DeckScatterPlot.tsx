@@ -417,13 +417,6 @@ function toPoints(data: ScatterData) {
   return result;
 }
 
-const GROUP_OPTIONS = [
-  { key: "celltype", label: "CellType" },
-  { key: "cluster", label: "Cluster" },
-  { key: "sample", label: "Sample" },
-  { key: "group", label: "Group" },
-];
-
 export default function DeckScatterPlot({
   data,
   method = "UMAP",
@@ -455,7 +448,7 @@ export default function DeckScatterPlot({
   const currentPalette = PALETTES[paletteKey]?.colors || PALETTES[DEFAULT_PALETTE].colors;
 
   // 分组选择（默认 celltype，不可用时回退 cluster）
-  const [colorByInternal, setColorBy] = useState<string>("celltype");
+  const [colorByInternal, setColorBy] = useState<string>("sample");
   // 使用受控 prop 或内部状态
   const colorBy = colorByProp ?? colorByInternal;
 
@@ -470,20 +463,45 @@ export default function DeckScatterPlot({
   // 当前分组可用的字段列表
   // 旧数据没有 celltype 字段时，cluster 里存的其实是 CellType 标签，动态改标签
   const availableGroups = useMemo(() => {
-    if (!data) return GROUP_OPTIONS;
-    const hasCelltype = !!(data as Record<string, unknown>).celltype;
-    return GROUP_OPTIONS.filter(g => {
+    if (!data) return [];
+    const d = data as Record<string, unknown>;
+    const ct = d.celltype;
+    const cl = d.cluster;
+    const hasCelltype = !!ct && Array.isArray(ct);
+    // 区分注释结果（celltype != cluster）和聚类结果（celltype == cluster）
+    const isAnnotate = hasCelltype && Array.isArray(cl) &&
+      (ct as string[]).some((v, i) => v !== (cl as string[])[i]);
+    let opts: { key: string; label: string }[];
+    if (isAnnotate) {
+      opts = [
+        { key: "celltype", label: "CellType" },
+        { key: "sample", label: "Sample" },
+        { key: "group", label: "Group" },
+        { key: "cluster", label: "Cluster" },
+      ];
+    } else if (hasCelltype) {
+      opts = [
+        { key: "celltype", label: "CellType" },
+        { key: "group", label: "Group" },
+      ];
+    } else {
+      opts = [
+        { key: "sample", label: "Sample" },
+        { key: "group", label: "Group" },
+      ];
+    }
+    return opts.filter(g => {
       if (excludeGroups?.includes(g.key)) return false;
-      if (g.key === "cluster") return true;
-      const arr = (data as Record<string, unknown>)[g.key];
-      if (!arr || !Array.isArray(arr)) return false;
-      // 如果所有值都相同，该分组无意义
-      const unique = new Set(arr as string[]);
-      if (unique.size <= 1) return false;
+      if (g.key === "group") {
+        const gArr = d.group;
+        if (!Array.isArray(gArr) || new Set(gArr as string[]).size <= 1) return false;
+        // 如果 group 和 sample 完全一样，说明是旧数据回退，不显示
+        const sArr = d.sample;
+        if (Array.isArray(sArr) && gArr.length === sArr.length &&
+            (gArr as string[]).every((v, i) => v === (sArr as string[])[i])) return false;
+        return true;
+      }
       return true;
-    }).map(g => {
-      if (g.key === "cluster" && !hasCelltype) return { ...g, label: "CellType" };
-      return g;
     });
   }, [data, excludeGroups]);
 

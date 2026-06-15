@@ -331,14 +331,19 @@ async def mtx_merge(
     result = response.json()
 
     # 保存样本分组映射（供后续 QC 步骤使用）
+    # 仅当用户实际设置了分组（至少一个非空值）时才写入
     groups_json_path = output_path + "_groups.json"
     import json
     group_map = {}
+    has_real_group = False
     for nm, grp in zip(sample_names, sample_groups):
-        group_map[nm] = grp if grp and grp.strip() else nm
-    with open(groups_json_path, "w") as gf:
-        json.dump(group_map, gf, ensure_ascii=False)
-    os.chmod(groups_json_path, 0o666)
+        if grp and grp.strip():
+            group_map[nm] = grp.strip()
+            has_real_group = True
+    if has_real_group:
+        with open(groups_json_path, "w") as gf:
+            json.dump(group_map, gf, ensure_ascii=False)
+        os.chmod(groups_json_path, 0o666)
 
     # R jsonlite 将单值包装为数组，需要解包
     def _r(v, default=None):

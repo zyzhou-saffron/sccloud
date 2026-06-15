@@ -509,6 +509,15 @@ function(req) {
     if (file.exists(groups_json_path)) {
       tryCatch({
         sample_groups <- jsonlite::fromJSON(groups_json_path)
+        # 验证：如果所有分组值都和样本名一样，说明没有真正设置分组
+        if (!is.null(sample_groups) && length(sample_groups) > 0) {
+          sample_names_in_obj <- as.character(exp@meta.data$Sample)
+          group_vals <- unname(unlist(sample_groups))
+          # 如果所有 group 值都在 sample 名称中，视为未设置分组
+          if (all(group_vals %in% sample_names_in_obj) && length(unique(group_vals)) == length(unique(sample_names_in_obj))) {
+            sample_groups <- NULL
+          }
+        }
       }, error = function(e) {
         sample_groups <- NULL
       })
@@ -526,6 +535,13 @@ function(req) {
       grp <- sample_groups[[s]]
       if (is.null(grp) || nchar(grp) == 0) "Unknown" else grp
     }))
+  }
+
+  # 如果用户没有设置分组，但原始数据自带 Group 列，移除它
+  if (is.null(sample_groups) || length(sample_groups) == 0) {
+    if ("Group" %in% colnames(exp@meta.data)) {
+      exp$Group <- NULL
+    }
   }
 
   # --- 非 Symbol 基因 ID → Gene Symbol 回退转换 ---
@@ -640,16 +656,17 @@ if (plot_format == "pdf") {
   # 保存 QC 统计 CSV（归档名）
   mito_csv_archive <- make_output_name(project_path, "1", "qc", "mito_stats", "csv")
   mito_csv_path <- file.path(project_path, mito_csv_archive)
+")
   write.csv(rbind(
-    data.frame(stage = "before", totalMT),
-    data.frame(stage = "after", totalMT1)
+    data.frame(stage = "before", totalMT, check.names = FALSE),
+    data.frame(stage = "after", totalMT1, check.names = FALSE)
   ), mito_csv_path, row.names = FALSE)
 
   umi_csv_archive <- make_output_name(project_path, "1", "qc", "umi_gene_stats", "csv")
   umi_csv_path <- file.path(project_path, umi_csv_archive)
   write.csv(rbind(
-    data.frame(stage = "before", umiGene),
-    data.frame(stage = "after", umiGene1)
+    data.frame(stage = "before", umiGene, check.names = FALSE),
+    data.frame(stage = "after", umiGene1, check.names = FALSE)
   ), umi_csv_path, row.names = FALSE)
 
   report(100, "质控完成")
@@ -801,9 +818,9 @@ if (plot_format == "pdf") {
     x       = as.numeric(embeddings[, 1]),
     y       = as.numeric(embeddings[, 2]),
     cluster  = as.character(md[[group_by]]),
-    celltype = as.character(md$CellType %||% md[[group_by]]),
+    celltype = if ("CellType" %in% colnames(md)) as.character(md$CellType) else NULL,
     sample   = as.character(md$Sample %||% "unknown"),
-    group    = as.character(md$Group %||% md$Sample %||% "unknown")
+    group    = if ("Group" %in% colnames(md)) as.character(md$Group) else NULL
   )
 
   list(
@@ -929,9 +946,9 @@ if (plot_format == "pdf") {
       x         = as.numeric(embeddings[, 1]),
       y         = as.numeric(embeddings[, 2]),
       cluster   = as.character(Idents(pro)),
-      celltype  = as.character(md$CellType %||% Idents(pro)),
+      celltype  = as.character(Idents(pro)),
       sample    = as.character(md$Sample %||% "unknown"),
-      group     = as.character(md$Group %||% md$Sample %||% "unknown")
+      group     = if ("Group" %in% colnames(md)) as.character(md$Group) else NULL
     )
   } else NULL
 
@@ -1765,7 +1782,7 @@ if (plot_format == "pdf") {
       cluster   = as.character(md$Cluster %||% Idents(pro)),
       celltype  = as.character(md$CellType %||% md$Cluster %||% Idents(pro)),
       sample    = as.character(md$Sample %||% "unknown"),
-      group     = as.character(md$Group %||% md$Sample %||% "unknown")
+      group     = if ("Group" %in% colnames(md)) as.character(md$Group) else NULL
     )
   } else NULL
 
@@ -1942,7 +1959,7 @@ mtx_ok = True
       meta_csv <- file.path(mtx_dir, "metadata.csv")
       obs_meta <- NULL
       if (file.exists(meta_csv)) {
-        obs_meta <- read.csv(meta_csv, row.names = 1, check.names = FALSE)
+        obs_meta <- read.csv(meta_csv, row.names = 1)
       }
 
       # 压缩 MTX 文件 (Seurat::Read10X 需要 .gz 文件)
@@ -2048,7 +2065,7 @@ mtx_ok = True
         meta_csv <- file.path(mtx_dir, "metadata.csv")
         obs_meta <- NULL
         if (file.exists(meta_csv)) {
-          obs_meta <- read.csv(meta_csv, row.names = 1, check.names = FALSE)
+          obs_meta <- read.csv(meta_csv, row.names = 1)
         }
 
         # 压缩 MTX 文件
@@ -2090,14 +2107,14 @@ mtx_ok = True
 
     # ---- CSV 表达矩阵 (基因×细胞) ----
     csv = {
-      mat <- read.csv(input_path, row.names = 1, check.names = FALSE)
+      mat <- read.csv(input_path, row.names = 1)
       Seurat::CreateSeuratObject(counts = as.matrix(mat))
     },
 
     # ---- TSV/TXT 表达矩阵 ----
     tsv = {
       mat <- read.table(input_path, sep = "\t", row.names = 1,
-                        header = TRUE, check.names = FALSE)
+                        header = TRUE)
       Seurat::CreateSeuratObject(counts = as.matrix(mat))
     },
 

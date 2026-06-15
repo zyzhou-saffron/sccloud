@@ -514,7 +514,7 @@ function ReduceResult({ data, taskId }: { data: Record<string, unknown> | null; 
           <p className="text-xs font-medium" style={{ color: "var(--clr-amber-dark)" }}>
             {method} 可视化
           </p>
-          <DeckScatterPlot data={rawScatter} method={method as "UMAP" | "tSNE" | "PCA"} height={520} excludeGroups={["cluster", "sample"]}>
+          <DeckScatterPlot data={rawScatter} method={method as "UMAP" | "tSNE" | "PCA"} height={520}>
             {plotSrc && (
               <AuthDownloadLink
                 url={plotSrc}
@@ -670,7 +670,7 @@ function ClusterResult({ data, task }: { data: Record<string, unknown> | null; t
               <p className="text-xs font-medium" style={{ color: "var(--clr-amber-dark)" }}>
                 Cluster UMAP 图
               </p>
-              <DeckScatterPlot data={rawScatter} method="UMAP" height={560} excludeGroups={["cluster", "sample"]}>
+              <DeckScatterPlot data={rawScatter} method="UMAP" height={560}>
                 {umapSrc && (
                   <AuthDownloadLink
                     url={umapSrc}
