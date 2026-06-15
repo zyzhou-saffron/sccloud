@@ -656,7 +656,6 @@ if (plot_format == "pdf") {
   # 保存 QC 统计 CSV（归档名）
   mito_csv_archive <- make_output_name(project_path, "1", "qc", "mito_stats", "csv")
   mito_csv_path <- file.path(project_path, mito_csv_archive)
-")
   write.csv(rbind(
     data.frame(stage = "before", totalMT, check.names = FALSE),
     data.frame(stage = "after", totalMT1, check.names = FALSE)
@@ -924,6 +923,12 @@ if (plot_format == "pdf") {
   # 调用原始函数生成统计
   cluster_num <- my_cluster_num1(pro@meta.data)
   freq_table  <- my_freqTable(pro@meta.data)
+
+  # 保存聚类统计和频率表为 CSV 文件（供打包下载）
+  cluster_csv <- file.path(project_path, make_output_name(project_path, "2", "cluster", "cluster_num", "csv"))
+  freq_csv    <- file.path(project_path, make_output_name(project_path, "2", "cluster", "freq_table", "csv"))
+  write.csv(cluster_num, cluster_csv, row.names = FALSE)
+  write.csv(freq_table,  freq_csv,    row.names = FALSE)
 
   # 提取前 100 行 meta.data 供前端表格展示
   meta_sample <- head(pro@meta.data, 100)

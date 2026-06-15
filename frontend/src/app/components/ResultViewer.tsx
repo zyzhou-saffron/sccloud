@@ -727,7 +727,7 @@ function ClusterResult({ data, task }: { data: Record<string, unknown> | null; t
                 const rp = data?.result_path;
                 const now2 = new Date();
                 const ts2 = `${now2.getFullYear()}${String(now2.getMonth()+1).padStart(2,"0")}${String(now2.getDate()).padStart(2,"0")}`;
-                const baseName = projectName || (typeof rp === "string" ? rp.split("/").pop()?.replace(/\.rds$/, "") : "") || "cluster";
+                const baseName = (typeof rp === "string" ? rp.split("/").pop()?.replace(/\.rds$/, "") : "") || "cluster";
                 const name = `${baseName}_cluster_num_${ts2}.csv`;
                 const blob = new Blob([csv], {type: "text/csv"});
                 const url = URL.createObjectURL(blob);
@@ -756,7 +756,7 @@ function ClusterResult({ data, task }: { data: Record<string, unknown> | null; t
                 const rp = data?.result_path;
                 const now3 = new Date();
                 const ts3 = `${now3.getFullYear()}${String(now3.getMonth()+1).padStart(2,"0")}${String(now3.getDate()).padStart(2,"0")}`;
-                const baseName2 = projectName || (typeof rp === "string" ? rp.split("/").pop()?.replace(/\.rds$/, "") : "") || "cluster";
+                const baseName2 = (typeof rp === "string" ? rp.split("/").pop()?.replace(/\.rds$/, "") : "") || "cluster";
                 const name = `${baseName2}_freq_table_${ts3}.csv`;
                 const blob = new Blob([csv], {type: "text/csv"});
                 const url = URL.createObjectURL(blob);
