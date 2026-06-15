@@ -18,7 +18,7 @@ import {
   IconMicroscope, IconBarChart, IconAxis, IconCluster,
   IconTestTube, IconPathway, IconWaveform, IconTag, IconUpload, IconQuestion
 } from "../../components/Icons";
-import { getTask, submitTask, type Project, type Task } from "../../lib/api";
+import { getTask, submitTask, type Project, type Task, getAuthToken} from "../../lib/api";
 import PipelineForm from "./components/PipelineForm";
 import PipelineView from "./components/PipelineView";
 
@@ -211,7 +211,7 @@ function AnalysisPageContent() {
   useEffect(() => {
     const savedCache = ss?.taskCache as Record<string, Task> | undefined;
     if (!savedCache || Object.keys(savedCache).length === 0) return;
-    const token = localStorage.getItem("access_token") || "";
+    const token = getAuthToken() || "";
     // 恢复所有步骤的 task（确保跨步骤依赖如 clusterLevels 可用）
     for (const [stepId, savedTask] of Object.entries(savedCache)) {
       if (!savedTask?.id) continue;
@@ -255,7 +255,7 @@ function AnalysisPageContent() {
       setClusterLevels([]);
       return;
     }
-    const token = localStorage.getItem("access_token") || "";
+    const token = getAuthToken() || "";
     fetch(`/api/tasks/${clusterTask.id}/result`, {
       headers: { Authorization: `Bearer ${token}` },
     })
@@ -308,7 +308,7 @@ function AnalysisPageContent() {
   const handleFileUpload = async (file: File) => {
     if (!project) { setError("请先选择项目"); return; }
     const CHUNK = 5 * 1024 * 1024; // 5MB per chunk
-    const token = localStorage.getItem("access_token") || "";
+    const token = getAuthToken() || "";
     setUploadProgress(0);
     setError(null);
     try {
@@ -494,7 +494,7 @@ function AnalysisPageContent() {
                 btn.innerHTML = '<span class="w-3 h-3 border-2 border-t-transparent rounded-full animate-spin"></span> 打包中...';
                 btn.disabled = true;
                 try {
-                  const token = localStorage.getItem("access_token") || "";
+                  const token = getAuthToken() || "";
                   const res = await fetch(`/api/projects/${project.id}/download`, {
                     headers: { Authorization: `Bearer ${token}` }
                   });
@@ -582,7 +582,7 @@ function AnalysisPageContent() {
           {!activePipelineId ? (
             <PipelineForm
               projectId={project.id}
-              token={localStorage.getItem("access_token") || ""}
+              token={getAuthToken() || ""}
               onSubmit={(pipelineId) => setActivePipelineIdPersist(pipelineId)}
               uploadedFiles={uploadedFiles}
               onUploadedFilesChange={setUploadedFiles}
@@ -592,7 +592,7 @@ function AnalysisPageContent() {
           ) : (
             <PipelineView
               pipelineId={activePipelineId}
-              token={localStorage.getItem("access_token") || ""}
+              token={getAuthToken() || ""}
               projectName={project?.name}
             />
           )}
@@ -1193,7 +1193,7 @@ function AnalysisPageContent() {
                       if (!f || !project) return;
                       e.target.value = '';
                       setMarkerUploading(true);
-                      const token = localStorage.getItem('access_token');
+                      const token = getAuthToken();
                       const fd = new FormData();
                       fd.append('file', f);
                       try {

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { saveAuthData, upgradeGuest } from "../lib/api";
+import { saveAuthData, upgradeGuest, moveGuestToUser } from "../lib/api";
 
 /**
  * AuthModal — 登录/注册/游客升级 二合一模态框
@@ -112,7 +112,7 @@ export default function AuthModal({
         }
         data = await res.json();
       }
-      saveAuthData(data, false);
+      if (upgradeMode) { moveGuestToUser(data); } else { saveAuthData(data, false); }
       resetForm();
       onClose();
       window.location.href = "/dashboard/analysis";

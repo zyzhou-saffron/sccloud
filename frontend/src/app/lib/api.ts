@@ -10,6 +10,27 @@
 /** API 基地址 — 空字符串表示同源相对路径 */
 const API_BASE = "";
 
+/* ===== 存储层隔离 =====
+ * 游客 token → sessionStorage（标签页隔离）
+ * 正式用户 token → localStorage（跨标签页持久）
+ */
+
+const AUTH_KEYS = ["access_token", "refresh_token", "username", "role", "is_guest"];
+
+export function getAuthItem(key: string): string | null {
+  if (typeof window === "undefined") return null;
+  return sessionStorage.getItem(key) ?? localStorage.getItem(key);
+}
+
+function removeAuthItem(key: string): void {
+  sessionStorage.removeItem(key);
+  localStorage.removeItem(key);
+}
+
+function clearAllAuth(): void {
+  AUTH_KEYS.forEach(k => removeAuthItem(k));
+}
+
 /* ===== Refresh Token 自动续期机制 ===== */
 
 /**
@@ -20,15 +41,14 @@ let refreshPromise: Promise<string | null> | null = null;
 
 /**
  * 调用 POST /api/auth/refresh 获取新的 access_token。
- * 成功时更新 localStorage 并返回新 token；失败返回 null。
+ * 成功时更新对应 storage 并返回新 token；失败返回 null。
  */
 async function doRefreshToken(): Promise<string | null> {
-  const refreshToken =
-    typeof window !== "undefined"
-      ? localStorage.getItem("refresh_token")
-      : null;
-
+  const refreshToken = getAuthItem("refresh_token");
   if (!refreshToken) return null;
+
+  const guest = getAuthItem("is_guest") === "true";
+  const storage = guest ? sessionStorage : localStorage;
 
   try {
     const res = await fetch(`${API_BASE}/api/auth/refresh`, {
@@ -40,14 +60,13 @@ async function doRefreshToken(): Promise<string | null> {
     if (!res.ok) return null;
 
     const data = await res.json();
-    // 更新 localStorage 中的 token
-    localStorage.setItem("access_token", data.access_token);
+    storage.setItem("access_token", data.access_token);
     if (data.refresh_token) {
-      localStorage.setItem("refresh_token", data.refresh_token);
+      storage.setItem("refresh_token", data.refresh_token);
     }
     if (data.username) {
-      localStorage.setItem("username", data.username);
-  localStorage.setItem("role", data.role || "user");
+      storage.setItem("username", data.username);
+      storage.setItem("role", data.role || "user");
     }
     return data.access_token as string;
   } catch {
@@ -68,25 +87,24 @@ export async function tryRefresh(): Promise<string | null> {
   return refreshPromise;
 }
 
-/** 清除登录态并跳转登录页 */
+/** 清除登录态并跳转首页 */
 function forceLogout(): never {
-  localStorage.removeItem("access_token");
-  localStorage.removeItem("refresh_token");
-  localStorage.removeItem("username");
-  window.location.href = "/login";
+  clearAllAuth();
+  window.location.href = "/";
   throw new Error("登录已过期，请重新登录");
 }
 
-/** Guest 登录兜底 — 当 refresh 失败时自动获取新 guest token */
+/** Guest 登录兜底 — 当 refresh 失败时自动获取新 guest token（存入 sessionStorage） */
 async function guestLoginFallback(): Promise<string | null> {
   try {
     const res = await fetch(`${API_BASE}/api/auth/guest`, { method: "POST" });
     if (!res.ok) return null;
     const data = await res.json();
-    localStorage.setItem("access_token", data.access_token);
-    if (data.refresh_token) localStorage.setItem("refresh_token", data.refresh_token);
-    if (data.username) localStorage.setItem("username", data.username);
-  localStorage.setItem("role", data.role || "user");
+    sessionStorage.setItem("access_token", data.access_token);
+    if (data.refresh_token) sessionStorage.setItem("refresh_token", data.refresh_token);
+    if (data.username) sessionStorage.setItem("username", data.username);
+    sessionStorage.setItem("role", data.role || "user");
+    sessionStorage.setItem("is_guest", "true");
     return data.access_token as string;
   } catch {
     return null;
@@ -98,10 +116,7 @@ export async function apiFetch<T>(
   path: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const token =
-    typeof window !== "undefined"
-      ? localStorage.getItem("access_token")
-      : null;
+  const token = getAuthItem("access_token");
 
   const headers: Record<string, string> = {
     ...(options.headers as Record<string, string>),
@@ -231,30 +246,54 @@ export async function upgradeGuest(
 }
 
 /**
- * 保存认证数据到 localStorage。
+ * 保存认证数据。游客 → sessionStorage（标签页隔离），正式用户 → localStorage。
  */
 export function saveAuthData(data: AuthResponse, guest = false): void {
+  const storage = guest ? sessionStorage : localStorage;
+  storage.setItem("access_token", data.access_token);
+  storage.setItem("refresh_token", data.refresh_token);
+  storage.setItem("username", data.username);
+  storage.setItem("role", data.role || "user");
+  storage.setItem("is_guest", guest ? "true" : "false");
+  // 清除另一个 storage 的旧数据，避免冲突
+  const other = guest ? localStorage : sessionStorage;
+  AUTH_KEYS.forEach(k => other.removeItem(k));
+}
+
+/**
+ * 游客升级为正式用户后，将 token 从 sessionStorage 迁移到 localStorage。
+ */
+export function moveGuestToUser(data: AuthResponse): void {
+  AUTH_KEYS.forEach(k => sessionStorage.removeItem(k));
   localStorage.setItem("access_token", data.access_token);
   localStorage.setItem("refresh_token", data.refresh_token);
   localStorage.setItem("username", data.username);
   localStorage.setItem("role", data.role || "user");
-  localStorage.setItem("is_guest", guest ? "true" : "false");
+  localStorage.setItem("is_guest", "false");
 }
 
 /**
  * 检查当前用户是否为游客。
  */
 export function isGuest(): boolean {
-  return localStorage.getItem("is_guest") === "true";
+  return getAuthItem("is_guest") === "true";
 }
 
 export function getUserRole(): string {
-  return localStorage.getItem("role") || "user";
+  return getAuthItem("role") || "user";
 }
 
 export function hasPhase2Access(): boolean {
   const role = getUserRole();
   return role === "super" || role === "admin";
+}
+
+export function getAuthToken(): string | null {
+  return getAuthItem("access_token");
+}
+
+export function clearAuthData(): void {
+  clearAllAuth();
 }
 
 export const ROLE_LABELS: Record<string, string> = {
@@ -423,18 +462,12 @@ interface UploadProgress {
 /**
  * 分片上传大文件 (RDS/H5AD)。
  * 流程: init → chunk × N → complete
- *
- * @param file 前端 File 对象
- * @param projectId 关联的项目 ID (可选)
- * @param onProgress 进度回调
- * @returns 上传完成后的服务端文件路径
  */
 export async function uploadFileChunked(
   file: File,
   projectId?: number,
   onProgress?: (p: UploadProgress) => void
 ): Promise<{ path: string; filename: string; size_mb: number }> {
-  /* 1. 初始化上传 */
   const initForm = new FormData();
   initForm.append("filename", file.name);
   initForm.append("file_size", String(file.size));
@@ -447,7 +480,6 @@ export async function uploadFileChunked(
   const { upload_id, chunk_size } = initRes;
   const totalChunks = Math.ceil(file.size / chunk_size);
 
-  /* 2. 逐片上传 */
   for (let i = 0; i < totalChunks; i++) {
     const start = i * chunk_size;
     const end = Math.min(start + chunk_size, file.size);
@@ -471,7 +503,6 @@ export async function uploadFileChunked(
     });
   }
 
-  /* 3. 合并分片 */
   onProgress?.({
     phase: "merging",
     percent: 95,

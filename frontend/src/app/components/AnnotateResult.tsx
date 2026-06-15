@@ -5,14 +5,14 @@
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
-import { submitTask, getTask, apiFetch, updateTaskResult, type Task } from "../lib/api";
+import { submitTask, getTask, apiFetch, updateTaskResult, type Task, getAuthToken} from "../lib/api";
 import DeckScatterPlot from "./charts/DeckScatterPlot";
 import type { ScatterData } from "./charts/ScatterPlot";
 import GeneExpressionPopup from "./GeneExpressionPopup";
 
 function getToken() {
   if (typeof window !== "undefined") {
-    return localStorage.getItem("access_token") || "";
+    return getAuthToken() || "";
   }
   return "";
 }

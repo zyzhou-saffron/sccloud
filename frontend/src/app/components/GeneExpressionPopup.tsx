@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { OrthographicView } from "@deck.gl/core";
 import { ScatterplotLayer } from "@deck.gl/layers";
 import DeckGL from "@deck.gl/react";
+import { getAuthToken } from "../lib/api";
 
 /* ── viridis 色阶（低表达浅灰 → viridis） ── */
 function viridisColor(t: number): [number, number, number] {
@@ -151,7 +152,7 @@ export default function GeneExpressionPopup({
     setLoading(true);
     setError(null);
 
-    const authToken = token || (typeof window !== "undefined" ? localStorage.getItem("access_token") || "" : "");
+    const authToken = token || (typeof window !== "undefined" ? getAuthToken() || "" : "");
 
     const params = new URLSearchParams({ gene });
     if (celltype) params.set("celltype", celltype);

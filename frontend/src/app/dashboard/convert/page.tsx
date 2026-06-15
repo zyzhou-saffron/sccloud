@@ -7,7 +7,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { apiFetch } from "../../lib/api";
+import { apiFetch, getAuthToken} from "../../lib/api";
 
 /* ===== 接口类型 ===== */
 interface MergeResult {
@@ -48,7 +48,7 @@ function StepAnchor({ step, title, subtitle }: { step: number; title: string; su
 
 /* ===== 带认证下载 ===== */
 async function authDownload(url: string, filename: string) {
-  const token = localStorage.getItem("access_token");
+  const token = getAuthToken();
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${token}` },
   });

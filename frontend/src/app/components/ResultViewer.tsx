@@ -11,7 +11,7 @@
 "use client";
 
 import React, { Component, type ComponentType, type ReactNode, useEffect, useMemo, useState } from "react";
-import { type Task, submitTask, getTask, apiFetch, tryRefresh } from "../lib/api";
+import { type Task, submitTask, getTask, apiFetch, tryRefresh, getAuthToken} from "../lib/api";
 import ProgressTracker from "./ProgressTracker";
 
 import QCResultTabs from "./QCResultTabs";
@@ -194,7 +194,7 @@ interface ResultViewerProps {
 /** 从 localStorage 读取 token */
 function getToken(): string {
   if (typeof window === "undefined") return "";
-  return localStorage.getItem("access_token") || "";
+  return getAuthToken() || "";
 }
 
 /**
@@ -217,9 +217,9 @@ async function fetchWithAuth(url: string, init?: RequestInit): Promise<Response>
       const guestRes = await fetch("/api/auth/guest", { method: "POST" });
       if (guestRes.ok) {
         const data = await guestRes.json();
-        localStorage.setItem("access_token", data.access_token);
-        if (data.refresh_token) localStorage.setItem("refresh_token", data.refresh_token);
-        if (data.username) localStorage.setItem("username", data.username);
+        sessionStorage.setItem("access_token", data.access_token);
+        if (data.refresh_token) sessionStorage.setItem("refresh_token", data.refresh_token);
+        if (data.username) sessionStorage.setItem("username", data.username);
         const retry2 = await fetch(url, { ...init, headers: { ...(init?.headers as Record<string, string>), Authorization: `Bearer ${data.access_token}` } });
         if (retry2.ok) return retry2;
       }
@@ -905,7 +905,7 @@ function ClusterResult({ data, task }: { data: Record<string, unknown> | null; t
             <button
               onClick={async () => {
                 try {
-                  const token = localStorage.getItem("access_token") || "";
+                  const token = getAuthToken() || "";
                   const resp = await fetch("/api/tasks/" + taskId + "/meta_csv", { headers: { Authorization: "Bearer " + token } });
                   if (!resp.ok) throw new Error("Failed");
                   const blob = await resp.blob();
@@ -1135,7 +1135,7 @@ function MarkersResult({ task, data, taskCache, clusterLevels: parentClusterLeve
   // getToken 便捷函数
   const getToken = () => {
     if (typeof window === "undefined") return "";
-    return localStorage.getItem("access_token") || "";
+    return getAuthToken() || "";
   };
 
   // Tab 定义

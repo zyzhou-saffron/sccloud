@@ -142,10 +142,8 @@ export default function LandingPage() {
     return () => observerRef.current?.disconnect();
   }, [revealCallback]);
 
-  /* 点击"开始分析": 已有 token → 直接进, 否则创建 guest */
+  /* 点击"开始分析": 始终创建新游客会话（标签页隔离） */
   const handleStart = async () => {
-    const existing = localStorage.getItem("access_token");
-    if (existing) { router.push("/dashboard/analysis"); return; }
     setStartLoading(true);
     try {
       const data = await guestLogin();

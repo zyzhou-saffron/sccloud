@@ -6,7 +6,7 @@
 
 import { useEffect, useState } from "react";
 import AuthModal from "../../components/AuthModal";
-import { healthCheck } from "../../lib/api";
+import { healthCheck, getAuthToken} from "../../lib/api";
 
 
 
@@ -32,7 +32,7 @@ export default function SettingsPage() {
   const username = typeof window !== "undefined" ? localStorage.getItem("username") : "";
 
   useEffect(() => {
-    const token = localStorage.getItem("access_token");
+    const token = getAuthToken();
     const isGuestUser = !token || token.startsWith("guest_") || (username || "").startsWith("guest_");
     setGuest(isGuestUser);
     if (isGuestUser) {
@@ -46,7 +46,7 @@ export default function SettingsPage() {
     if (newPwd.length < 6) { setPwdMsg({ ok: false, text: "密码至少 6 位" }); return; }
     setSaving(true); setPwdMsg(null);
     try {
-      const token = localStorage.getItem("access_token");
+      const token = getAuthToken();
       const res = await fetch("/api/auth/change-password", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },

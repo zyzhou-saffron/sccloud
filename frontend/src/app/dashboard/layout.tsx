@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { IconBeaker, IconConvert, IconGear, IconUsers } from "../components/Icons";
-import { isGuest, ROLE_LABELS } from "../lib/api";
+import { isGuest, ROLE_LABELS, getAuthToken, getAuthItem, clearAuthData } from "../lib/api";
 import AuthModal from "../components/AuthModal";
 
 /**
@@ -38,8 +38,8 @@ export default function DashboardLayout({
   const [navItems, setNavItems] = useState(NAV_ITEMS);
 
   useEffect(() => {
-    const token = localStorage.getItem("access_token");
-    const name = localStorage.getItem("username");
+    const token = getAuthToken();
+    const name = getAuthItem("username");
     if (!token) {
       router.push("/");
       return;
@@ -47,7 +47,7 @@ export default function DashboardLayout({
     setUsername(name || "用户");
     setGuest(isGuest());
     // 获取操作配额和角色
-    const token2 = localStorage.getItem("access_token");
+    const token2 = getAuthToken();
     if (token2) {
       fetch("/api/auth/me", { headers: { Authorization: "Bearer " + token2 } })
         .then(r => r.json())
@@ -55,14 +55,14 @@ export default function DashboardLayout({
           if (d.total_quota !== undefined) setQuotaInfo({ total: d.total_quota, used: d.used_quota });
           if (d.role) {
             setUserRole(d.role);
-            localStorage.setItem("role", d.role);
-            if (d.is_guest !== undefined) localStorage.setItem("is_guest", d.is_guest ? "true" : "false");
+            const _sto = isGuest() ? sessionStorage : localStorage; _sto.setItem("role", d.role);
+            if (d.is_guest !== undefined) { const _sto2 = d.is_guest ? sessionStorage : localStorage; _sto2.setItem("is_guest", d.is_guest ? "true" : "false"); }
             setGuest(d.is_guest || false);
           }
         })
         .catch(() => {});
     }
-    const role = localStorage.getItem("role") || "user";
+    const role = getAuthItem("role") || "user";
     setNavItems(role === "admin" ? [...NAV_ITEMS, ADMIN_NAV_ITEM] : NAV_ITEMS);
     if (pathname === "/dashboard") {
       router.replace("/dashboard/analysis");
@@ -77,10 +77,7 @@ export default function DashboardLayout({
   }, [router, pathname]);
 
   const handleLogout = () => {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("refresh_token");
-    localStorage.removeItem("username");
-    localStorage.removeItem("is_guest");
+    clearAuthData();
     window.location.href = "/";
     router.push("/");
   };
@@ -162,12 +159,12 @@ export default function DashboardLayout({
                     const opening = !userDropdownOpen;
                     setUserDropdownOpen(opening);
                     if (opening) {
-                      const tk = localStorage.getItem("access_token");
+                      const tk = getAuthToken();
                       if (tk) fetch("/api/auth/me", { headers: { Authorization: "Bearer " + tk } })
                         .then(r => r.json())
                         .then(d => {
                           if (d.total_quota !== undefined) setQuotaInfo({ total: d.total_quota, used: d.used_quota });
-                          if (d.role) { setUserRole(d.role); localStorage.setItem("role", d.role); }
+                          if (d.role) { setUserRole(d.role); const _s = isGuest() ? sessionStorage : localStorage; _s.setItem("role", d.role); }
                         })
                         .catch(() => {});
                     }
@@ -187,7 +184,7 @@ export default function DashboardLayout({
                     <div className="px-3 py-2 border-b" style={{ borderColor: "var(--clr-border)" }}>
                       <p className="text-sm font-medium" style={{ color: "var(--clr-text)" }}>{username}</p>
                       <p className="text-[10px] mt-0.5" style={{ color: "var(--clr-text-faint)" }}>
-                        {ROLE_LABELS[userRole || localStorage.getItem("role") || "user"] || "用户"}
+                        {ROLE_LABELS[userRole || getAuthItem("role") || "user"] || "用户"}
                       </p>
                       {quotaInfo.total > 0 && (
                         <p className="text-[10px] mt-0.5" style={{ color: "var(--clr-amber-dark)" }}>

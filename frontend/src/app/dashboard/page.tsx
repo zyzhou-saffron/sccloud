@@ -10,8 +10,7 @@ import {
   createProject,
   deleteProject,
   listProjects,
-  type Project,
-} from "../lib/api";
+  type Project, getAuthToken} from "../lib/api";
 
 export default function DashboardPage() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -49,7 +48,7 @@ export default function DashboardPage() {
   };
 
   const handleDownload = async (project: Project) => {
-    const token = localStorage.getItem("access_token");
+    const token = getAuthToken();
     try {
       const res = await fetch(`/api/projects/${project.id}/download`, {
         headers: { Authorization: `Bearer ${token}` },
