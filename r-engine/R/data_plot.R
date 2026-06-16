@@ -42,6 +42,31 @@ suppressMessages({
   library(celldex)
 })
 
+# ── Nature 风格主题 ──
+nature_theme <- function(base_size = 9) {
+  theme_bw(base_size = base_size) %+replace%
+    theme(
+      axis.line = element_line(linewidth = 0.35, color = "grey30"),
+      axis.ticks = element_line(linewidth = 0.35, color = "grey30"),
+      axis.text = element_text(size = rel(0.85), color = "grey20"),
+      axis.title = element_text(size = rel(1.0), color = "grey15"),
+      legend.text = element_text(size = rel(0.80)),
+      legend.title = element_text(size = rel(0.90), face = "bold"),
+      legend.key.size = unit(3.5, "mm"),
+      legend.margin = margin(0, 0, 0, 0),
+      panel.border = element_blank(),
+      panel.grid.major.y = element_line(linewidth = 0.2, color = "grey90"),
+      panel.grid.major.x = element_blank(),
+      panel.grid.minor = element_blank(),
+      plot.background = element_blank(),
+      panel.background = element_blank(),
+      strip.background = element_blank(),
+      strip.text = element_text(size = rel(0.95), face = "bold", hjust = 0),
+      plot.title = element_text(size = rel(1.05), face = "bold", hjust = 0.5, margin = margin(b = 6)),
+      plot.margin = margin(6, 10, 4, 4),
+      complete = TRUE
+    )
+}
 
 #colours
 clusterCols <- c("#D51F26", "#272E6A", "#208A42", "#89288F", "#F47D2B", "#FEE500", "#8A9FD1", "#C06CAB", "#E6C2DC",
@@ -209,19 +234,34 @@ my_distPlot7 <- function(pro, minPct, logFc, test, pos, ntop, rawC = "All") {
 
     plotFeatures <- as.character(unique(difGtop3$gene_id))
     # dotplot
-    p <- DotPlot(pro, features = plotFeatures) &
-      scale_color_viridis(option = "D") &
+    p <- DotPlot(pro, features = plotFeatures, dot.scale = 5) &
+      scale_color_gradientn(
+        colours = c("#4575B4", "#91BFDB", "#E0F3F8", "#FEE090", "#FC8D59", "#D73027")
+      ) &
       guides(
         color = guide_colorbar(
-          title.position = "left", title.hjust = .5,
-          title.theme = element_text(angle = 90)
+          title = "Avg Expression",
+          title.position = "top", title.hjust = 0.5,
+          barwidth = unit(4, "cm"), barheight = unit(0.25, "cm"),
+          label.position = "bottom"
         ),
         size = guide_legend(
-          title.position = "left", title.hjust = .5,
-          title.theme = element_text(angle = 90)
+          title = "% Expressed",
+          title.position = "top", title.hjust = 0.5
         )
       ) &
-      theme_bw() + RotatedAxis()
+      theme(
+        axis.text.x = element_text(size = 8, angle = 45, hjust = 1, color = "grey20"),
+        axis.text.y = element_text(size = 8, color = "grey20"),
+        axis.title = element_blank(),
+        panel.border = element_rect(linewidth = 0.4, color = "grey70"),
+        panel.grid.major = element_line(linewidth = 0.15, color = "grey90"),
+        legend.position = "bottom",
+        legend.box = "horizontal",
+        legend.margin = margin(t = -4),
+        legend.text = element_text(size = 7),
+        legend.title = element_text(size = 8, face = "bold")
+      )
     p
 }
 
@@ -464,7 +504,7 @@ my_distPlot10 <- function(sigDegs, pathway, pos1, pAdjust, pvalue, qvalue, nTerm
       geom_bar(stat = "identity", width = 0.8) + 
       coord_flip() +
       scale_fill_manual(values = CPCOLS, breaks = c('BP', 'CC', 'MF')) + 
-      theme_test() +
+      nature_theme() +
       scale_y_continuous(expand = c(0.01, 0.01)) +
       guides(fill = guide_legend(
         title = "GO : ",
@@ -474,8 +514,8 @@ my_distPlot10 <- function(sigDegs, pathway, pos1, pAdjust, pvalue, qvalue, nTerm
       )) +
       geom_hline(yintercept = -log10(0.05), lty = 2, col = "gray", lwd = 0.5) +
       theme(
-        axis.text.x = element_text(face = "bold", color = 'black'),
-        axis.text.y = element_text(face = "bold"),
+        axis.text.x = element_text(color = "grey20"),
+        axis.text.y = element_text(size = 8),
         axis.title.y = element_blank(),
         legend.position = 'top',
         legend.key.size = unit(5, 'mm')
@@ -570,12 +610,12 @@ my_distPlot10 <- function(sigDegs, pathway, pos1, pAdjust, pvalue, qvalue, nTerm
       geom_bar(stat = "identity", width = 0.8) + 
       coord_flip() +
       scale_fill_gradientn(colours = rev(colorRampPalette(brewer.pal(11, "RdBu"))(100))) + 
-      theme_test() +
+      nature_theme() +
       scale_y_continuous(expand = c(0.01, 0.01)) +
       labs(title = paste('KEGG pathway -', direction)) +
       geom_hline(yintercept = -log10(0.05), lty = 2, col = "gray", lwd = 0.5) +
       theme(
-        axis.text = element_text(face = "bold", color = 'black'),
+        axis.text = element_text(color = "grey20"),
         axis.title.y = element_blank(),
         plot.title = element_text(size = 10, hjust = 0.5)
       )
@@ -592,7 +632,7 @@ my_distPlot10 <- function(sigDegs, pathway, pos1, pAdjust, pvalue, qvalue, nTerm
       scale_size_area(max_size = 6) +
       labs(title = paste('KEGG pathway -', direction)) +
       theme(
-        axis.text = element_text(face = "bold", color = 'black'),
+        axis.text = element_text(color = "grey20"),
         axis.title.y = element_blank(),
         plot.title = element_text(size = 10, hjust = 0.5)
       )

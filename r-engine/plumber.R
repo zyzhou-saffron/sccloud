@@ -37,6 +37,9 @@ source("R/utils.R")
 source("R/data_processing.R")
 source("R/data_summary.R")
 source("R/data_plot.R")
+
+# 全局 Nature 主题（覆盖 Seurat DimPlot/VlnPlot 默认主题）
+tryCatch(theme_set(nature_theme()), error = function(e) message("theme_set skipped"))
 source("R/gene_id_convert.R")
 
 # 自定义错误处理器: 将 stop() 的原始消息透传给调用方
