@@ -2504,6 +2504,19 @@ function(req) {
     }
   }
 
+  # 导出 CellDataSet 的 pData 为 CSV（用户无需 monocle 包即可打开）
+  tryCatch({
+    cd_obj <- result$data3  # cd_pseudotime
+    if (is.null(cd_obj)) cd_obj <- result$data1  # cd_filtered
+    if (!is.null(cd_obj) && methods::is(cd_obj, "CellDataSet")) {
+      meta_df <- as.data.frame(Biobase::pData(cd_obj))
+      csv_name <- make_output_name(project_path, "9", "monocle", "cell_metadata", "csv")
+      csv_path <- file.path(project_path, csv_name)
+      write.csv(meta_df, csv_path, row.names = TRUE)
+      data_paths$cell_metadata_csv <- csv_path
+    }
+  }, error = function(e) message("pData CSV export failed: ", e$message))
+
   # 保存 BEAM 差异基因 CSV
   if (!is.null(result$data8)) {
     csv_name <- make_output_name(project_path, "9", "monocle", "beam_diff_genes", "csv")
