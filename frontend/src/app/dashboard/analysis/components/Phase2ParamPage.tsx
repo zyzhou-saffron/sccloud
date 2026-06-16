@@ -127,7 +127,12 @@ export default function Phase2ParamPage({ pipeline, token, onComplete, species =
       const phase2Params: Record<string, Record<string, unknown>> = {};
       const fmt = (params.markers.plot_format as string) || "png";
       for (const step of enabledSteps) {
-        phase2Params[step] = { ...params[step as keyof typeof params], plot_format: fmt };
+        const stepParams = { ...params[step as keyof typeof params], plot_format: fmt };
+        // GSEA 不使用 direction 参数
+        if (step === "enrich" && stepParams.pathway === "GSEA") {
+          delete stepParams.direction;
+        }
+        phase2Params[step] = stepParams;
       }
 
       // For failed pipelines, resume via the resume endpoint (now accepts failed)
@@ -320,8 +325,8 @@ export default function Phase2ParamPage({ pipeline, token, onComplete, species =
                         </select>
                       </div>
                       <div>
-                        <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>方向</label>
-                        <select value={params.enrich.direction} onChange={(e) => updateParam("enrich", "direction", e.target.value)} className={selectCls} style={selectStyle}>
+                        <label className="block text-xs font-medium mb-1.5" style={{ color: params.enrich.pathway === "GSEA" ? "var(--clr-text-faint)" : "var(--clr-text-muted)" }}>方向</label>
+                        <select value={params.enrich.direction} onChange={(e) => updateParam("enrich", "direction", e.target.value)} className={selectCls} style={{...selectStyle, opacity: params.enrich.pathway === "GSEA" ? 0.4 : 1}} disabled={params.enrich.pathway === "GSEA"}>
                           <option value="Up">上调</option>
                           <option value="Down">下调</option>
                         </select>

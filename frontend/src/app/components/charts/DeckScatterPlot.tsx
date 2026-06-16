@@ -483,6 +483,7 @@ export default function DeckScatterPlot({
       // celltype == cluster → 实际是聚类结果，标签显示 Cluster
       opts = [
         { key: "celltype", label: "Cluster" },
+        { key: "sample", label: "Sample" },
         { key: "group", label: "Group" },
       ];
     } else {

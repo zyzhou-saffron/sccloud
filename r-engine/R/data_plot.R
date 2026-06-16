@@ -689,18 +689,22 @@ my_distPlot10 <- function(sigDegs, pathway, pos1, pAdjust, pvalue, qvalue, nTerm
         pvalue_table = FALSE,
         ES_geom = 'line'
       )
+      pdf(NULL)  # null device — as.ggplot 内部 print() 不会尝试创建 Rplots.pdf
       plot_list[[i]] <- ggplotify::as.ggplot(p)
+      dev.off()
     }
     
     # 自动确定网格布局
     ncol <- min(2, length(plot_list))
     nrow <- ceiling(length(plot_list) / ncol)
     
+    pdf(NULL)  # null device — grid.arrange 也会触发 Rplots.pdf
     combined_plot <- gridExtra::grid.arrange(
       grobs = plot_list,
       ncol = ncol,
       nrow = nrow
     )
+    dev.off()
     
     return(combined_plot)
   }

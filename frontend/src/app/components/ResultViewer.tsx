@@ -1683,7 +1683,7 @@ function EnrichResult({ data, taskId }: { data: Record<string, unknown> | null; 
       {stats && (
         <div className="flex flex-wrap gap-3 text-xs" style={{ color: "var(--clr-text-faint)" }}>
           <span>通路数据库：<strong style={{ color: "var(--clr-amber)" }}>{stats.pathway}</strong></span>
-          <span>基因方向：<strong style={{ color: "var(--clr-text)" }}>{stats.direction}</strong></span>
+          {typeof stats.direction === "string" && <span>基因方向：<strong style={{ color: "var(--clr-text)" }}>{stats.direction}</strong></span>}
           <span>显著通路：<strong style={{ color: stats.significant_terms ? "var(--clr-amber)" : "var(--clr-text-faint)" }}>
             {stats.significant_terms ?? 0} 条
           </strong></span>

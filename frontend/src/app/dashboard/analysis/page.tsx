@@ -379,6 +379,11 @@ function AnalysisPageContent() {
       if (step.id === "annotate" && stepParams.anno_type === "手动注释" && annoFile) {
         finalParams = { ...finalParams, markers_table: annoFile.data };
       }
+      // GSEA 不使用 direction 参数
+      if (step.id === "enrich" && stepParams.pathway === "GSEA") {
+        const { direction: _dir, ...rest } = finalParams as Record<string, unknown>;
+        finalParams = rest;
+      }
 
       const task = await submitTask({ project_id: project.id, step: step.apiStep, params: finalParams });
       updateTaskCache(step.id, task);
@@ -1091,6 +1096,7 @@ function AnalysisPageContent() {
                       <option value="GO">GO</option><option value="KEGG">KEGG</option><option value="GSEA">GSEA</option>
                     </select>
                   </div>
+                  {stepParams.pathway !== "GSEA" && (
                   <div>
                     <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>基因方向</label>
                     <div className="flex gap-4">
@@ -1101,6 +1107,7 @@ function AnalysisPageContent() {
                       ))}
                     </div>
                   </div>
+                  )}
                   {/* P值校正方法 */}
                   <div>
                     <label className="flex items-center gap-1.5 text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>

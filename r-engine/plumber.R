@@ -1197,18 +1197,28 @@ function(req) {
   }
   plot_archive <- make_output_name(project_path, "6", "enrich", paste0(pathway, "_", direction), plot_format)
   plot_path <- file.path(project_path, plot_archive)
-if (plot_format == "pdf") {
+
+  # 防止 R 在不可写目录尝试创建 Rplots.pdf（gseaplot2/cowplot 内部触发）
+  old_wd <- getwd()
+  on.exit(setwd(old_wd), add = TRUE)
+  setwd(tempdir())
+
+  if (plot_format == "pdf") {
     pdf(plot_path)
   } else {
     png(plot_path, width = calc_w, height = calc_h, res = 150)
   }
   # GSEA 的 create_gsea_plots 返回 grob (gridExtra::grid.arrange)
   # GO/KEGG 返回 ggplot — 需要不同的输出方式
-  if (inherits(result$plot, "grob") || inherits(result$plot, "gtable")) {
-    grid::grid.draw(result$plot)
-  } else {
-    print(result$plot)
-  }
+  tryCatch({
+    if (inherits(result$plot, "grob") || inherits(result$plot, "gtable")) {
+      grid::grid.draw(result$plot)
+    } else {
+      print(result$plot)
+    }
+  }, error = function(e) {
+    message(paste("Plot draw error:", e$message))
+  })
   dev.off()
 
   # 双命名：CSV
@@ -1220,16 +1230,25 @@ if (plot_format == "pdf") {
 
   report(100, "富集分析完成")
 
-  # 整理富集数据供前端 Plotly 气泡图渲染
+  # 整理富集数据供前端渲染（GSEA 使用 NES，GO/KEGG 使用 GeneRatio）
   enrich_data <- if (nrow(result$data) > 0) {
     df <- head(result$data, n_term)
-    list(
-      terms      = as.character(df$Description),
-      gene_ratio = as.numeric(sub(".*/", "", df$GeneRatio)) /
-                   as.numeric(sub(".+/",  "", df$GeneRatio)),
-      p_adjust   = as.numeric(df$p.adjust),
-      count      = as.integer(df$Count)
-    )
+    if (pathway == "GSEA") {
+      list(
+        terms    = as.character(df$Description),
+        NES      = as.numeric(df$NES),
+        p_adjust = as.numeric(df$p.adjust),
+        size     = as.integer(df$setSize)
+      )
+    } else {
+      list(
+        terms      = as.character(df$Description),
+        gene_ratio = as.numeric(sub(".*/", "", df$GeneRatio)) /
+                     as.numeric(sub(".+/",  "", df$GeneRatio)),
+        p_adjust   = as.numeric(df$p.adjust),
+        count      = as.integer(df$Count)
+      )
+    }
   } else NULL
 
   gc(verbose = FALSE)
@@ -1237,11 +1256,11 @@ if (plot_format == "pdf") {
     status = "success",
     plot_path = plot_path,
     result_path = table_path,
-    stats = list(
+    stats = Filter(Negate(is.null), list(
       pathway = pathway,
-      direction = direction,
+      direction = if (pathway == "GSEA") NULL else direction,
       significant_terms = nrow(result$data)
-    ),
+    )),
     enrich_data = enrich_data
   )
 }
