@@ -30,6 +30,7 @@ interface PipelineFormProps {
   onUploadedFilesChange: (files: UploadedFile[]) => void;
   sampleGroups: Record<string, string>;
   onSampleGroupsChange: (groups: Record<string, string>) => void;
+  onExportProject?: (e: React.MouseEvent<HTMLButtonElement>) => void;
 }
 
 const DEFAULT_PARAMS: Record<string, Record<string, unknown>> = {
@@ -85,7 +86,7 @@ const STATUS_MAP: Record<string, { dot: string; text: string }> = {
   cancelled: { dot: "bg-[#E0DCD6]", text: "text-[#999]" },
 };
 
-export default function PipelineForm({ projectId, token, onSubmit, uploadedFiles, onUploadedFilesChange, sampleGroups, onSampleGroupsChange }: PipelineFormProps) {
+export default function PipelineForm({ projectId, token, onSubmit, uploadedFiles, onUploadedFilesChange, sampleGroups, onSampleGroupsChange, onExportProject }: PipelineFormProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [params, setParams] = useState<Record<string, Record<string, unknown>>>(
@@ -245,7 +246,19 @@ export default function PipelineForm({ projectId, token, onSubmit, uploadedFiles
             配置参数后依次执行全部 6 步，无需手动干预。
           </p>
         </div>
-        <div className="relative shrink-0" ref={historyRef}>
+        <div className="flex items-center gap-2 shrink-0">
+          {onExportProject && (
+            <button
+              onClick={onExportProject}
+              className="inline-flex items-center gap-1 px-3 py-1.5 rounded text-xs font-medium transition-all hover:shadow-sm shrink-0"
+              style={{ border: "1px solid var(--clr-border)", color: "var(--clr-amber-dark)", background: "rgba(200,96,25,0.04)" }}
+              title="打包下载全部分析结果"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              导出项目
+            </button>
+          )}
+          <div className="relative" ref={historyRef}>
           <button
             onClick={() => setShowHistory(v => !v)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium transition-colors"
@@ -322,6 +335,7 @@ export default function PipelineForm({ projectId, token, onSubmit, uploadedFiles
               </div>
             )}
           </div>
+          </div>
         </div>
       </div>
 
@@ -376,12 +390,23 @@ export default function PipelineForm({ projectId, token, onSubmit, uploadedFiles
       </div>
 
       {/* 示例数据下载 */}
-      <div className="flex items-center gap-2 mt-2 px-1">
-        <a href="/api/tasks/example-sample-rds" download="Samples.filter.rds"
-          className="text-[11px] underline" style={{ color: "var(--clr-amber-dark)" }}>
-          下载示例数据文件 (Samples.filter.rds)
+      <div className="flex items-center gap-2.5 -mt-3">
+        <a
+          href="/api/tasks/example-sample-rds"
+          download="Samples.filter.rds"
+          className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[11px] font-medium transition-colors shrink-0"
+          style={{ color: "var(--clr-amber-dark)", border: "1px solid var(--clr-border)", background: "#fff" }}
+          onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--clr-amber-dark)"; e.currentTarget.style.background = "var(--clr-amber-soft, #fff7ed)"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--clr-border)"; e.currentTarget.style.background = "#fff"; }}
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M12 3v11" />
+            <path d="M7.5 10.5 12 15l4.5-4.5" />
+            <path d="M5 19h14" />
+          </svg>
+          下载示例数据
         </a>
-        <span className="text-[10px]" style={{ color: "var(--clr-text-faint)" }}>约 3.4 MB，可用于测试全流程分析</span>
+        <span className="text-[10px]" style={{ color: "var(--clr-text-faint)" }}>约 3.4 MB</span>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-3">
@@ -713,20 +738,11 @@ export default function PipelineForm({ projectId, token, onSubmit, uploadedFiles
           <select value={(params.qc.plot_format as string) || "png"} onChange={(e) => { const v = e.target.value; setParams(prev => { const next = {...prev}; Object.keys(next).forEach(k => { next[k] = {...next[k], plot_format: v}; }); return next; }); }} style={{ border: "1px solid var(--clr-border)", borderRadius: 4, padding: "2px 6px", fontSize: 12, background: "white", color: "var(--clr-text)" }}>
             <option value="png">PNG (默认)</option>
             <option value="pdf">PDF</option>
+            <option value="svg">SVG (矢量·可编辑)</option>
+            <option value="tiff">TIFF (600dpi·投稿级)</option>
           </select>
-          <span style={{ color: "var(--clr-text-faint)", fontSize: 10 }}>不选默认PNG</span>
         </div>
 
-        {/* 提示 */}
-        <div
-          className="px-3 py-2 rounded text-xs border border-dashed"
-          style={{
-            borderColor: "var(--clr-border)",
-            color: "var(--clr-text-muted)",
-          }}
-        >
-          将使用以上配置的参数依次执行全部分析步骤。
-        </div>
 
                 {/* 提交按钮 */}
 

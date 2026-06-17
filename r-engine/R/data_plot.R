@@ -43,29 +43,79 @@ suppressMessages({
 })
 
 # ── Nature 风格主题 ──
-nature_theme <- function(base_size = 9) {
-  theme_bw(base_size = base_size) %+replace%
+# 对齐官方 nature-figure R 轨道 theme_nature_contract (theme_classic 基底, 无网格)
+# 见 skill references/r-workflow.md
+nature_theme <- function(base_size = 7, base_family = "Liberation Sans") {
+  theme_classic(base_size = base_size, base_family = base_family) +
     theme(
-      axis.line = element_line(linewidth = 0.35, color = "grey30"),
-      axis.ticks = element_line(linewidth = 0.35, color = "grey30"),
-      axis.text = element_text(size = rel(0.85), color = "grey20"),
-      axis.title = element_text(size = rel(1.0), color = "grey15"),
-      legend.text = element_text(size = rel(0.80)),
-      legend.title = element_text(size = rel(0.90), face = "bold"),
-      legend.key.size = unit(3.5, "mm"),
-      legend.margin = margin(0, 0, 0, 0),
-      panel.border = element_blank(),
-      panel.grid.major.y = element_line(linewidth = 0.2, color = "grey90"),
-      panel.grid.major.x = element_blank(),
-      panel.grid.minor = element_blank(),
-      plot.background = element_blank(),
-      panel.background = element_blank(),
+      text         = element_text(family = base_family),
+      axis.line    = element_line(linewidth = 0.35, colour = "black"),
+      axis.ticks   = element_line(linewidth = 0.35, colour = "black"),
+      axis.title   = element_text(size = base_size),
+      axis.text    = element_text(size = base_size - 0.5),
+      legend.title = element_text(size = base_size - 0.3, face = "bold"),
+      legend.text  = element_text(size = base_size - 0.7),
+      legend.key   = element_blank(),
       strip.background = element_blank(),
-      strip.text = element_text(size = rel(0.95), face = "bold", hjust = 0),
-      plot.title = element_text(size = rel(1.05), face = "bold", hjust = 0.5, margin = margin(b = 6)),
-      plot.margin = margin(6, 10, 4, 4),
-      complete = TRUE
+      strip.text   = element_text(size = base_size - 0.3, face = "bold"),
+      plot.title   = element_text(size = base_size + 1, face = "bold", hjust = 0.5),
+      panel.grid   = element_blank()
     )
+}
+
+# 降维/散点图主题：同一套 theme_classic 基底，字号略大
+nature_dim <- function(base_family = "Liberation Sans") nature_theme(base_size = 8, base_family)
+
+# ── 官方 R 轨道分类配色 palette_contract (references/r-workflow.md) ──
+palette_contract <- c(
+  neutral_dark = "#272727", neutral_mid = "#767676", neutral_light = "#D8D8D8",
+  signal_blue  = "#3182BD", signal_teal  = "#33B5A5",
+  accent_red   = "#D24B40", accent_orange = "#E28E2C"
+)
+# 低基数分类(Sample/Group)取色：信号蓝/teal/红/橙/中性… 超出再插值兜底
+nature_cat  <- unname(palette_contract[c("signal_blue", "signal_teal", "accent_red",
+                                         "accent_orange", "neutral_mid", "neutral_dark")])
+nature_cols <- function(n) if (n <= length(nature_cat)) nature_cat[seq_len(n)] else colorRampPalette(nature_cat)(n)
+nature_seq  <- function(n) colorRampPalette(c("#D8D8D8", "#3182BD", "#272727"))(n)  # 顺序型
+# 基因表达 FeaturePlot 统一色阶：灰→黄→橙→深红
+nature_expr <- c("lightgrey", "#FFF7BC", "#FEC44F", "#D95F0E", "#7F0000")
+nature_palette <- nature_cat  # 兼容旧引用
+
+# 全局出图分辨率：完全对齐官方(600dpi)。若 web 下载嫌大，改这一处即可(如 300)。
+PUB_DPI <- 600
+
+# ── 官方导出 save_pub_r：毫米尺寸 / 600dpi / svg + cairo_pdf + ragg TIFF ──
+# plot 可为 ggplot 对象，或无参绘图函数(适配 base graphics / 内部 print 的绘图函数)
+save_pub_r <- function(plot, path_noext, width_mm = 120, height_mm = 90, dpi = PUB_DPI,
+                       formats = c("png", "svg", "pdf", "tiff"), family = "Liberation Sans") {
+  w <- width_mm / 25.4; h <- height_mm / 25.4
+  draw <- function() if (is.function(plot)) plot() else print(plot)
+  one <- function(fmt, open) tryCatch({ open(); draw(); dev.off(); paste0(path_noext, ".", fmt) },
+                                       error = function(e) { try(dev.off(), silent = TRUE)
+                                         warning(sprintf("save_pub_r: %s 导出失败 (%s)", fmt, conditionMessage(e))); NA_character_ })
+  saved <- c()
+  if ("svg"  %in% formats) saved <- c(saved, one("svg",  function() svglite::svglite(paste0(path_noext, ".svg"), width = w, height = h)))
+  if ("pdf"  %in% formats) saved <- c(saved, one("pdf",  function() grDevices::cairo_pdf(paste0(path_noext, ".pdf"), width = w, height = h, family = family)))
+  if ("tiff" %in% formats) saved <- c(saved, one("tiff", function() ragg::agg_tiff(paste0(path_noext, ".tiff"), width = w, height = h, units = "in", res = dpi, compression = "lzw")))
+  if ("png"  %in% formats) saved <- c(saved, one("png",  function() grDevices::png(paste0(path_noext, ".png"), width = w, height = h, units = "in", res = dpi, type = "cairo", family = family)))
+  invisible(saved[!is.na(saved)])
+}
+
+# 单格式设备(供 plumber 按 plot_format 出单文件)：600dpi + 字体内嵌 + 多格式
+# units="mm"(默认) 用毫米；units="px" 用旧像素口径(按 base_dpi=150 换算物理尺寸，仅提分辨率)
+open_plot_device <- function(path, width, height, format = "png", dpi = PUB_DPI,
+                             units = "mm", base_dpi = 150, family = "Liberation Sans") {
+  if (identical(units, "px")) { w <- width / base_dpi; h <- height / base_dpi }
+  else                        { w <- width / 25.4;     h <- height / 25.4 }
+  if (identical(format, "pdf")) {
+    grDevices::cairo_pdf(path, width = w, height = h, family = family)
+  } else if (identical(format, "svg")) {
+    svglite::svglite(path, width = w, height = h)
+  } else if (identical(format, "tiff")) {
+    ragg::agg_tiff(path, width = w, height = h, units = "in", res = dpi, compression = "lzw")
+  } else {
+    grDevices::png(path, width = w, height = h, units = "in", res = dpi, type = "cairo", family = family)
+  }
 }
 
 #colours
@@ -99,46 +149,50 @@ groupCols <- c("#ef6a32", "#ed0345", "#a12a5e", "#710162", "#3B9AB2", "#2a7185",
 
 
 my_distPlot1 <- function(exp){
-  plot1 <- FeatureScatter(exp, feature1 = "nCount_RNA", feature2 = "percent.mt")
-  plot2 <- FeatureScatter(exp, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
-  return(plot1 + plot2)
+  n <- length(unique(as.character(Idents(exp))))
+  plot1 <- FeatureScatter(exp, feature1 = "nCount_RNA", feature2 = "percent.mt", cols = nature_cols(n))
+  plot2 <- FeatureScatter(exp, feature1 = "nCount_RNA", feature2 = "nFeature_RNA", cols = nature_cols(n))
+  return((plot1 + plot2) & nature_dim())
 }
 
 my_distPlot2 <- function(exp,pro){
-  plot1 <- VlnPlot(exp, features = c("nCount_RNA", "nFeature_RNA", "percent.mt"), ncol = 3, pt.size = 0)+ NoLegend()
-  plot2 <- VlnPlot(pro, features = c("nCount_RNA", "nFeature_RNA", "percent.mt"), ncol = 3, pt.size = 0)+ NoLegend()
-  return(plot1/plot2)
+  n <- length(unique(as.character(Idents(exp))))
+  plot1 <- VlnPlot(exp, features = c("nCount_RNA", "nFeature_RNA", "percent.mt"), ncol = 3, pt.size = 0, cols = nature_cols(n))+ NoLegend()
+  plot2 <- VlnPlot(pro, features = c("nCount_RNA", "nFeature_RNA", "percent.mt"), ncol = 3, pt.size = 0, cols = nature_cols(n))+ NoLegend()
+  # nature_dim() 含完整 theme_classic，会重置 legend，故末尾再 NoLegend() 压掉(x 轴已标样本名)
+  return((plot1/plot2) & nature_dim() & NoLegend())
 }
 
 my_distPlot3 <- function(sctpro,redu,group,nPCA){
   pro <- RunPCA(object = sctpro, verbose = FALSE)
+  ncol_grp <- length(unique(as.character(pro@meta.data[[group]])))
   if(redu=="pca"){
     if(group=="Sample"){
       p <- ElbowPlot(pro, ndims = nPCA)
-      p1 <- DimPlot(pro, reduction = 'pca',group.by = 'Sample')
-      print(p+p1)
+      p1 <- DimPlot(pro, reduction = 'pca',group.by = 'Sample', cols = nature_cols(ncol_grp))
+      print((p+p1) & nature_dim())
     }else if(group=="Group"){
-      p <- DimPlot(pro, reduction = 'pca', group.by = 'Group')
-      print(p)
+      p <- DimPlot(pro, reduction = 'pca', group.by = 'Group', cols = nature_cols(ncol_grp))
+      print(p & nature_dim())
     }
   }
   if(redu=="umap"){
     pro1 <- RunUMAP(object = pro, reduction = "pca", dims = 1:nPCA, verbose = FALSE)
     if(group=="Sample"){
-      p <- DimPlot(pro1, reduction = 'umap', group.by = 'Sample')
+      p <- DimPlot(pro1, reduction = 'umap', group.by = 'Sample', cols = nature_cols(ncol_grp))
     }else if(group=="Group"){
-      p <- DimPlot(pro1, reduction = 'umap', group.by = 'Group')
+      p <- DimPlot(pro1, reduction = 'umap', group.by = 'Group', cols = nature_cols(ncol_grp))
     }
-    print(p)
+    print(p & nature_dim())
   }
    if(redu=="tsne"){
     pro1 <- RunTSNE(object = pro, reduction = "pca", dims = 1:nPCA, perplexity = 30, verbose = FALSE)
     if(group=="Sample"){
-      p <- DimPlot(pro1, reduction = 'tsne', group.by = 'Sample')
+      p <- DimPlot(pro1, reduction = 'tsne', group.by = 'Sample', cols = nature_cols(ncol_grp))
     }else if(group=="Group"){
-      p <- DimPlot(pro1, reduction = 'tsne', group.by = 'Group')
+      p <- DimPlot(pro1, reduction = 'tsne', group.by = 'Group', cols = nature_cols(ncol_grp))
     }
-    print(p)
+    print(p & nature_dim())
   }
 }
 
@@ -194,14 +248,15 @@ my_distPlot4 <- function(df){
 
 my_distPlot5 <- function(pro){
   p <- DimPlot(pro, reduction = 'umap', group.by = 'Cluster', label = T, cols = clusterCols, repel = T)
-  p
+  p & nature_dim()
 }
 
 my_distPlot6 <- function(pro,group){
-  p1 <- DimPlot(pro, reduction = 'umap', group.by = group, repel = T) #
+  ncol_grp <- length(unique(as.character(pro@meta.data[[group]])))
+  p1 <- DimPlot(pro, reduction = 'umap', group.by = group, cols = nature_cols(ncol_grp), repel = T) #
   p2 <- DimPlot(pro, reduction = 'umap', group.by = 'Cluster', split.by = group, cols = clusterCols,
              label = T, ncol = 4, repel = T)
-  p1/p2
+  (p1/p2) & nature_dim()
 }
 
 my_distPlot7 <- function(pro, minPct, logFc, test, pos, ntop, rawC = "All") {
@@ -372,8 +427,8 @@ my_distPlot9 <- function(pro, rawC, minPct, logFc, test, pos, ntop, custom_genes
 
   geneP <- markers
   p <- FeaturePlot(pro, features = geneP, pt.size = 0.2, ncol = 2, slot = "data") &
-    scale_color_gradientn(colours = rev(rainbow(7, start = 0, end = 0.7)))
-  p2 <- VlnPlot(pro, features = geneP, pt.size = 0, cols = clusterCols, ncol = 2)
+    scale_color_gradientn(colours = nature_expr) & nature_dim()
+  p2 <- VlnPlot(pro, features = geneP, pt.size = 0, cols = clusterCols, ncol = 2) & nature_dim() & NoLegend()
 
   return(list(feature = p, vln = p2))
 }
@@ -789,13 +844,13 @@ my_distPlot11 <- function(pro,mkfs,cellType) {
 
     p <- FeaturePlot(pro, features = markers, pt.size = 0.2, ncol = n_col, slot = 'data') &
       scale_color_gradientn(
-        colours = c("lightgrey", "#FFF7BC", "#FEC44F", "#D95F0E", "#7F0000"),
+        colours = nature_expr,
         limits  = c(0, max_expr),
         name    = "Expression"
-      )
+      ) & nature_dim()
 
     n_col_vln <- max(1, min(length(markers), 2))
-    p2 <- VlnPlot(pro, features = markers, pt.size = 0, cols = clusterCols, ncol = n_col_vln)
+    p2 <- VlnPlot(pro, features = markers, pt.size = 0, cols = clusterCols, ncol = n_col_vln) & nature_dim() & NoLegend()
 
     return(p / p2)
   }else{

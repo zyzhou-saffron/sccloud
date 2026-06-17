@@ -52,10 +52,11 @@ COPY r-library/ /usr/local/lib/R/site-library/
 
 # ===== 修复 ABI 不兼容的包 + 补装容器专用包 =====
 # stringi/Cairo: 服务器编译时链接了 ICU 75，容器内只有 ICU 70，须重编译
+# ragg: 二进制版链接 libtiff.so.6，镜像内只有 libtiff5(.so.5)，须从源码重编以链接 libtiff5(支持 TIFF 导出)
 # plumber/redux: API 服务层，原研究环境不需要，仅容器需要
 RUN Rscript -e " \
     options(repos = c(CRAN = 'https://mirrors.ustc.edu.cn/CRAN/')); \
-    install.packages(c('stringi', 'Cairo'), type = 'source', Ncpus = 1L); \
+    install.packages(c('stringi', 'Cairo', 'ragg'), type = 'source', Ncpus = 1L); \
     install.packages(c('plumber', 'redux'), Ncpus = 2L) \
 "
 

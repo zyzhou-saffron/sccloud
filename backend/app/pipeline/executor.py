@@ -83,6 +83,15 @@ async def _run_steps(pipeline_id: str, steps: List[str], db: Session, pipeline: 
             r_steps = ["reduce", "cluster"]
 
         for r_step in r_steps:
+            # 每步开始前检查是否已被用户「停止分析」取消（单线程引擎下，正在跑的那一步无法中途打断，
+            # 但取消后不再启动后续步骤）
+            db.refresh(pipeline)
+            if pipeline.status == "cancelled":
+                pipeline.current_step = None
+                db.commit()
+                logger.info(f"Pipeline {pipeline_id}: cancelled by user, stopping before step {r_step}")
+                return False
+
             # 每步开始前检查配额（仅 super/admin）
             from app.db.models import User
             quota_user = db.query(User).filter(User.id == pipeline.user_id).first()
