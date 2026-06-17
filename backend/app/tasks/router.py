@@ -557,7 +557,7 @@ async def get_task_plot(
         raise HTTPException(status_code=404, detail="项目不存在")
 
     # 安全检查：只允许 plot_*.png 和 *.csv 文件，防止目录穿越
-    safe_extensions = {".png", ".csv", ".pdf", ".rds", ".txt"}
+    safe_extensions = {".png", ".csv", ".pdf", ".rds", ".txt", ".svg", ".tiff", ".tif"}
     ext = os.path.splitext(name)[1].lower()
     if ext not in safe_extensions or ".." in name or "/" in name:
         raise HTTPException(status_code=400, detail="不支持的文件类型或路径")
@@ -581,6 +581,8 @@ async def get_task_plot(
     if ext == ".png": media_type = "image/png"
     elif ext == ".csv": media_type = "text/csv"
     elif ext == ".pdf": media_type = "application/pdf"
+    elif ext == ".svg": media_type = "image/svg+xml"
+    elif ext in (".tiff", ".tif"): media_type = "image/tiff"
     elif ext == ".rds": media_type = "application/octet-stream"
     else: media_type = "application/octet-stream"
     return FileResponse(file_path, media_type=media_type, filename=name)

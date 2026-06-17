@@ -683,6 +683,8 @@ export default function Phase2ParamPage({ pipeline, token, onComplete, species =
         <select value={(params.markers.plot_format as string) || "png"} onChange={(e) => { const v = e.target.value; setParams(prev => { const next = {...prev}; Object.keys(next).forEach(k => { next[k] = {...next[k], plot_format: v}; }); return next; }); }} style={{ border: "1px solid var(--clr-border)", borderRadius: 4, padding: "2px 6px", fontSize: 12, background: "white", color: "var(--clr-text)" }}>
           <option value="png">PNG (默认)</option>
           <option value="pdf">PDF</option>
+          <option value="svg">SVG (矢量·可编辑)</option>
+          <option value="tiff">TIFF (600dpi·投稿级)</option>
         </select>
         <span style={{ color: "var(--clr-text-faint)", fontSize: 10 }}>不选默认PNG</span>
       </div>

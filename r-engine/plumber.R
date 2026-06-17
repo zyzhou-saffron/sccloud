@@ -571,11 +571,7 @@ function(req) {
   report(40, "生成样本相关性图...")
   corr_archive <- make_output_name(project_path, "1", "qc", "correlation", plot_format)
   corr_plot_path <- file.path(project_path, corr_archive)
-if (plot_format == "pdf") {
-    pdf(corr_plot_path, width = 1400/150, height = 600/150)
-  } else {
-    png(corr_plot_path, width = 1400, height = 600, res = 150)
-  }
+open_plot_device(corr_plot_path, 1400, 600, plot_format, units = "px")
   print(my_distPlot1(exp))
   dev.off()
 
@@ -622,11 +618,7 @@ if (plot_format == "pdf") {
   report(70, "生成质控小提琴图...")
   vln_archive <- make_output_name(project_path, "1", "qc", "violin", plot_format)
   vln_plot_path <- file.path(project_path, vln_archive)
-if (plot_format == "pdf") {
-    pdf(vln_plot_path, width = 1400/150, height = 1000/150)
-  } else {
-    png(vln_plot_path, width = 1400, height = 1000, res = 150)
-  }
+open_plot_device(vln_plot_path, 1400, 1000, plot_format, units = "px")
   print(my_distPlot2(exp, pro))
   dev.off()
 
@@ -795,11 +787,7 @@ function(req) {
   # 双命名：归档名 + 管道链名
   plot_archive <- make_output_name(project_path, "3", "reduce", method, plot_format)
   plot_path <- file.path(project_path, plot_archive)
-if (plot_format == "pdf") {
-    pdf(plot_path, width = 1200/150, height = 800/150)
-  } else {
-    png(plot_path, width = 1200, height = 800, res = 150)
-  }
+open_plot_device(plot_path, 1200, 800, plot_format, units = "px")
   my_distPlot3(pro, method, group_by, n_dims)
   dev.off()
 
@@ -887,31 +875,19 @@ function(req) {
   # 双命名：归档名（3张图）
   umap_archive <- make_output_name(project_path, "4", "cluster", "umap", plot_format)
   plot_path <- file.path(project_path, umap_archive)
-if (plot_format == "pdf") {
-    pdf(plot_path, width = 1200/150, height = 800/150)
-  } else {
-    png(plot_path, width = 1200, height = 800, res = 150)
-  }
+open_plot_device(plot_path, 1200, 800, plot_format, units = "px")
   print(my_distPlot5(pro))
   dev.off()
 
   sankey_archive <- make_output_name(project_path, "4", "cluster", "sankey", plot_format)
   plot_path2 <- file.path(project_path, sankey_archive)
-if (plot_format == "pdf") {
-    pdf(plot_path2, width = 1200/150, height = 1000/150)
-  } else {
-    png(plot_path2, width = 1200, height = 1000, res = 150)
-  }
+open_plot_device(plot_path2, 1200, 1000, plot_format, units = "px")
   print(my_distPlot4(pro@meta.data))
   dev.off()
 
   group_archive <- make_output_name(project_path, "4", "cluster", "group_umap", plot_format)
   plot_path3 <- file.path(project_path, group_archive)
-if (plot_format == "pdf") {
-    pdf(plot_path3, width = 1400/150, height = 1200/150)
-  } else {
-    png(plot_path3, width = 1400, height = 1200, res = 150)
-  }
+open_plot_device(plot_path3, 1400, 1200, plot_format, units = "px")
   print(my_distPlot6(pro, group_by))
   dev.off()
 
@@ -1087,11 +1063,7 @@ function(req) {
   ntop <- params$ntop %||% 5
   dotplot_archive <- make_output_name(project_path, "5", "markers", "dotplot", plot_format)
   plot_path <- file.path(project_path, dotplot_archive)
-if (plot_format == "pdf") {
-    pdf(plot_path, width = 1600/150, height = 800/150)
-  } else {
-    png(plot_path, width = 1600, height = 800, res = 150)
-  }
+open_plot_device(plot_path, 1600, 800, plot_format, units = "px")
   print(my_distPlot7(pro, min_pct, logfc, test_use, only_pos, ntop, cluster))
   dev.off()
 
@@ -1104,11 +1076,7 @@ if (plot_format == "pdf") {
     heatmap_plot <- my_distPlot8(pro, min_pct, logfc, test_use, only_pos, ntop, cluster)
     n_clusters <- length(levels(pro))
     heatmap_h <- max(800, 120 * n_clusters)
-  if (plot_format == "pdf") {
-    pdf(heatmap_path, width = 1600/150, height = heatmap_h/150)
-  } else {
-    png(heatmap_path, width = 1600, height = heatmap_h, res = 150)
-  }
+  open_plot_device(heatmap_path, 1600, heatmap_h, plot_format, units = "px")
     print(heatmap_plot)
     dev.off()
   }, error = function(e) {
@@ -1203,11 +1171,7 @@ function(req) {
   on.exit(setwd(old_wd), add = TRUE)
   setwd(tempdir())
 
-  if (plot_format == "pdf") {
-    pdf(plot_path)
-  } else {
-    png(plot_path, width = calc_w, height = calc_h, res = 150)
-  }
+  open_plot_device(plot_path, calc_w, calc_h, plot_format, units = "px")
   # GSEA 的 create_gsea_plots 返回 grob (gridExtra::grid.arrange)
   # GO/KEGG 返回 ggplot — 需要不同的输出方式
   tryCatch({
@@ -1221,8 +1185,9 @@ function(req) {
   })
   dev.off()
 
-  # 双命名：CSV
-  csv_archive <- make_output_name(project_path, "6", "enrich", paste0(pathway, "_", direction), "csv")
+  # 双命名：CSV —— 从图名派生(共用同一时间戳)，避免渲染耗时使两次 make_output_name 时间戳不一致，
+  # 导致前端按图名推导 CSV 名(.png→.csv)时 404
+  csv_archive <- sub(paste0("\\.", plot_format, "$"), ".csv", plot_archive)
   table_path <- file.path(project_path, csv_archive)
   if (nrow(result$data) > 0) {
     write.csv(result$data, table_path, row.names = FALSE)
@@ -1335,11 +1300,7 @@ function(req) {
     # FeaturePlot
     feature_archive <- make_output_name(project_path, "7", "plot_markers", paste0("feature_", cl), plot_format)
     plot_path_feature <- file.path(project_path, feature_archive)
-  if (plot_format == "pdf") {
-    pdf(plot_path_feature, width = 1600/150, height = calc_height/150)
-  } else {
-    png(plot_path_feature, width = 1600, height = calc_height, res = 150)
-  }
+  open_plot_device(plot_path_feature, 1600, calc_height, plot_format, units = "px")
     print(result$feature)
     dev.off()
     # 创建固定名称副本，供前端用 canonical name 访问
@@ -1348,11 +1309,7 @@ function(req) {
     # VlnPlot
     vln_archive <- make_output_name(project_path, "7", "plot_markers", paste0("vln_", cl), plot_format)
     plot_path_vln <- file.path(project_path, vln_archive)
-  if (plot_format == "pdf") {
-    pdf(plot_path_vln, width = 1600/150, height = calc_height/150)
-  } else {
-    png(plot_path_vln, width = 1600, height = calc_height, res = 150)
-  }
+  open_plot_device(plot_path_vln, 1600, calc_height, plot_format, units = "px")
     print(result$vln)
     dev.off()
     file.copy(plot_path_vln, file.path(project_path, paste0("plot_markers_vln_", cl, ".", plot_format)), overwrite = TRUE)
@@ -1551,11 +1508,7 @@ function(req) {
                         gsub("[^a-zA-Z0-9_]", "_", cell_type), ".", plot_format)
     plot_path <- file.path(project_path, plot_name)
 
-  if (plot_format == "pdf") {
-    pdf(plot_path, width = calc_width/150, height = calc_height/150)
-  } else {
-    png(plot_path, width = calc_width, height = calc_height, res = 150)
-  }
+  open_plot_device(plot_path, calc_width, calc_height, plot_format, units = "px")
     print(my_distPlot11(pro, mkfs, cell_type))
     dev.off()
 
@@ -1774,11 +1727,7 @@ function(req) {
   # 双命名：UMAP 注释图
   umap_archive <- make_output_name(project_path, "8", "annotate", "umap", plot_format)
   plot_path <- file.path(project_path, umap_archive)
-if (plot_format == "pdf") {
-    pdf(plot_path, width = 1400/150, height = 800/150)
-  } else {
-    png(plot_path, width = 1400, height = 800, res = 150)
-  }
+open_plot_device(plot_path, 1400, 800, plot_format, units = "px")
   print(DimPlot(pro, reduction = 'umap', group.by = 'CellType',
                 label = T, cols = clusterCols, repel = T))
   dev.off()
@@ -2468,11 +2417,7 @@ function(req) {
       fname <- make_output_name(project_path, "9", "monocle", plot_names[i], plot_format)
       fpath <- file.path(project_path, fname)
       tryCatch({
-      if (plot_format == "pdf") {
-    pdf(fpath, width = 1400/150, height = 800/150)
-  } else {
-    png(fpath, width = 1400, height = 800, res = 150)
-  }
+      open_plot_device(fpath, 1400, 800, plot_format, units = "px")
         if (inherits(result[[plot_keys[i]]], "Heatmap")) {
           draw(result[[plot_keys[i]]])
         } else {
@@ -2604,11 +2549,7 @@ function(req) {
     tryCatch({
       fname <- make_output_name(project_path, "10", "cellchat", "net_number", plot_format)
       fpath <- file.path(project_path, fname)
-    if (plot_format == "pdf") {
-    pdf(fpath, width = 1400/150, height = 700/150)
-  } else {
-    png(fpath, width = 1400, height = 700, res = 150)
-  }
+    open_plot_device(fpath, 1400, 700, plot_format, units = "px")
       netVisual_circle(cellchat@net$count, vertex.weight = groupSize, weight.scale = T,
                        label.edge = F, title.name = "Number of interactions")
       dev.off()
@@ -2617,11 +2558,7 @@ function(req) {
     tryCatch({
       fname <- make_output_name(project_path, "10", "cellchat", "net_strength", plot_format)
       fpath <- file.path(project_path, fname)
-    if (plot_format == "pdf") {
-    pdf(fpath, width = 1400/150, height = 700/150)
-  } else {
-    png(fpath, width = 1400, height = 700, res = 150)
-  }
+    open_plot_device(fpath, 1400, 700, plot_format, units = "px")
       netVisual_circle(cellchat@net$weight, vertex.weight = groupSize, weight.scale = T,
                        label.edge = F, title.name = "Interaction weights/strength")
       dev.off()
@@ -2634,11 +2571,7 @@ function(req) {
       fname <- make_output_name(project_path, "10", "cellchat", cfg$name, plot_format)
       fpath <- file.path(project_path, fname)
       tryCatch({
-      if (plot_format == "pdf") {
-    pdf(fpath)
-  } else {
-    png(fpath, width = cfg$w, height = cfg$h, res = 150)
-  }
+      open_plot_device(fpath, cfg$w, cfg$h, plot_format, units = "px")
         if (inherits(result[[cfg$key]], "Heatmap")) {
           draw(result[[cfg$key]])
         } else {
@@ -2663,7 +2596,7 @@ function(req) {
         fname <- make_output_name(project_path, "10", "cellchat", paste0(cfg$name, "_", pw_idx), plot_format)
         fpath <- file.path(project_path, fname)
         tryCatch({
-          if (plot_format == "pdf") { pdf(fpath) } else { png(fpath, width = cfg$w, height = cfg$h, res = 150) }
+          open_plot_device(fpath, cfg$w, cfg$h, plot_format, units = "px")
           if (inherits(result[[numbered_key]], "Heatmap")) { draw(result[[numbered_key]]) } else { print(result[[numbered_key]]) }
           dev.off()
           plot_paths[[paste0(cfg$name, "_", pw_idx)]] <- fpath
@@ -2678,7 +2611,7 @@ function(req) {
     fname <- make_output_name(project_path, "10", "cellchat", "bubble", plot_format)
     fpath <- file.path(project_path, fname)
     tryCatch({
-      ggsave(fpath, plot = result$f1, width = 10, height = 8, dpi = 150)
+      ggsave(fpath, plot = result$f1, width = 10, height = 8, dpi = 600)
       plot_paths$bubble <- fpath
     }, error = function(e) message(paste0("Bubble plot error: ", e$message)))
   }

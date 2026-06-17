@@ -54,10 +54,11 @@ interface QCResult {
   status: string[];
   result_path: string[];
   stats: {
-    total_cells_before: number[];
-    total_cells_after: number[];
-    total_genes: number[];
-    samples: number[];
+    // 后端 _unbox_r_scalars 会把 R 的 [1888] 解包成标量 1888；旧数据可能仍是数组，故兼容两者
+    total_cells_before: number | number[];
+    total_cells_after: number | number[];
+    total_genes: number | number[];
+    samples: number | number[];
   };
   mito_table_before: MitoRow[];
   mito_table_after: MitoRow[];
@@ -251,10 +252,13 @@ export default function QCResultTabs({ taskId, token }: QCResultTabsProps) {
 
 function FilterResultTab({ data, onDownload }: { data: QCResult; onDownload: (p: unknown, f: string) => void }) {
   const stats = data.stats;
-  const before = stats.total_cells_before?.[0] || 0;
-  const after = stats.total_cells_after?.[0] || 0;
-  const genes = stats.total_genes?.[0] || 0;
-  const samples = stats.samples?.[0] || 0;
+  // 后端已 _unbox_r_scalars(数组→标量)；兼容标量与数组两种形态
+  const num = (v: number | number[] | undefined): number =>
+    Array.isArray(v) ? Number(v[0] ?? 0) : Number(v ?? 0);
+  const before = num(stats.total_cells_before);
+  const after = num(stats.total_cells_after);
+  const genes = num(stats.total_genes);
+  const samples = num(stats.samples);
   const filtered = before - after;
   const pct = before > 0 ? ((filtered / before) * 100).toFixed(1) : "0";
 

@@ -588,12 +588,11 @@ export default function AnnotateResult({
                     URL.revokeObjectURL(url);
                   } catch(e) { alert("下载失败"); }
                 }}
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-medium transition-all hover:shadow-sm"
+                className="inline-flex items-center px-1.5 py-1 rounded text-[11px] font-medium transition-all hover:shadow-sm"
                 style={{ border: "1px solid var(--clr-border)", color: "var(--clr-amber-dark)", background: "rgba(200,96,25,0.04)" }}
-                title="下载 R ggplot2 UMAP 图"
+                title="下载原版 UMAP (R ggplot2)"
               >
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                下载原版 UMAP
               </button>
             )}
           </div>
