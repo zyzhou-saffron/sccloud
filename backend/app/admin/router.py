@@ -8,9 +8,11 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from typing import Optional
 import logging
+import os
+import shutil
 
 from app.auth.deps import get_admin_user
-from app.db.models import User, get_db
+from app.db.models import User, Project, get_db
 
 logger = logging.getLogger(__name__)
 
@@ -187,7 +189,38 @@ async def delete_user(
             detail="不能删除自己的账户",
         )
 
+    # 清理用户所有项目的磁盘文件
+    projects = db.query(Project).filter(Project.user_id == user.id).all()
+    for p in projects:
+        if p.storage_path and os.path.isdir(p.storage_path):
+            shutil.rmtree(p.storage_path, ignore_errors=True)
+
     db.delete(user)
     db.commit()
 
     return {"status": "deleted"}
+
+
+# ===== 数据保留策略 =====
+
+@router.get("/retention")
+async def get_retention_info(admin: User = Depends(get_admin_user)):
+    """查看当前数据保留策略和过期统计。"""
+    from app.db.models import ROLE_DEFAULTS
+    from app.main import data_cleanup
+
+    policy = {role: defaults["retention_days"] for role, defaults in ROLE_DEFAULTS.items()}
+    stats = data_cleanup.get_stats()
+    return {"policy": policy, **stats}
+
+
+@router.post("/cleanup")
+async def manual_cleanup(admin: User = Depends(get_admin_user)):
+    """手动触发一次过期项目清理。"""
+    from app.main import data_cleanup
+
+    result = data_cleanup.cleanup_now()
+    return {
+        "deleted_count": result["deleted"],
+        "freed_mb": round(result["freed_mb"], 2),
+    }

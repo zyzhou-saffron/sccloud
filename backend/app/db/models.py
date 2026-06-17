@@ -63,12 +63,17 @@ class Base(DeclarativeBase):
 
 # ===== 角色默认配置 =====
 ROLE_DEFAULTS = {
-    "guest": {"max_projects": 1, "total_quota": 10, "is_guest": True},
-    "user":  {"max_projects": 1, "total_quota": 10, "is_guest": False},
-    "super": {"max_projects": 5, "total_quota": 100, "is_guest": False},
-    "admin": {"max_projects": 99, "total_quota": 99999, "is_guest": False},
+    "guest": {"max_projects": 1, "total_quota": 10, "is_guest": True, "retention_days": 1},
+    "user":  {"max_projects": 1, "total_quota": 10, "is_guest": False, "retention_days": 7},
+    "super": {"max_projects": 5, "total_quota": 100, "is_guest": False, "retention_days": 30},
+    "admin": {"max_projects": 99, "total_quota": 99999, "is_guest": False, "retention_days": 30},
 }
 VALID_ROLES = {"guest", "user", "super", "admin"}
+
+
+def get_retention_days(role: str) -> int:
+    """根据角色返回数据保留天数。"""
+    return ROLE_DEFAULTS.get(role, ROLE_DEFAULTS["user"])["retention_days"]
 
 
 # ===== 用户表 =====

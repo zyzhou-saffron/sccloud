@@ -303,6 +303,24 @@ export const ROLE_LABELS: Record<string, string> = {
   admin: "管理员",
 };
 
+export const ROLE_RETENTION_DAYS: Record<string, number> = {
+  guest: 1,
+  user: 7,
+  super: 30,
+  admin: 30,
+};
+
+export function getRetentionDays(): number {
+  return ROLE_RETENTION_DAYS[getUserRole()] || 7;
+}
+
+export function getProjectRemainingDays(createdAt: string): number {
+  const days = getRetentionDays();
+  const created = new Date(createdAt.endsWith("Z") ? createdAt : createdAt + "Z");
+  const deadline = new Date(created.getTime() + days * 86400000);
+  return Math.ceil((deadline.getTime() - Date.now()) / 86400000);
+}
+
 /* ===== Projects ===== */
 
 export interface Project {

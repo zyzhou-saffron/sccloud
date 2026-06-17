@@ -8,17 +8,24 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
 from app.db.models import Base, engine
 from app.utils.progress_syncer import ProgressSyncer
+from app.utils.data_cleanup import DataCleanup
+
+# 全局清理服务实例（供 admin API 调用）
+data_cleanup = DataCleanup()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """应用生命周期 — 启动时创建数据库表并启动进度同步器。"""
+    """应用生命周期 — 启动时创建数据库表并启动后台服务。"""
     Base.metadata.create_all(bind=engine)
     # 启动 Redis → DB 进度同步器 (后台协程)
     syncer = ProgressSyncer()
     syncer_task = asyncio.create_task(syncer.run())
+    # 启动数据清理服务 (后台协程)
+    cleanup_task = asyncio.create_task(data_cleanup.run())
     yield
     syncer_task.cancel()
+    cleanup_task.cancel()
 
 
 # ===== 创建应用 =====
