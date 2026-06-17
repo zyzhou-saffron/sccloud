@@ -1,6 +1,6 @@
-# scCloud v2 — 单细胞 RNA-seq 分析平台
+# scCloud — 单细胞 RNA-seq 分析平台
 
-> 从 R Shiny 迁移到现代全栈架构：**Next.js 16 + FastAPI + R Plumber**，支持完整的 scRNA-seq 8 步分析流程。
+> 现代全栈架构：**Next.js 16 + FastAPI + R Plumber**，支持完整的 scRNA-seq 8 步分析流程。
 
 <p align="left">
   <img src="https://img.shields.io/badge/Next.js-16-000000?style=flat-square&logo=next.js&logoColor=white" alt="Next.js" />
@@ -71,8 +71,8 @@
 ### Step 1: 克隆项目
 
 ```bash
-git clone <repo_url> sccloud-v2
-cd sccloud-v2
+git clone <repo_url> sccloud
+cd sccloud
 ```
 
 ### Step 2: 配置环境变量
@@ -250,7 +250,7 @@ docker compose --env-file .env.server -f docker-compose.server.yml up -d --build
 8. 细胞注释                → SingleR 自动注释 / 手动注释
 ```
 
-### v2 独有增强
+### 核心特性
 
 - **格式转换**：H5AD / H5Seurat / CSV / TSV ↔ RDS 双向转换
 - **多样本 MTX 整合**：批量上传 10X ZIP → 自动合并 RDS
@@ -280,7 +280,7 @@ docker compose --env-file .env.server -f docker-compose.server.yml up -d --build
 ## 项目结构
 
 ```
-sccloud-v2/
+sccloud/
 ├── frontend/                   # Next.js 16 前端
 │   ├── Dockerfile              # 多阶段构建 (deps → build → standalone)
 │   └── src/app/
