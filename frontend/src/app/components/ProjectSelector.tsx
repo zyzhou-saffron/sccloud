@@ -12,6 +12,7 @@ import {
   isGuest,
   getUserRole,
   listProjects,
+  getProjectRemainingDays,
   type Project,
 } from "../lib/api";
 
@@ -244,6 +245,11 @@ export default function ProjectSelector({
                       <div className="text-sm font-medium truncate" style={{ color: p.id === selectedId ? "var(--clr-amber)" : "var(--clr-dark)" }}>{p.name}</div>
                       <div className="text-[10px] flex items-center gap-2" style={{ color: "var(--clr-text-faint)" }}>
                         <span>{new Date(p.created_at + (!p.created_at.endsWith("Z") ? "Z" : "")).toLocaleDateString("zh-CN")}</span>
+                        {(() => { const rem = getProjectRemainingDays(p.created_at); return rem > 0 ? (
+                          <><span>·</span><span style={{ color: rem <= 2 ? "var(--clr-danger)" : undefined }}>剩余 {rem} 天</span></>
+                        ) : (
+                          <><span>·</span><span style={{ color: "var(--clr-danger)" }}>已过期</span></>
+                        ); })()}
                         {p.description && <><span>·</span><span className="truncate">{p.description}</span></>}
                       </div>
                     </div>

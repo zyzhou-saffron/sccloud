@@ -32,6 +32,7 @@ export default function DashboardLayout({
   const [guest, setGuest] = useState(false);
   const [userRole, setUserRole] = useState("");
   const [quotaInfo, setQuotaInfo] = useState({ total: 0, used: 0 });
+  const [retentionDays, setRetentionDays] = useState(0);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
@@ -53,6 +54,7 @@ export default function DashboardLayout({
         .then(r => r.json())
         .then(d => {
           if (d.total_quota !== undefined) setQuotaInfo({ total: d.total_quota, used: d.used_quota });
+          if (d.retention_days) setRetentionDays(d.retention_days);
           if (d.role) {
             setUserRole(d.role);
             const _sto = isGuest() ? sessionStorage : localStorage; _sto.setItem("role", d.role);
@@ -164,6 +166,7 @@ export default function DashboardLayout({
                         .then(r => r.json())
                         .then(d => {
                           if (d.total_quota !== undefined) setQuotaInfo({ total: d.total_quota, used: d.used_quota });
+          if (d.retention_days) setRetentionDays(d.retention_days);
                           if (d.role) { setUserRole(d.role); const _s = isGuest() ? sessionStorage : localStorage; _s.setItem("role", d.role); }
                         })
                         .catch(() => {});
@@ -189,6 +192,11 @@ export default function DashboardLayout({
                       {quotaInfo.total > 0 && (
                         <p className="text-[10px] mt-0.5" style={{ color: "var(--clr-amber-dark)" }}>
                           剩余操作: {Math.max(0, quotaInfo.total - quotaInfo.used)} / {quotaInfo.total} 次
+                        </p>
+                      )}
+                      {retentionDays > 0 && (
+                        <p className="text-[10px] mt-0.5" style={{ color: "var(--clr-text-faint)" }}>
+                          数据保留: {retentionDays} 天
                         </p>
                       )}
                     </div>

@@ -5,6 +5,7 @@ scCloud v2 — 项目路由
 
 import os
 import re
+import shutil
 from datetime import datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
@@ -177,6 +178,14 @@ async def delete_project(
     )
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
+
+    # 删除磁盘文件
+    if project.storage_path and os.path.isdir(project.storage_path):
+        shutil.rmtree(project.storage_path, ignore_errors=True)
+        # 清理用户级空目录
+        parent = os.path.dirname(project.storage_path)
+        if os.path.isdir(parent) and not os.listdir(parent):
+            os.rmdir(parent)
 
     db.delete(project)
     db.commit()

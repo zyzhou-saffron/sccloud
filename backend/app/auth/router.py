@@ -52,6 +52,7 @@ class UserInfo(BaseModel):
     used_quota: int = 0
     is_active: bool = True
     is_guest: bool = False
+    retention_days: int = 7
 
 
 # ===== 路由 =====
@@ -148,6 +149,7 @@ async def refresh_token(req: RefreshRequest, db: Session = Depends(get_db)):
 @router.get("/me", response_model=UserInfo)
 async def get_me(current_user: User = Depends(get_current_user)):
     """获取当前用户信息。"""
+    from app.db.models import get_retention_days
     return UserInfo(
         id=current_user.id,
         username=current_user.username,
@@ -158,6 +160,7 @@ async def get_me(current_user: User = Depends(get_current_user)):
         used_quota=current_user.used_quota,
         is_active=current_user.is_active,
         is_guest=current_user.is_guest,
+        retention_days=get_retention_days(current_user.role),
     )
 
 

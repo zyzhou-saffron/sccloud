@@ -35,6 +35,13 @@ class Settings(BaseSettings):
     # ---- 部署 ----
     environment: str = "development"
 
+    # ---- 数据保留（天） ----
+    retention_guest_days: int = 1
+    retention_user_days: int = 7
+    retention_super_days: int = 30
+    retention_admin_days: int = 30
+    cleanup_interval_hours: int = 6
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
