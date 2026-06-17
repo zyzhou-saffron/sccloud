@@ -1,0 +1,23 @@
+name: release-please
+
+# 监听 main 上的 conventional commits，自动维护一个「Release PR」：
+#   - 该 PR 里写好 CHANGELOG.md 的新条目，并按 feat/fix 自动升级版本号(version.txt)
+# 合并该 PR 时，自动打 tag + 创建 GitHub Release。
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          # 配置见 release-please-config.json + .release-please-manifest.json
