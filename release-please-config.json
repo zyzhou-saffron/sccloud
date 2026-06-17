@@ -3,7 +3,7 @@
   "packages": {
     ".": {
       "release-type": "simple",
-      "package-name": "sccloud-v2",
+      "package-name": "sccloud",
       "changelog-path": "CHANGELOG.md",
       "bump-minor-pre-major": true,
       "include-v-in-tag": true,
