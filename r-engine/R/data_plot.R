@@ -306,7 +306,6 @@ my_distPlot7 <- function(pro, minPct, logFc, test, pos, ntop, rawC = "All") {
           title.position = "top", title.hjust = 0.5
         )
       ) &
-      nature_dim() &
       theme(
         axis.text.x = element_text(size = 8, angle = 45, hjust = 1, color = "grey20"),
         axis.text.y = element_text(size = 8, color = "grey20"),
