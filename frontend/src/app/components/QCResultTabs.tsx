@@ -11,6 +11,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { OrthographicView } from "@deck.gl/core";
 import { ScatterplotLayer } from "@deck.gl/layers";
 import DeckGL from "@deck.gl/react";
+import { authedFetch } from "../lib/api";
 
 /* 样本色板 — 与 DeckScatterPlot 一致 */
 const SAMPLE_PALETTE: [number, number, number][] = [
@@ -138,7 +139,7 @@ function AuthImg({ src, alt, token, className, style }: {
     let objectUrl = "";
     setFailed(false);
     setBlobUrl(null);
-    fetch(src, { headers: { Authorization: `Bearer ${token}` } })
+    authedFetch(src)
       .then((r) => { if (!r.ok) throw new Error(`${r.status}`); const ct = r.headers.get("content-type") || ""; return r.blob().then(blob => ({ blob, isPdf: ct.includes("pdf") })); })
       .then(({ blob, isPdf: pdf }) => { const url = URL.createObjectURL(blob); setBlobUrl(url); setIsPdf(pdf); })
       .catch(() => setFailed(true));
@@ -176,9 +177,7 @@ export default function QCResultTabs({ taskId, token }: QCResultTabsProps) {
 
   useEffect(() => {
     const path = `/api/tasks/${taskId}/result`;
-    fetch(path, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
+    authedFetch(path)
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json();
@@ -191,7 +190,7 @@ export default function QCResultTabs({ taskId, token }: QCResultTabsProps) {
     const url = plotUrl(taskId, plotPath);
     if (!url) return;
     try {
-      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await authedFetch(url);
       if (!res.ok) throw new Error(`${res.status}`);
       const blob = await res.blob();
       const a = document.createElement("a");

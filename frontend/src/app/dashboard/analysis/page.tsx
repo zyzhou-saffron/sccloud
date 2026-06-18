@@ -18,7 +18,7 @@ import {
   IconMicroscope, IconBarChart, IconAxis, IconCluster,
   IconTestTube, IconPathway, IconWaveform, IconTag, IconUpload, IconQuestion
 } from "../../components/Icons";
-import { getTask, submitTask, type Project, type Task, getAuthToken} from "../../lib/api";
+import { getTask, submitTask, type Project, type Task, getAuthToken, uploadFileChunked, apiFetch, tryRefresh} from "../../lib/api";
 import PipelineForm from "./components/PipelineForm";
 import PipelineView from "./components/PipelineView";
 
@@ -211,14 +211,11 @@ function AnalysisPageContent() {
   useEffect(() => {
     const savedCache = ss?.taskCache as Record<string, Task> | undefined;
     if (!savedCache || Object.keys(savedCache).length === 0) return;
-    const token = getAuthToken() || "";
     // 恢复所有步骤的 task（确保跨步骤依赖如 clusterLevels 可用）
+    // 走 getTask → apiFetch：token 过期自动刷新
     for (const [stepId, savedTask] of Object.entries(savedCache)) {
       if (!savedTask?.id) continue;
-      fetch(`/api/tasks/${savedTask.id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-        .then((r) => r.ok ? r.json() : null)
+      getTask(savedTask.id)
         .then((task: Task | null) => {
           if (task) updateTaskCache(stepId, task);
         })
@@ -255,12 +252,9 @@ function AnalysisPageContent() {
       setClusterLevels([]);
       return;
     }
-    const token = getAuthToken() || "";
-    fetch(`/api/tasks/${clusterTask.id}/result`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((r) => r.ok ? r.json() : null)
-      .then((data: Record<string, unknown> | null) => {
+    // 走 apiFetch：token 过期自动刷新
+    apiFetch<Record<string, unknown>>(`/api/tasks/${clusterTask.id}/result`)
+      .then((data) => {
         const stats = data?.stats as { cluster_levels?: string[] } | undefined;
         if (stats?.cluster_levels?.length) {
           setClusterLevels(stats.cluster_levels);
@@ -304,54 +298,19 @@ function AnalysisPageContent() {
     [step.id]
   );
 
-  /** 真实分片上传 RDS 文件到项目目录 */
+  /** 真实分片上传 RDS 文件到项目目录。
+   *  走 uploadFileChunked → apiFetch：每个分片请求在 401 时自动 tryRefresh 续期重试，
+   *  解决长会话/大文件(>15min token 过期)时上传报「无法验证凭据」。 */
   const handleFileUpload = async (file: File) => {
     if (!project) { setError("请先选择项目"); return; }
-    const CHUNK = 5 * 1024 * 1024; // 5MB per chunk
-    const token = getAuthToken() || "";
     setUploadProgress(0);
     setError(null);
     try {
-      // 1. 初始化
-      const initForm = new FormData();
-      initForm.append("filename", file.name);
-      initForm.append("file_size", String(file.size));
-      const initRes = await fetch("/api/upload/init", {
-        method: "POST", headers: { Authorization: `Bearer ${token}` }, body: initForm,
+      const result = await uploadFileChunked(file, project.id, (p) => {
+        setUploadProgress(p.percent);
       });
-      if (!initRes.ok) { const errData = await initRes.json().catch(() => ({})); throw new Error(errData.detail || "初始化上传失败"); }
-      const { upload_id } = await initRes.json() as { upload_id: string };
-
-      // 2. 分片上传
-      const totalChunks = Math.ceil(file.size / CHUNK);
-      for (let i = 0; i < totalChunks; i++) {
-        const blob = file.slice(i * CHUNK, (i + 1) * CHUNK);
-        const chunkForm = new FormData();
-        chunkForm.append("upload_id", upload_id);
-        chunkForm.append("chunk_index", String(i));
-        chunkForm.append("chunk", blob, file.name);
-        const chunkRes = await fetch("/api/upload/chunk", {
-          method: "POST", headers: { Authorization: `Bearer ${token}` }, body: chunkForm,
-        });
-        if (!chunkRes.ok) throw new Error(`分片 ${i + 1} 上传失败`);
-        setUploadProgress(Math.round(((i + 1) / totalChunks) * 95));
-      }
-
-      // 3. 合并
-      const completeForm = new FormData();
-      completeForm.append("upload_id", upload_id);
-      completeForm.append("project_id", String(project.id));
-      const completeRes = await fetch("/api/upload/complete", {
-        method: "POST", headers: { Authorization: `Bearer ${token}` }, body: completeForm,
-      });
-      if (!completeRes.ok) {
-        const errData = await completeRes.json().catch(() => ({}));
-        throw new Error(errData.detail || "合并文件失败");
-      }
-      const { path: filePath } = await completeRes.json() as { path: string };
-
       setUploadProgress(100);
-      setUploadedFiles(prev => [...prev, { name: file.name, path: filePath }]);
+      setUploadedFiles(prev => [...prev, { name: result.filename || file.name, path: result.path }]);
       setTimeout(() => setUploadProgress(null), 1200);
     } catch (e) {
       setError(e instanceof Error ? e.message : "上传失败");
@@ -499,10 +458,13 @@ function AnalysisPageContent() {
                 btn.innerHTML = '<span class="w-3 h-3 border-2 border-t-transparent rounded-full animate-spin"></span> 打包中...';
                 btn.disabled = true;
                 try {
-                  const token = getAuthToken() || "";
-                  const res = await fetch(`/api/projects/${project.id}/download`, {
-                    headers: { Authorization: `Bearer ${token}` }
-                  });
+                  const dlUrl = `/api/projects/${project.id}/download`;
+                  // blob 下载不能走 apiFetch(它只解析 JSON)，手动加一次 401 刷新重试
+                  let res = await fetch(dlUrl, { headers: { Authorization: `Bearer ${getAuthToken() || ""}` } });
+                  if (res.status === 401) {
+                    const nt = await tryRefresh();
+                    if (nt) res = await fetch(dlUrl, { headers: { Authorization: `Bearer ${nt}` } });
+                  }
                   if (!res.ok) {
                     const errText = await res.text();
                     throw new Error(`HTTP ${res.status}: ${errText.slice(0, 100)}`);
@@ -1200,17 +1162,14 @@ function AnalysisPageContent() {
                       if (!f || !project) return;
                       e.target.value = '';
                       setMarkerUploading(true);
-                      const token = getAuthToken();
                       const fd = new FormData();
                       fd.append('file', f);
                       try {
-                        const res = await fetch(`/api/tasks/marker-file?project_id=${project.id}`, {
+                        // 走 apiFetch：FormData 自动识别、token 过期自动刷新
+                        const data = await apiFetch<{ path: string }>(`/api/tasks/marker-file?project_id=${project.id}`, {
                           method: 'POST',
-                          headers: { Authorization: `Bearer ${token}` },
                           body: fd,
                         });
-                        if (!res.ok) throw new Error(await res.text());
-                        const data = await res.json();
                         // 提交 Phase A 解析任务获取 cell types
                         const taskRes = await submitTask({
                           project_id: project.id,
@@ -1226,8 +1185,7 @@ function AnalysisPageContent() {
                         }
                         if (resolved.status === 'completed') {
                           // 读取结果中的 cell_types
-                          const rRes = await fetch(`/api/tasks/${resolved.id}/result`, { headers: { Authorization: `Bearer ${token}` } });
-                          const result = rRes.ok ? await rRes.json() : {};
+                          const result = await apiFetch<Record<string, unknown>>(`/api/tasks/${resolved.id}/result`).catch(() => ({} as Record<string, unknown>));
                           const rawTypes = result?.cell_types || [];
                           // R jsonlite 可能返回单元素数组，统一 unbox
                           const types = (Array.isArray(rawTypes) ? rawTypes : [rawTypes]).map(
