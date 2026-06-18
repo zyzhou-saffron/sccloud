@@ -26,6 +26,8 @@ class Settings(BaseSettings):
 
     # ---- R 计算引擎 ----
     r_engine_url: str = "http://localhost:8787"
+    # 快请求专用引擎（plot_markers / cellchat_pathway 等只读重出图），避免被重任务(inferCNV 等)堵塞 (#42)
+    r_engine_quick_url: str = "http://127.0.0.1:8788"
     r_engine_timeout: int = 7200
 
     # ---- 文件存储 ----
