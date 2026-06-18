@@ -2659,16 +2659,109 @@ function(req) {
 
   report(100, "CellChat 分析完成")
 
+  # 信号通路全集，按通讯总强度(netP$prob 各通路求和)降序，供前端下拉
+  all_pathways <- character(0)
+  if (!is.null(cellchat)) {
+    pw <- cellchat@netP$pathways
+    prob <- cellchat@netP$prob
+    if (!is.null(prob) && length(dim(prob)) == 3 && !is.null(dimnames(prob)[[3]])) {
+      strength <- apply(prob, 3, sum, na.rm = TRUE)   # 按通路名命名的总强度
+      strength <- strength[names(strength) %in% pw]
+      sorted <- names(sort(strength, decreasing = TRUE))
+      all_pathways <- c(sorted, setdiff(pw, sorted))  # 无强度信息的兜底放末尾
+    } else {
+      all_pathways <- pw
+    }
+  }
+
   gc(verbose = FALSE)
   list(
     status = "success",
     plot_paths = plot_paths,
     data_paths = data_paths,
+    pathways = all_pathways,
     stats = list(
       n_interactions = nrow(result$data1 %||% data.frame()),
       n_pathways = length(unique(result$data2$pathway_name %||% c())),
       group_sizes = result$data3
     )
+  )
+}
+
+
+# ======================================================================
+# 10b. CellChat 单信号通路按需出图（前端下拉切换通路）
+#      复用已保存的 cellchat_obj.rds，只重出 4 张通路特异图
+# ======================================================================
+
+#* CellChat 单信号通路重新出图
+#* @post /cellchat_pathway
+function(req) {
+  body <- jsonlite::fromJSON(req$postBody)
+  project_path <- body$project_path
+  params <- body$params
+  plot_format <- params$plot_format %||% "png"
+  task_id <- params$task_id
+  report <- create_progress_reporter(task_id)
+  suppressMessages(library(CellChat))
+  suppressMessages(library(ComplexHeatmap))
+
+  pathway <- params$pathway
+  if (is.null(pathway) || !nzchar(pathway)) stop("请指定信号通路 (pathway)")
+
+  report(5, "加载 CellChat 对象...")
+  # 定位 cellchat_obj.rds：优先用前端传入文件名，否则取 project 内最新
+  obj_name <- params$cellchat_obj %||% NULL
+  obj_path <- NULL
+  if (!is.null(obj_name) && nzchar(obj_name)) {
+    cand <- file.path(project_path, basename(obj_name))
+    if (file.exists(cand)) obj_path <- cand
+  }
+  if (is.null(obj_path)) {
+    cands <- list.files(project_path, pattern = "cellchat_obj\\.rds$", full.names = TRUE)
+    if (length(cands) == 0) stop("未找到 CellChat 对象，请先运行细胞通讯分析")
+    obj_path <- cands[which.max(file.info(cands)$mtime)]
+  }
+  cellchat <- readRDS(obj_path)
+
+  all_pw <- cellchat@netP$pathways
+  if (!(pathway %in% all_pw)) {
+    stop(paste0("信号通路 '", pathway, "' 不存在；可选: ", paste(all_pw, collapse = ", ")))
+  }
+
+  pw_tag <- gsub("[^A-Za-z0-9]+", "_", pathway)
+  plot_paths <- list()
+
+  save_one <- function(name, w, h, expr) {
+    fname <- make_output_name(project_path, "10", "cellchat", paste0("pw_", pw_tag, "_", name), plot_format)
+    fpath <- file.path(project_path, fname)
+    tryCatch({
+      open_plot_device(fpath, w, h, plot_format, units = "px")
+      p <- expr()
+      if (inherits(p, "Heatmap")) draw(p) else if (!is.null(p)) print(p)
+      dev.off()
+      plot_paths[[name]] <<- fpath
+    }, error = function(e) {
+      try(dev.off(), silent = TRUE)
+      message(paste0("cellchat_pathway plot error (", name, "): ", e$message))
+    })
+  }
+
+  report(30, paste0(pathway, " 通路热图..."))
+  save_one("pathway_heatmap", 900, 800, function() netVisual_heatmap(cellchat, signaling = pathway, color.heatmap = "Reds"))
+  report(50, paste0(pathway, " 通路贡献..."))
+  save_one("pathway_contribution", 900, 600, function() netAnalysis_contribution(cellchat, signaling = pathway))
+  report(70, paste0(pathway, " 基因表达(小提琴)..."))
+  save_one("gene_vln", 1400, 800, function() plotGeneExpression(cellchat, signaling = pathway))
+  report(88, paste0(pathway, " 基因表达(点图)..."))
+  save_one("gene_dot", 1400, 800, function() plotGeneExpression(cellchat, signaling = pathway, type = "dot", color.use = clusterCols))
+
+  report(100, "完成")
+  gc(verbose = FALSE)
+  list(
+    status = "success",
+    pathway = pathway,
+    plot_paths = plot_paths
   )
 }
 

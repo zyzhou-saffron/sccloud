@@ -150,17 +150,10 @@ class Task(Base):
         Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
     )
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    step = Column(
-        Enum(
-            "qc", "normalize", "reduce", "cluster",
-            "markers", "enrich", "annotate", "convert",
-            "markers_pairwise", "plot_markers",
-            "subset_cluster", "marker_expr", "merge_celltypes",
-            "monocle", "cellchat", "infercnv", "wgcna",
-            name="task_step",
-        ),
-        nullable=False,
-    )
+    # step 合法性由 backend TaskSubmit.step 正则把关；DB 用 VARCHAR 而非 ENUM，
+    # 避免每加一个新 step(如 cellchat_pathway) 都要 ALTER 枚举 → 否则 INSERT 报
+    # "Data truncated for column 'step'" → 500
+    step = Column(String(50), nullable=False)
     status = Column(
         Enum(
             "pending", "running", "completed", "failed", "cancelled",

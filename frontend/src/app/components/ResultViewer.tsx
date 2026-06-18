@@ -346,7 +346,7 @@ export default function ResultViewer({ task, stepId, stepLabel, StepIcon, taskCa
             {stepId === "annotate" && <AnnotateResult data={resultData} task={task} token={getToken()} />}
             {stepId === "marker_expr" && <MarkerExprResult data={resultData} taskId={task.id} task={task} />}
             {!["qc","normalize","reduce","cluster","markers","enrich","wgcna","annotate","marker_expr"].includes(stepId) && (
-              <GenericStepResult data={resultData} stepId={stepId} taskId={task.id} projectId={task.project_id} />
+              <GenericStepResult data={resultData} stepId={stepId} taskId={task.id} task={task} />
             )}
           </>
         )}
@@ -2116,7 +2116,7 @@ function WGCNAResult({ data, taskId }: { data: Record<string, unknown> | null; t
   );
 }
 
-function GenericStepResult({ data, stepId, taskId }: { data: Record<string, unknown> | null; stepId: string; taskId?: string }) {
+function GenericStepResult({ data, stepId, taskId, task }: { data: Record<string, unknown> | null; stepId: string; taskId?: string; task?: Task }) {
   if (!data) {
     return (
       <div className="text-center py-8" style={{ color: "var(--clr-text-faint)" }}>
@@ -2157,6 +2157,63 @@ function GenericStepResult({ data, stepId, taskId }: { data: Record<string, unkn
 
   const [activeTab, setActiveTab] = useState<"plots" | "data">("plots");
 
+  // ── CellChat 信号通路下拉：复用 cellchat_obj.rds 按需重出 4 张通路特异图 ──
+  const pathways: string[] = Array.isArray(data.pathways)
+    ? (data.pathways as unknown[]).map(v => (Array.isArray(v) ? v[0] : v)).map(String).filter(Boolean)
+    : [];
+  const [pwSel, setPwSel] = useState<string>(pathways[0] ?? "");
+  const [pwLoading, setPwLoading] = useState(false);
+  const [pwError, setPwError] = useState<string | null>(null);
+  const [pwTaskId, setPwTaskId] = useState<string | null>(null);
+  const [pwName, setPwName] = useState<string>("");
+  const [pwPlots, setPwPlots] = useState<Record<string, string> | null>(null);
+
+  const runPathway = async () => {
+    if (!pwSel || !task) return;
+    setPwLoading(true); setPwError(null);
+    try {
+      const res = await fetchWithAuth("/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          project_id: task.project_id,
+          step: "cellchat_pathway",
+          params: { ...(task.params || {}), pathway: pwSel, cellchat_obj: dataPaths?.cellchat_obj },
+        }),
+      });
+      const t = await res.json();
+      if (!res.ok) {
+        const d = (t as { detail?: unknown })?.detail;
+        const msg = typeof d === "string" ? d
+          : Array.isArray(d) ? d.map((x) => (x && typeof x === "object" && "msg" in x ? (x as { msg: string }).msg : JSON.stringify(x))).join("; ")
+          : d ? JSON.stringify(d) : "提交失败";
+        throw new Error(msg);
+      }
+      const poll = async (id: string): Promise<Record<string, unknown>> => {
+        const r = await fetchWithAuth(`/api/tasks/${id}`);
+        const fresh = await r.json();
+        if (fresh.status === "failed") throw new Error(fresh.error_msg || "任务失败");
+        if (fresh.status === "completed") return fresh;
+        await new Promise(rs => setTimeout(rs, 2000));
+        return poll(id);
+      };
+      await poll(t.id);
+      const rRes = await fetchWithAuth(`/api/tasks/${t.id}/result`);
+      const final = await rRes.json();
+      const rawpp = final.plot_paths as Record<string, unknown> | undefined;
+      const pp = rawpp
+        ? Object.fromEntries(Object.entries(rawpp).map(([k, v]) => [k, unwrapStr(v)]).filter(([, v]) => !!v))
+        : {};
+      setPwTaskId(t.id);
+      setPwName(pwSel);
+      setPwPlots(pp as Record<string, string>);
+    } catch (e) {
+      setPwError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPwLoading(false);
+    }
+  };
+
   // 提取文件名
   const getFileName = (path: string) => path.split("/").pop() || path;
 
@@ -2180,6 +2237,63 @@ function GenericStepResult({ data, stepId, taskId }: { data: Record<string, unkn
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* CellChat 信号通路下拉选择（仿差异基因按需出图） */}
+      {stepId === "cellchat" && pathways.length > 0 && (
+        <div className="rounded-lg border p-3 space-y-3" style={{ borderColor: "var(--clr-border)", background: "var(--clr-bg-alt)" }}>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs font-semibold" style={{ color: "var(--clr-text)" }}>信号通路</span>
+            <select
+              value={pwSel}
+              onChange={e => setPwSel(e.target.value)}
+              className="text-xs px-2 py-1.5 rounded border"
+              style={{ borderColor: "var(--clr-border)", background: "var(--clr-bg-card)", color: "var(--clr-text)", minWidth: 160 }}
+            >
+              {pathways.map(pw => <option key={pw} value={pw}>{pw}</option>)}
+            </select>
+            <button
+              onClick={runPathway}
+              disabled={pwLoading || !pwSel}
+              className="text-xs px-3 py-1.5 rounded font-medium transition-all disabled:opacity-50"
+              style={{ background: "var(--clr-amber)", color: "white", cursor: pwLoading ? "default" : "pointer" }}
+            >
+              {pwLoading ? "生成中…" : "展示该通路"}
+            </button>
+            <span className="text-[10px]" style={{ color: "var(--clr-text-faint)" }}>
+              共 {pathways.length} 条通路
+            </span>
+          </div>
+          {pwError && <div className="text-xs" style={{ color: "#D24B40" }}>出错：{pwError}</div>}
+          {pwPlots && Object.keys(pwPlots).length > 0 && (
+            <div>
+              <div className="text-[11px] mb-2" style={{ color: "var(--clr-text-muted)" }}>当前通路：<b>{pwName}</b></div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {Object.entries(pwPlots).map(([name, path]) => (
+                  <div key={name} className="rounded-lg border overflow-hidden" style={{ borderColor: "var(--clr-border)" }}>
+                    <div className="px-3 py-2 flex items-center justify-between" style={{ background: "var(--clr-bg-card)", borderBottom: "1px solid var(--clr-border)" }}>
+                      <span className="text-xs font-medium" style={{ color: "var(--clr-text)" }}>{name.replace(/_/g, " ")}</span>
+                      <AuthDownloadLink
+                        url={`/api/tasks/${pwTaskId}/plot?name=${encodeURIComponent(getFileName(path))}`}
+                        filename={getFileName(path)}
+                        className="inline-flex items-center justify-center w-7 h-7 rounded transition-all hover:scale-110"
+                        style={{ color: "var(--clr-amber)" }}
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                      </AuthDownloadLink>
+                    </div>
+                    <AuthImg
+                      src={`/api/tasks/${pwTaskId}/plot?name=${encodeURIComponent(getFileName(path))}`}
+                      alt={name}
+                      className="w-full h-auto"
+                      style={{ maxHeight: 400, objectFit: "contain", background: "white" }}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
