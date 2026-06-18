@@ -2182,7 +2182,13 @@ function GenericStepResult({ data, stepId, taskId, task }: { data: Record<string
         }),
       });
       const t = await res.json();
-      if (!res.ok) throw new Error(t.detail || "提交失败");
+      if (!res.ok) {
+        const d = (t as { detail?: unknown })?.detail;
+        const msg = typeof d === "string" ? d
+          : Array.isArray(d) ? d.map((x) => (x && typeof x === "object" && "msg" in x ? (x as { msg: string }).msg : JSON.stringify(x))).join("; ")
+          : d ? JSON.stringify(d) : "提交失败";
+        throw new Error(msg);
+      }
       const poll = async (id: string): Promise<Record<string, unknown>> => {
         const r = await fetchWithAuth(`/api/tasks/${id}`);
         const fresh = await r.json();
