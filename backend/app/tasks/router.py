@@ -164,8 +164,8 @@ async def submit_task(
         raise HTTPException(status_code=404, detail="项目不存在")
 
     # 检查是否有同步骤的进行中任务
-    # plot_markers 是只读可视化，允许多参数并发；其他步骤保持互斥
-    if req.step == "plot_markers":
+    # plot_markers / cellchat_pathway 是只读可视化，允许多参数并发；其他步骤保持互斥
+    if req.step in ("plot_markers", "cellchat_pathway"):
         existing = (
             db.query(Task)
             .filter(
