@@ -18,6 +18,9 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.db.models import Task
 
+# 走 quick 引擎(8788)的只读/重出图秒级请求，避免被重任务(inferCNV/WGCNA/cellchat/pipeline)堵塞 (#42)
+QUICK_STEPS = {"plot_markers", "cellchat_pathway"}
+
 
 async def call_r_engine(
     endpoint: str,
@@ -46,7 +49,9 @@ async def call_r_engine(
     db.commit()
 
     try:
-        r_url = f"{settings.r_engine_url}/{endpoint}"
+        # 快请求分流到独立 quick 引擎(8788)，其余走主引擎(8787) (#42)
+        base_url = settings.r_engine_quick_url if endpoint in QUICK_STEPS else settings.r_engine_url
+        r_url = f"{base_url}/{endpoint}"
         effective_timeout = timeout or float(settings.r_engine_timeout)
         last_error = None
 
