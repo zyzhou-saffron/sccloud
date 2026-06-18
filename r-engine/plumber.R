@@ -1163,7 +1163,9 @@ function(req) {
     calc_h <- max(1200, n_rows * 55 + 200)
     calc_w <- 2000
   }
-  plot_archive <- make_output_name(project_path, "6", "enrich", paste0(pathway, "_", direction), plot_format)
+  # GSEA 不分上/下调，文件名不带方向；GO/KEGG 才带 Up/Down
+  name_tag <- if (identical(pathway, "GSEA")) pathway else paste0(pathway, "_", direction)
+  plot_archive <- make_output_name(project_path, "6", "enrich", name_tag, plot_format)
   plot_path <- file.path(project_path, plot_archive)
 
   # 防止 R 在不可写目录尝试创建 Rplots.pdf（gseaplot2/cowplot 内部触发）
