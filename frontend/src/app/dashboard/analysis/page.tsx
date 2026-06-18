@@ -18,7 +18,7 @@ import {
   IconMicroscope, IconBarChart, IconAxis, IconCluster,
   IconTestTube, IconPathway, IconWaveform, IconTag, IconUpload, IconQuestion
 } from "../../components/Icons";
-import { getTask, submitTask, type Project, type Task, getAuthToken} from "../../lib/api";
+import { getTask, submitTask, type Project, type Task, getAuthToken, uploadFileChunked} from "../../lib/api";
 import PipelineForm from "./components/PipelineForm";
 import PipelineView from "./components/PipelineView";
 
@@ -304,54 +304,19 @@ function AnalysisPageContent() {
     [step.id]
   );
 
-  /** 真实分片上传 RDS 文件到项目目录 */
+  /** 真实分片上传 RDS 文件到项目目录。
+   *  走 uploadFileChunked → apiFetch：每个分片请求在 401 时自动 tryRefresh 续期重试，
+   *  解决长会话/大文件(>15min token 过期)时上传报「无法验证凭据」。 */
   const handleFileUpload = async (file: File) => {
     if (!project) { setError("请先选择项目"); return; }
-    const CHUNK = 5 * 1024 * 1024; // 5MB per chunk
-    const token = getAuthToken() || "";
     setUploadProgress(0);
     setError(null);
     try {
-      // 1. 初始化
-      const initForm = new FormData();
-      initForm.append("filename", file.name);
-      initForm.append("file_size", String(file.size));
-      const initRes = await fetch("/api/upload/init", {
-        method: "POST", headers: { Authorization: `Bearer ${token}` }, body: initForm,
+      const result = await uploadFileChunked(file, project.id, (p) => {
+        setUploadProgress(p.percent);
       });
-      if (!initRes.ok) { const errData = await initRes.json().catch(() => ({})); throw new Error(errData.detail || "初始化上传失败"); }
-      const { upload_id } = await initRes.json() as { upload_id: string };
-
-      // 2. 分片上传
-      const totalChunks = Math.ceil(file.size / CHUNK);
-      for (let i = 0; i < totalChunks; i++) {
-        const blob = file.slice(i * CHUNK, (i + 1) * CHUNK);
-        const chunkForm = new FormData();
-        chunkForm.append("upload_id", upload_id);
-        chunkForm.append("chunk_index", String(i));
-        chunkForm.append("chunk", blob, file.name);
-        const chunkRes = await fetch("/api/upload/chunk", {
-          method: "POST", headers: { Authorization: `Bearer ${token}` }, body: chunkForm,
-        });
-        if (!chunkRes.ok) throw new Error(`分片 ${i + 1} 上传失败`);
-        setUploadProgress(Math.round(((i + 1) / totalChunks) * 95));
-      }
-
-      // 3. 合并
-      const completeForm = new FormData();
-      completeForm.append("upload_id", upload_id);
-      completeForm.append("project_id", String(project.id));
-      const completeRes = await fetch("/api/upload/complete", {
-        method: "POST", headers: { Authorization: `Bearer ${token}` }, body: completeForm,
-      });
-      if (!completeRes.ok) {
-        const errData = await completeRes.json().catch(() => ({}));
-        throw new Error(errData.detail || "合并文件失败");
-      }
-      const { path: filePath } = await completeRes.json() as { path: string };
-
       setUploadProgress(100);
-      setUploadedFiles(prev => [...prev, { name: file.name, path: filePath }]);
+      setUploadedFiles(prev => [...prev, { name: result.filename || file.name, path: result.path }]);
       setTimeout(() => setUploadProgress(null), 1200);
     } catch (e) {
       setError(e instanceof Error ? e.message : "上传失败");
