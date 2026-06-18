@@ -213,7 +213,7 @@ my_distPlot4 <- function(df){
   scale_color_manual(values = clusterCols) +
   labs(x = '', y = 'Fraction of cell populations(%)') +
   guides(fill = guide_legend(ncol = 2, override.aes = list(linewidth = 2))) +
-  cowplot::theme_cowplot() +
+  nature_theme(base_size = 9) +
   theme(legend.position = 'right',
         legend.spacing.x = unit(0.2, 'cm'),
         axis.text.x = element_text(angle = 30, vjust = 0.5, hjust = 0.9),
@@ -231,6 +231,7 @@ my_distPlot4 <- function(df){
                lab.vjust = 0.5, # y value vertical justification of labels.
                # top = 5,
                palette = clusterCols) +
+  nature_theme(base_size = 9) +
   labs(x = '', y = 'Fraction of cell populations') +
   guides(color = guide_legend(ncol = 2,
                               # keywidth = 2,
@@ -305,6 +306,7 @@ my_distPlot7 <- function(pro, minPct, logFc, test, pos, ntop, rawC = "All") {
           title.position = "top", title.hjust = 0.5
         )
       ) &
+      nature_dim() &
       theme(
         axis.text.x = element_text(size = 8, angle = 45, hjust = 1, color = "grey20"),
         axis.text.y = element_text(size = 8, color = "grey20"),
@@ -357,7 +359,7 @@ my_distPlot8 <- function(pro, minPct, logFc, test, pos, ntop, rawC = "All") {
       pro, features = plotFeatures2,
       size = 3, group.bar = TRUE, group.colors = clusterCols
     ) &
-    scale_fill_viridis() &
+    scale_fill_gradientn(colours = rev(colorRampPalette(brewer.pal(11, "RdBu"))(100))) &
     guides(
       fill = guide_colorbar(
         title.position = "left", title.hjust = 0.5,
@@ -586,7 +588,8 @@ my_distPlot10 <- function(sigDegs, pathway, pos1, pAdjust, pvalue, qvalue, nTerm
     p2 <- dotplot(goAll2, split = 'ONTOLOGY', showCategory = nTerm, 
                   font.size = 8, color = "pvalue") +
       scale_colour_gradientn(colours = colorRampPalette(brewer.pal(11, "RdBu"))(100)) +
-      scale_size_area(max_size = 6)  # 使用scale_size_area替代scale_radius
+      scale_size_area(max_size = 6) +
+      nature_theme()  # 使用scale_size_area替代scale_radius
     
     return(p + p2)
   }
@@ -686,6 +689,7 @@ my_distPlot10 <- function(sigDegs, pathway, pos1, pAdjust, pvalue, qvalue, nTerm
       scale_colour_gradientn(colours = colorRampPalette(brewer.pal(11, "RdBu"))(100)) +
       scale_size_area(max_size = 6) +
       labs(title = paste('KEGG pathway -', direction)) +
+      nature_theme() +
       theme(
         axis.text = element_text(color = "grey20"),
         axis.title.y = element_blank(),
