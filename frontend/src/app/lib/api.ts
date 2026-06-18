@@ -190,6 +190,24 @@ export async function apiFetch<T>(
   return res.json();
 }
 
+/**
+ * 带认证 + 401 自动刷新的 fetch，返回原始 Response。
+ * 用于 blob/图片下载等不能走 apiFetch(只解析 JSON) 的场景。
+ */
+export async function authedFetch(path: string, options: RequestInit = {}): Promise<Response> {
+  const doFetch = (tok: string | null) => {
+    const headers: Record<string, string> = { ...(options.headers as Record<string, string>) };
+    if (tok) headers["Authorization"] = `Bearer ${tok}`;
+    return fetch(`${API_BASE}${path}`, { ...options, headers });
+  };
+  let res = await doFetch(getAuthItem("access_token"));
+  if (res.status === 401 && typeof window !== "undefined") {
+    const nt = await tryRefresh();
+    if (nt) res = await doFetch(nt);
+  }
+  return res;
+}
+
 /* ===== Auth ===== */
 
 interface AuthResponse {

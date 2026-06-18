@@ -18,7 +18,7 @@ import {
   IconMicroscope, IconBarChart, IconAxis, IconCluster,
   IconTestTube, IconPathway, IconWaveform, IconTag, IconUpload, IconQuestion
 } from "../../components/Icons";
-import { getTask, submitTask, type Project, type Task, getAuthToken, uploadFileChunked} from "../../lib/api";
+import { getTask, submitTask, type Project, type Task, getAuthToken, uploadFileChunked, apiFetch, tryRefresh} from "../../lib/api";
 import PipelineForm from "./components/PipelineForm";
 import PipelineView from "./components/PipelineView";
 
@@ -211,14 +211,11 @@ function AnalysisPageContent() {
   useEffect(() => {
     const savedCache = ss?.taskCache as Record<string, Task> | undefined;
     if (!savedCache || Object.keys(savedCache).length === 0) return;
-    const token = getAuthToken() || "";
     // 恢复所有步骤的 task（确保跨步骤依赖如 clusterLevels 可用）
+    // 走 getTask → apiFetch：token 过期自动刷新
     for (const [stepId, savedTask] of Object.entries(savedCache)) {
       if (!savedTask?.id) continue;
-      fetch(`/api/tasks/${savedTask.id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-        .then((r) => r.ok ? r.json() : null)
+      getTask(savedTask.id)
         .then((task: Task | null) => {
           if (task) updateTaskCache(stepId, task);
         })
@@ -255,12 +252,9 @@ function AnalysisPageContent() {
       setClusterLevels([]);
       return;
     }
-    const token = getAuthToken() || "";
-    fetch(`/api/tasks/${clusterTask.id}/result`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((r) => r.ok ? r.json() : null)
-      .then((data: Record<string, unknown> | null) => {
+    // 走 apiFetch：token 过期自动刷新
+    apiFetch<Record<string, unknown>>(`/api/tasks/${clusterTask.id}/result`)
+      .then((data) => {
         const stats = data?.stats as { cluster_levels?: string[] } | undefined;
         if (stats?.cluster_levels?.length) {
           setClusterLevels(stats.cluster_levels);
@@ -464,10 +458,13 @@ function AnalysisPageContent() {
                 btn.innerHTML = '<span class="w-3 h-3 border-2 border-t-transparent rounded-full animate-spin"></span> 打包中...';
                 btn.disabled = true;
                 try {
-                  const token = getAuthToken() || "";
-                  const res = await fetch(`/api/projects/${project.id}/download`, {
-                    headers: { Authorization: `Bearer ${token}` }
-                  });
+                  const dlUrl = `/api/projects/${project.id}/download`;
+                  // blob 下载不能走 apiFetch(它只解析 JSON)，手动加一次 401 刷新重试
+                  let res = await fetch(dlUrl, { headers: { Authorization: `Bearer ${getAuthToken() || ""}` } });
+                  if (res.status === 401) {
+                    const nt = await tryRefresh();
+                    if (nt) res = await fetch(dlUrl, { headers: { Authorization: `Bearer ${nt}` } });
+                  }
                   if (!res.ok) {
                     const errText = await res.text();
                     throw new Error(`HTTP ${res.status}: ${errText.slice(0, 100)}`);
@@ -1165,17 +1162,14 @@ function AnalysisPageContent() {
                       if (!f || !project) return;
                       e.target.value = '';
                       setMarkerUploading(true);
-                      const token = getAuthToken();
                       const fd = new FormData();
                       fd.append('file', f);
                       try {
-                        const res = await fetch(`/api/tasks/marker-file?project_id=${project.id}`, {
+                        // 走 apiFetch：FormData 自动识别、token 过期自动刷新
+                        const data = await apiFetch<{ path: string }>(`/api/tasks/marker-file?project_id=${project.id}`, {
                           method: 'POST',
-                          headers: { Authorization: `Bearer ${token}` },
                           body: fd,
                         });
-                        if (!res.ok) throw new Error(await res.text());
-                        const data = await res.json();
                         // 提交 Phase A 解析任务获取 cell types
                         const taskRes = await submitTask({
                           project_id: project.id,
@@ -1191,8 +1185,7 @@ function AnalysisPageContent() {
                         }
                         if (resolved.status === 'completed') {
                           // 读取结果中的 cell_types
-                          const rRes = await fetch(`/api/tasks/${resolved.id}/result`, { headers: { Authorization: `Bearer ${token}` } });
-                          const result = rRes.ok ? await rRes.json() : {};
+                          const result = await apiFetch<Record<string, unknown>>(`/api/tasks/${resolved.id}/result`).catch(() => ({} as Record<string, unknown>));
                           const rawTypes = result?.cell_types || [];
                           // R jsonlite 可能返回单元素数组，统一 unbox
                           const types = (Array.isArray(rawTypes) ? rawTypes : [rawTypes]).map(
