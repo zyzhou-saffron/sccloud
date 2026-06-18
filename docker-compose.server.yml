@@ -48,23 +48,28 @@ services:
       R_ENGINE_TIMEOUT: "3600"
       JWT_SECRET: "${JWT_SECRET}"
       JWT_ALGORITHM: "HS256"
-      PROJECTS_ROOT: "/data/projects"
+      PROJECTS_ROOT: "${PROJECTS_ROOT:-/data/projects}"
       ENVIRONMENT: "production"
     volumes:
       - ./backend:/app
-      - /data/projects:/data/projects
+      - ${PROJECTS_ROOT:-/data/projects}:${PROJECTS_ROOT:-/data/projects}
       - ./r-engine/data:/app/r-engine-data
 
   # ---- R 计算引擎 (Plumber :8787) ----
   r-engine:
     image: sccloud-r-engine
+    # 一键部署: 优先用上面的 image(可改成 ghcr.io/<owner>/sccloud-r-engine:<tag> 直接拉);
+    # build 作兜底, 供维护者本地重建(需先备好 r-engine/r-library, 见 README/issue)
+    build:
+      context: ./r-engine
+      dockerfile: Dockerfile
     network_mode: host
     restart: unless-stopped
     environment:
       REDIS_URL: "redis://127.0.0.1:6380/0"
     volumes:
       - ./backend:/app
-      - /data/projects:/data/projects
+      - ${PROJECTS_ROOT:-/data/projects}:${PROJECTS_ROOT:-/data/projects}
       - ./r-engine/data:/app/data
       - ./r-engine/plumber.R:/app/plumber.R:ro
       - ./r-engine/R:/app/R:ro
