@@ -2161,12 +2161,23 @@ function GenericStepResult({ data, stepId, taskId, task }: { data: Record<string
   const pathways: string[] = Array.isArray(data.pathways)
     ? (data.pathways as unknown[]).map(v => (Array.isArray(v) ? v[0] : v)).map(String).filter(Boolean)
     : [];
+  // 通路特异图的 key：只在下拉面板里展示，不在下方主网格重复出现
+  const isPwSpecificKey = (k: string) => /^(pathway_heatmap|pathway_contribution|gene_vln|gene_dot)(_\d+)?$/.test(k);
+  // run 已生成的默认通路(=pathways[0])那套通路特异图，作为下拉面板的初始内容
+  const initialPwPlots = (plotPaths
+    ? Object.fromEntries(Object.entries(plotPaths).filter(([k]) => isPwSpecificKey(k)))
+    : {}) as Record<string, string>;
+  const hasInitialPw = Object.keys(initialPwPlots).length > 0;
   const [pwSel, setPwSel] = useState<string>(pathways[0] ?? "");
   const [pwLoading, setPwLoading] = useState(false);
   const [pwError, setPwError] = useState<string | null>(null);
-  const [pwTaskId, setPwTaskId] = useState<string | null>(null);
-  const [pwName, setPwName] = useState<string>("");
-  const [pwPlots, setPwPlots] = useState<Record<string, string> | null>(null);
+  const [pwTaskId, setPwTaskId] = useState<string | null>(hasInitialPw ? (taskId ?? null) : null);
+  const [pwName, setPwName] = useState<string>(hasInitialPw ? (pathways[0] ?? "") : "");
+  const [pwPlots, setPwPlots] = useState<Record<string, string> | null>(hasInitialPw ? initialPwPlots : null);
+  // cellchat 主网格排除通路特异图（避免与上方下拉面板重复）；其它步骤不变
+  const mainPlotEntries = plotPaths
+    ? Object.entries(plotPaths).filter(([k]) => !(stepId === "cellchat" && pathways.length > 0 && isPwSpecificKey(k)))
+    : [];
 
   const runPathway = async () => {
     if (!pwSel || !task) return;
@@ -2315,9 +2326,9 @@ function GenericStepResult({ data, stepId, taskId, task }: { data: Record<string
       </div>
 
       {/* 图表 Tab */}
-      {activeTab === "plots" && plotPaths && Object.keys(plotPaths).length > 0 && (
+      {activeTab === "plots" && mainPlotEntries.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {Object.entries(plotPaths).map(([name, path]) => (
+          {mainPlotEntries.map(([name, path]) => (
             <div key={name} className="rounded-lg border overflow-hidden" style={{ borderColor: "var(--clr-border)" }}>
               <div className="px-3 py-2 flex items-center justify-between" style={{ background: "var(--clr-bg-alt)", borderBottom: "1px solid var(--clr-border)" }}>
                 <span className="text-xs font-medium" style={{ color: "var(--clr-text)" }}>{name.replace(/_/g, " ")}</span>
@@ -2341,7 +2352,7 @@ function GenericStepResult({ data, stepId, taskId, task }: { data: Record<string
         </div>
       )}
 
-      {activeTab === "plots" && (!plotPaths || Object.keys(plotPaths).length === 0) && (
+      {activeTab === "plots" && mainPlotEntries.length === 0 && (
         <div className="text-center py-6" style={{ color: "var(--clr-text-faint)" }}>
           <p className="text-xs">无图表输出</p>
         </div>
