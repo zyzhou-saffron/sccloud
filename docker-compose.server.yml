@@ -106,6 +106,25 @@ services:
       timeout: 60s
       retries: 3
 
+  # ---- 重任务 worker (#42 Phase2 M1: Redis 队列 + 独立可 kill 子进程) ----
+  # 同镜像，跑 worker.R：BRPOP scc:heavyqueue → spawn run_job.R(独立进程) → 可 kill。
+  # 起 N 份即 N 并发(M2)；M1 先起 1 份验证基础设施。改 WORKER_ID 区分。
+  r-engine-worker:
+    image: sccloud-r-engine
+    command: ["Rscript", "/app/worker.R"]
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      REDIS_URL: "redis://127.0.0.1:6380/0"
+      WORKER_ID: "w1"
+    volumes:
+      - ${PROJECTS_ROOT:-/data/projects}:${PROJECTS_ROOT:-/data/projects}
+      - ./r-engine/data:/app/data
+      - ./r-engine/run_job.R:/app/run_job.R:ro
+      - ./r-engine/worker.R:/app/worker.R:ro
+      - ./r-engine/R:/app/R:ro
+    mem_limit: 64g
+
   # ---- 数据库 (MariaDB :3307) ----
   db:
     image: mariadb:11
