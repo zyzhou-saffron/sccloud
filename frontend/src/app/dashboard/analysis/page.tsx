@@ -8,7 +8,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useEffect, useRef, useState, type ComponentType } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState, type ComponentType, type MouseEvent } from "react";
 import ProjectSelector from "../../components/ProjectSelector";
 import ProgressTracker from "../../components/ProgressTracker";
 import ResultViewer from "../../components/ResultViewer";
@@ -318,6 +318,46 @@ function AnalysisPageContent() {
     }
   };
 
+  /** 导出项目：打包下载全部分析结果。供 PipelineForm 在「历史记录」旁的导出按钮调用。 */
+  const handleExportProject = async (e: MouseEvent<HTMLButtonElement>) => {
+    if (!project) return;
+    const btn = e.currentTarget;
+    const origHTML = btn.innerHTML;
+    btn.innerHTML = '<span class="w-3 h-3 border-2 border-t-transparent rounded-full animate-spin"></span> 打包中...';
+    btn.disabled = true;
+    try {
+      const dlUrl = `/api/projects/${project.id}/download`;
+      // blob 下载不能走 apiFetch(它只解析 JSON)，手动加一次 401 刷新重试
+      let res = await fetch(dlUrl, { headers: { Authorization: `Bearer ${getAuthToken() || ""}` } });
+      if (res.status === 401) {
+        const nt = await tryRefresh();
+        if (nt) res = await fetch(dlUrl, { headers: { Authorization: `Bearer ${nt}` } });
+      }
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`HTTP ${res.status}: ${errText.slice(0, 100)}`);
+      }
+      const blob = await res.blob();
+      if (blob.size === 0) throw new Error("打包文件为空，项目可能没有结果文件");
+      const now = new Date();
+      const ts = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,"0")}${String(now.getDate()).padStart(2,"0")}`;
+      const filename = `${project.name}-${ts}.zip`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch(err) {
+      alert("打包下载失败: " + (err instanceof Error ? err.message : ""));
+    } finally {
+      btn.innerHTML = origHTML;
+      btn.disabled = false;
+    }
+  };
+
   const handleSubmit = async () => {
     if (!project) { setError("请先选择项目"); return; }
     setError(null); setSubmitting(true);
@@ -450,53 +490,6 @@ function AnalysisPageContent() {
           scRNA分析
         </h1>
         <div className="flex items-center gap-3">
-          {project && (
-            <button
-              onClick={async (e) => {
-                const btn = e.currentTarget;
-                const origHTML = btn.innerHTML;
-                btn.innerHTML = '<span class="w-3 h-3 border-2 border-t-transparent rounded-full animate-spin"></span> 打包中...';
-                btn.disabled = true;
-                try {
-                  const dlUrl = `/api/projects/${project.id}/download`;
-                  // blob 下载不能走 apiFetch(它只解析 JSON)，手动加一次 401 刷新重试
-                  let res = await fetch(dlUrl, { headers: { Authorization: `Bearer ${getAuthToken() || ""}` } });
-                  if (res.status === 401) {
-                    const nt = await tryRefresh();
-                    if (nt) res = await fetch(dlUrl, { headers: { Authorization: `Bearer ${nt}` } });
-                  }
-                  if (!res.ok) {
-                    const errText = await res.text();
-                    throw new Error(`HTTP ${res.status}: ${errText.slice(0, 100)}`);
-                  }
-                  const blob = await res.blob();
-                  if (blob.size === 0) throw new Error("打包文件为空，项目可能没有结果文件");
-                  const now = new Date();
-                  const ts = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,"0")}${String(now.getDate()).padStart(2,"0")}`;
-                  const filename = `${project.name}-${ts}.zip`;
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement("a");
-                  a.href = url;
-                  a.download = filename;
-                  document.body.appendChild(a);
-                  a.click();
-                  document.body.removeChild(a);
-                  setTimeout(() => URL.revokeObjectURL(url), 1000);
-                } catch(e) {
-                  alert("打包下载失败: " + (e instanceof Error ? e.message : ""));
-                } finally {
-                  btn.innerHTML = origHTML;
-                  btn.disabled = false;
-                }
-              }}
-              className="inline-flex items-center gap-1 px-3 py-1.5 rounded text-xs font-medium transition-all hover:shadow-sm shrink-0"
-              style={{ border: "1px solid var(--clr-border)", color: "var(--clr-amber-dark)", background: "rgba(200,96,25,0.04)" }}
-              title="打包下载全部分析结果"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-              导出项目
-            </button>
-          )}
           <div className="w-72">
             <ProjectSelector
               selectedId={project?.id ?? (initialProjectId ? Number(initialProjectId) : null)}
@@ -555,6 +548,7 @@ function AnalysisPageContent() {
               onUploadedFilesChange={setUploadedFiles}
               sampleGroups={sampleGroups}
               onSampleGroupsChange={setSampleGroups}
+              onExportProject={handleExportProject}
             />
           ) : (
             <PipelineView
