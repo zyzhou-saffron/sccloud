@@ -2659,8 +2659,20 @@ function(req) {
 
   report(100, "CellChat 分析完成")
 
-  # 信号通路全集（供前端下拉按需切换出图）
-  all_pathways <- if (!is.null(cellchat)) cellchat@netP$pathways else character(0)
+  # 信号通路全集，按通讯总强度(netP$prob 各通路求和)降序，供前端下拉
+  all_pathways <- character(0)
+  if (!is.null(cellchat)) {
+    pw <- cellchat@netP$pathways
+    prob <- cellchat@netP$prob
+    if (!is.null(prob) && length(dim(prob)) == 3 && !is.null(dimnames(prob)[[3]])) {
+      strength <- apply(prob, 3, sum, na.rm = TRUE)   # 按通路名命名的总强度
+      strength <- strength[names(strength) %in% pw]
+      sorted <- names(sort(strength, decreasing = TRUE))
+      all_pathways <- c(sorted, setdiff(pw, sorted))  # 无强度信息的兜底放末尾
+    } else {
+      all_pathways <- pw
+    }
+  }
 
   gc(verbose = FALSE)
   list(

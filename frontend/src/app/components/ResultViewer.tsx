@@ -2262,7 +2262,7 @@ function GenericStepResult({ data, stepId, taskId, task }: { data: Record<string
               {pwLoading ? "生成中…" : "展示该通路"}
             </button>
             <span className="text-[10px]" style={{ color: "var(--clr-text-faint)" }}>
-              共 {pathways.length} 条通路；切换后重出 热图 / 通路贡献 / 基因表达(小提琴·点图)
+              共 {pathways.length} 条通路
             </span>
           </div>
           {pwError && <div className="text-xs" style={{ color: "#D24B40" }}>出错：{pwError}</div>}
