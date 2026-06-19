@@ -48,9 +48,29 @@ async def call_r_engine(
     task.started_at = datetime.now(timezone.utc)
     db.commit()
 
+    # ── 选引擎(#42 Phase2)：快请求走 quick(8788)；重任务从 Redis 池借一个空闲重引擎(用完 finally 归还) ──
+    # BRPOP 原子取，两个并发任务绝不会拿到同一引擎；池空则阻塞排队；等不到则退化为默认引擎。
+    acquired_engine = None
+    pool_redis = None
+    if endpoint in QUICK_STEPS:
+        base_url = settings.r_engine_quick_url
+    else:
+        try:
+            import redis.asyncio as aioredis
+            pool_redis = aioredis.from_url(settings.redis_url)
+            popped = await pool_redis.brpop("scc:heavy_engines", timeout=int(settings.r_engine_timeout))
+            if popped:
+                ev = popped[1]
+                acquired_engine = ev.decode() if isinstance(ev, (bytes, bytearray)) else ev
+                base_url = acquired_engine
+                logger.info(f"[engine-pool] task={task.id} 借到引擎 {acquired_engine} for {endpoint}")
+            else:
+                base_url = settings.r_engine_url  # 等不到空闲引擎 → 退化为默认引擎
+        except Exception as e:
+            logger.warning(f"[engine-pool] 借引擎失败,退化为默认引擎: {e}")
+            base_url = settings.r_engine_url
+
     try:
-        # 快请求分流到独立 quick 引擎(8788)，其余走主引擎(8787) (#42)
-        base_url = settings.r_engine_quick_url if endpoint in QUICK_STEPS else settings.r_engine_url
         r_url = f"{base_url}/{endpoint}"
         effective_timeout = timeout or float(settings.r_engine_timeout)
         last_error = None
@@ -143,6 +163,19 @@ async def call_r_engine(
         task.completed_at = datetime.now(timezone.utc)
         db.commit()
         raise
+    finally:
+        # 归还引擎(无论成功/失败/异常)，避免引擎从池里漏掉 (#42 Phase2)
+        if acquired_engine and pool_redis is not None:
+            try:
+                await pool_redis.lpush("scc:heavy_engines", acquired_engine)
+                logger.info(f"[engine-pool] task={task.id} 归还引擎 {acquired_engine}")
+            except Exception:
+                pass
+        if pool_redis is not None:
+            try:
+                await pool_redis.aclose()
+            except Exception:
+                pass
 
 
 def create_task(
