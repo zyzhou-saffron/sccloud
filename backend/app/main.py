@@ -31,11 +31,32 @@ def _run_alembic_upgrade():
         logger.warning(f"[alembic] upgrade failed: {e}")
 
 
+async def _init_engine_pool():
+    """启动时把重任务引擎池(Redis list scc:heavy_engines)重置为配置的全部引擎 URL (#42 Phase2)。
+    backend 跑重任务时 BRPOP 借一个空闲引擎、用完 LPUSH 还回 → 并发度 = 池大小。"""
+    import redis.asyncio as aioredis
+    s = get_settings()
+    urls = [u.strip() for u in (s.r_engine_pool or "").split(",") if u.strip()]
+    if not urls:
+        return
+    try:
+        r = aioredis.from_url(s.redis_url)
+        async with r.pipeline(transaction=True) as pipe:
+            pipe.delete("scc:heavy_engines")
+            pipe.rpush("scc:heavy_engines", *urls)
+            await pipe.execute()
+        await r.aclose()
+        logger.info(f"[engine-pool] 重引擎池已初始化: {urls}")
+    except Exception as e:
+        logger.warning(f"[engine-pool] 初始化失败(退化为单引擎 r_engine_url): {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期 — 启动时执行迁移、创建数据库表并启动后台服务。"""
     _run_alembic_upgrade()
     Base.metadata.create_all(bind=engine)
+    await _init_engine_pool()
     # 启动 Redis → DB 进度同步器 (后台协程)
     syncer = ProgressSyncer()
     syncer_task = asyncio.create_task(syncer.run())
