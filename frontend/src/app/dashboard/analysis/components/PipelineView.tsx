@@ -36,6 +36,7 @@ const STATUS_DOT: Record<string, string> = {
   running: "bg-[#C86019] animate-pulse",
   completed: "bg-[#2D8A56]",
   failed: "bg-[#B85450]",
+  cancelled: "bg-[#B0AAA2]",
 };
 
 interface PipelineViewProps {
@@ -208,10 +209,12 @@ export default function PipelineView({ pipelineId, token, projectName }: Pipelin
     const step = STEPS.find(s => s.id === stepId)!;
     const subSteps = step.subSteps;
     const statuses = subSteps.map(id => {
-      if (pipeline.current_step === id) return "running";
+      // 仅当 pipeline 真在运行时 current_step 才算"运行中"; 取消/失败/暂停后取任务真实状态
+      if (pipeline.current_step === id && pipeline.status === "running") return "running";
       return taskMap.get(id)?.status || "pending";
     });
     if (statuses.includes("running")) return "running";
+    if (statuses.includes("cancelled")) return "cancelled";
     if (statuses.includes("failed")) return "failed";
     if (statuses.includes("pending")) return "pending";
     return "completed";
@@ -221,11 +224,11 @@ export default function PipelineView({ pipelineId, token, projectName }: Pipelin
   const clusterTask = taskMap.get("cluster");
   const reduceTask = taskMap.get("reduce");
   const clusterStatus = (() => {
-    if (pipeline.current_step === "cluster") return "running";
+    if (pipeline.current_step === "cluster" && pipeline.status === "running") return "running";
     return clusterTask?.status || "pending";
   })();
   const reduceStatus = (() => {
-    if (pipeline.current_step === "reduce") return "running";
+    if (pipeline.current_step === "reduce" && pipeline.status === "running") return "running";
     return reduceTask?.status || "pending";
   })();
   const rcCurrentTask = reduceClusterTab === "cluster" ? clusterTask : reduceTask;
@@ -414,8 +417,8 @@ export default function PipelineView({ pipelineId, token, projectName }: Pipelin
                 </span>
                 {(() => {
                   const st = getStepStatus(activeStep);
-                  const label = { completed: "已完成", running: "运行中", failed: "已失败", pending: "待执行" }[st] || "";
-                  const color = { completed: "#2D8A56", running: "var(--clr-amber)", failed: "var(--clr-danger)", pending: "var(--clr-text-muted)" }[st] || "";
+                  const label = { completed: "已完成", running: "运行中", failed: "已失败", pending: "待执行", cancelled: "已取消" }[st] || "";
+                  const color = { completed: "#2D8A56", running: "var(--clr-amber)", failed: "var(--clr-danger)", pending: "var(--clr-text-muted)", cancelled: "var(--clr-text-muted)" }[st] || "";
                   return <span className="text-xs" style={{ color }}>{label}</span>;
                 })()}
               </div>
@@ -507,6 +510,12 @@ export default function PipelineView({ pipelineId, token, projectName }: Pipelin
                     </div>
                   )}
 
+                  {rcCurrentStatus === "cancelled" && (
+                    <div className="text-center py-8" style={{ color: "var(--clr-text-muted)" }}>
+                      <p className="text-xs">该步骤已取消</p>
+                    </div>
+                  )}
+
                   {rcCurrentStatus === "pending" && (
                     <div className="text-center py-8" style={{ color: "var(--clr-text-faint)" }}>
                       <p className="text-xs">等待执行</p>
@@ -522,7 +531,8 @@ export default function PipelineView({ pipelineId, token, projectName }: Pipelin
                 const subStatus = (() => {
                   if (subTask?.status === "failed") return "failed";
                   if (subTask?.status === "completed") return "completed";
-                  if (pipeline.current_step === subId) return "running";
+                  if (subTask?.status === "cancelled") return "cancelled";
+                  if (pipeline.current_step === subId && pipeline.status === "running") return "running";
                   return "pending";
                 })();
 
@@ -531,8 +541,8 @@ export default function PipelineView({ pipelineId, token, projectName }: Pipelin
                     {activeStepDef.subSteps.length > 1 && (
                       <div className="flex items-center gap-2 mb-3">
                         <span className="text-xs font-semibold" style={{ color: "var(--clr-amber-dark)" }}>{subLabel}</span>
-                        <span className="text-[10px]" style={{ color: { completed: "#2D8A56", running: "var(--clr-amber)", failed: "var(--clr-danger)", pending: "var(--clr-text-muted)" }[subStatus] || "" }}>
-                          {{ completed: "已完成", running: "运行中", failed: "已失败", pending: "待执行" }[subStatus] || ""}
+                        <span className="text-[10px]" style={{ color: { completed: "#2D8A56", running: "var(--clr-amber)", failed: "var(--clr-danger)", pending: "var(--clr-text-muted)", cancelled: "var(--clr-text-muted)" }[subStatus] || "" }}>
+                          {{ completed: "已完成", running: "运行中", failed: "已失败", pending: "待执行", cancelled: "已取消" }[subStatus] || ""}
                         </span>
                       </div>
                     )}
@@ -563,6 +573,13 @@ export default function PipelineView({ pipelineId, token, projectName }: Pipelin
                           <div className="h-full rounded-full bg-gradient-to-r from-[#C86019] to-[#E07828] transition-all duration-500" style={{ width: "2%" }} />
                         </div>
                         <p className="text-xs" style={{ color: "var(--clr-text-muted)" }}>正在初始化...</p>
+                      </div>
+                    )}
+
+                    {/* 已取消 */}
+                    {subStatus === "cancelled" && (
+                      <div className="text-center py-8" style={{ color: "var(--clr-text-muted)" }}>
+                        <p className="text-xs">该步骤已取消</p>
                       </div>
                     )}
 
