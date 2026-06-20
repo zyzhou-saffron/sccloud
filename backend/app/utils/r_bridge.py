@@ -42,6 +42,7 @@ async def call_r_engine(
     - 新: httpx.AsyncClient → 非阻塞，其他用户正常操作
     """
     settings = get_settings()
+    task_id = str(task.id)
 
     # 更新任务状态
     task.status = "running"
@@ -99,29 +100,53 @@ async def call_r_engine(
             except Exception:
                 pass  # marker 注入失败不影响主流程
 
-        # 更新任务: 完成
-        task.status = "completed"
-        task.progress = 100
-        task.progress_message = "✅ 分析完成"
-        # result_path 优先取 R 引擎返回值，否则用保存的 JSON 文件路径
-        task.result_path = (result.get("result_path") if isinstance(result, dict) else None) or result_data_path
-        task.completed_at = datetime.now(timezone.utc)
-        db.commit()
-
+        # 更新任务: 完成。
+        # ⚠️ 重任务在队列里阻塞等待了分钟级，本协程持有的 db 连接此间可能已被 DB 端回收，
+        # 直接用它 commit 会卡死(实测 commit 不返回)。故收尾改用全新 session(借新连接, pre_ping 探活)，
+        # 与 ProgressSyncer 每次新建 session 能正常写库同理。
+        _result_path = (result.get("result_path") if isinstance(result, dict) else None) or result_data_path
+        _finalize_task(task_id, status="completed", progress=100,
+                       message="✅ 分析完成", result_path=_result_path)
         return result
 
     except Exception as e:
-        # 中途被 kill 的任务 _run_via_queue 已置 cancelled 并 commit；此处 refresh 后不覆盖成 failed。
+        # 同样用全新 session 收尾(队列长等待后原连接可能已失效)。中途被 kill 的任务已是 cancelled, 不覆盖。
+        _finalize_task(task_id, status="failed", error_msg=str(e)[:1000],
+                       skip_if_cancelled=True)
+        raise
+
+
+def _finalize_task(task_id, status, progress=None, message=None,
+                   result_path=None, error_msg=None, skip_if_cancelled=False):
+    """用**全新 session** 写任务终态。重任务收尾发生在队列分钟级等待之后, 原协程持有的连接可能已被
+    DB 端回收, 直接 commit 会卡死; 新 session 借新连接(经 pool_pre_ping 探活)即可可靠落库。"""
+    from app.db.models import SessionLocal
+    fdb = SessionLocal()
+    try:
+        t = fdb.query(Task).filter(Task.id == task_id).first()
+        if not t:
+            return
+        if skip_if_cancelled and t.status == "cancelled":
+            return
+        t.status = status
+        if progress is not None:
+            t.progress = progress
+        if message is not None:
+            t.progress_message = message
+        if result_path is not None:
+            t.result_path = result_path
+        if error_msg is not None:
+            t.error_msg = error_msg
+        t.completed_at = datetime.now(timezone.utc)
+        fdb.commit()
+    except Exception as e:
         try:
-            db.refresh(task)
+            fdb.rollback()
         except Exception:
             pass
-        if task.status != "cancelled":
-            task.status = "failed"
-            task.error_msg = str(e)[:1000]
-        task.completed_at = datetime.now(timezone.utc)
-        db.commit()
-        raise
+        logger.warning(f"[finalize] task={task_id} 写终态失败: {e}")
+    finally:
+        fdb.close()
 
 
 async def _post_http(
@@ -178,7 +203,8 @@ async def _run_via_queue(
     """
     import redis.asyncio as aioredis
 
-    r = aioredis.from_url(settings.redis_url)
+    # socket_timeout=None: 后端 redis.asyncio 默认对阻塞读有 5s 硬超时, 会把长 BRPOP 掐断 → 任务误判超时。
+    r = aioredis.from_url(settings.redis_url, socket_timeout=None)
     try:
         job = {
             "step": endpoint,
@@ -191,25 +217,8 @@ async def _run_via_queue(
         await r.lpush("scc:heavyqueue", json.dumps(job))
         logger.info(f"[queue] task={task.id} step={endpoint} 已入队, 等 worker 执行...")
 
-        # 后端 redis 阻塞读有 ~5s 硬超时(host 网络/库默认), 单个长 BRPOP 会被掐断 → 任务误判超时。
-        # 故用 <5s 的短窗 BRPOP 轮询到总超时; 偶发 TimeoutError 重连后继续。worker 端本就是同款循环。
-        import time as _time
-        result_key = f"scc:result:{task.id}"
-        deadline = _time.monotonic() + int(settings.r_engine_timeout)
-        popped = None
-        while _time.monotonic() < deadline:
-            try:
-                popped = await r.brpop(result_key, timeout=3)
-            except Exception as e:
-                logger.debug(f"[queue] task={task.id} brpop 短超时/抖动, 重连续等: {e}")
-                try:
-                    await r.aclose()
-                except Exception:
-                    pass
-                r = aioredis.from_url(settings.redis_url)
-                continue
-            if popped:
-                break
+        # 阻塞等结果; brpop 自身 timeout 控总时长, socket_timeout=None 保证不被 5s 掐断。
+        popped = await r.brpop(f"scc:result:{task.id}", timeout=int(settings.r_engine_timeout))
         if not popped:
             raise Exception("worker 超时无响应(可能无空闲 worker 或子进程卡死)")
         raw = popped[1]
@@ -224,11 +233,9 @@ async def _run_via_queue(
         return v[0] if isinstance(v, list) and v else str(v)
 
     if isinstance(result, dict):
-        # 被中途 kill: worker 回写 {status: cancelled} → 置 cancelled 并提交, 让上层 except 不覆盖成 failed
+        # 被中途 kill: worker 回写 {status: cancelled} → 置 cancelled(全新 session, 同收尾), 让上层不覆盖
         if result.get("status") == "cancelled":
-            task.status = "cancelled"
-            task.completed_at = datetime.now(timezone.utc)
-            db.commit()
+            _finalize_task(str(task.id), status="cancelled")
             raise Exception("任务已被取消")
         # worker 级失败(run_job 崩溃/OOM, 无结果文件) → {status: error, error: ...}
         if result.get("status") == "error":

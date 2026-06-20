@@ -38,6 +38,9 @@ def get_engine():
         pool_size=10,
         max_overflow=20,
         pool_recycle=3600,
+        # 重任务收尾 commit 发生在 ~分钟级队列等待之后, 期间连接闲置可能被 DB 端关闭;
+        # pre_ping 在借出连接时先 SELECT 1 探活, 失效则透明重连, 避免 commit 卡死在死连接上。
+        pool_pre_ping=True,
         echo=(settings.environment == "development"),
     )
 
