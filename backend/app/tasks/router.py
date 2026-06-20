@@ -595,13 +595,13 @@ async def cancel_task(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """取消任务 (仅 pending 状态可取消)。"""
+    """取消任务 (pending/running 均可取消; running 重任务通过 Redis 信号让 worker kill 子进程)。"""
     # 不检查 user_id 所有权 — task_id 是 UUID（不可猜测），guest token 续期会换用户
     task = db.query(Task).filter(Task.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
 
-    if task.status not in ("pending",):
+    if task.status not in ("pending", "running"):
         raise HTTPException(
             status_code=400,
             detail=f"当前状态 '{task.status}' 不可取消",
@@ -609,5 +609,17 @@ async def cancel_task(
 
     task.status = "cancelled"
     db.commit()
+
+    # 取消全链路 (#42 M3)：发 Redis kill 信号 → worker kill -9 run_job 子进程，立刻中止当前步。
+    try:
+        import redis.asyncio as aioredis
+        from app.config import get_settings
+        settings = get_settings()
+        r = aioredis.from_url(settings.redis_url)
+        await r.set(f"scc:cancel:{task.id}", "1", ex=int(settings.r_engine_timeout))
+        await r.aclose()
+    except Exception:
+        pass
+
     db.refresh(task)
     return task

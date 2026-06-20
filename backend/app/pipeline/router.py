@@ -356,21 +356,35 @@ async def cancel_pipeline(
             detail=f"当前 pipeline 状态 '{pipeline.status}' 不可取消",
         )
 
-    # 取消当前正在运行的 task
+    # 取消该 pipeline 下所有未结束的 task
     from app.db.models import Task
-    running_task = (
+    running_tasks = (
         db.query(Task)
         .filter(
             Task.pipeline_id == pipeline_id,
             Task.status.in_(["pending", "running"]),
         )
-        .first()
+        .all()
     )
-    if running_task:
-        running_task.status = "cancelled"
-        running_task.completed_at = datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc)
+    for t in running_tasks:
+        t.status = "cancelled"
+        t.completed_at = now
 
     pipeline.status = "cancelled"
     db.commit()
+
+    # ── 取消全链路 (#42 M3)：给重任务发 Redis kill 信号 → worker 轮询到即 kill -9 子进程，
+    #    run_job 正在跑的当前步立刻中止(不必等步骤跑完)。Redis 不可用不阻塞取消(DB 已置 cancelled)。──
+    try:
+        import redis.asyncio as aioredis
+        from app.config import get_settings
+        settings = get_settings()
+        r = aioredis.from_url(settings.redis_url)
+        for t in running_tasks:
+            await r.set(f"scc:cancel:{t.id}", "1", ex=int(settings.r_engine_timeout))
+        await r.aclose()
+    except Exception:
+        pass
 
     return {"status": "cancelled", "pipeline_id": pipeline_id}
