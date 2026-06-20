@@ -34,6 +34,21 @@ repeat {
   task_id <- spec$params$task_id %||% spec$task_id %||% "unknown"
   message("[worker ", worker_id, "] got task=", task_id, " step=", spec$step)
 
+  # ── 同项目并发写文件锁 (#42)：同一分析目录串行, 不同目录照常并行 ──
+  # 防多个 worker 同时往一个项目目录写 .rds/.json → 写花文件/读到半成品。
+  # SET NX 原子抢锁; 抢不到说明该目录有任务在跑 → 把 job 放回队首让 BRPOP 先处理别的项目, 稍后再试。
+  # 锁 TTL 120s, 监督循环里每秒续期 → 长任务不掉锁; worker 意外死亡则锁 ≤120s 自动过期, 不会锁死。
+  proj_path <- spec$project_path %||% spec$params$project_path %||% ""
+  lock_key  <- if (nzchar(proj_path)) paste0("scc:lock:", proj_path) else NULL
+  if (!is.null(lock_key)) {
+    got <- tryCatch(r$SET(lock_key, worker_id, "EX", "120", "NX"), error = function(e) NULL)
+    if (is.null(got)) {
+      tryCatch(r$LPUSH(QUEUE, job[[2]]), error = function(e) NULL)
+      Sys.sleep(0.5)
+      next
+    }
+  }
+
   spec_file  <- tempfile(fileext = ".json")
   result_out <- tempfile(fileext = ".result.json")
   pid_file   <- tempfile(fileext = ".pid")
@@ -61,6 +76,7 @@ repeat {
       system(paste("kill -9", pid), ignore.stderr = TRUE)
       cancelled <- TRUE; break
     }
+    if (!is.null(lock_key)) tryCatch(r$EXPIRE(lock_key, 120), error = function(e) NULL)  # 续锁
     Sys.sleep(1)
   }
 
@@ -75,6 +91,7 @@ repeat {
   }
   tryCatch(r$LPUSH(paste0("scc:result:", task_id), out), error = function(e) NULL)
   r$DEL(paste0("scc:pid:", task_id))
+  if (!is.null(lock_key)) tryCatch(r$DEL(lock_key), error = function(e) NULL)  # 释放目录锁
   message("[worker ", worker_id, "] task=", task_id, " 完成(cancelled=", cancelled, ")")
   unlink(c(spec_file, result_out, pid_file))
 }
