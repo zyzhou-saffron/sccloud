@@ -191,7 +191,25 @@ async def _run_via_queue(
         await r.lpush("scc:heavyqueue", json.dumps(job))
         logger.info(f"[queue] task={task.id} step={endpoint} 已入队, 等 worker 执行...")
 
-        popped = await r.brpop(f"scc:result:{task.id}", timeout=int(settings.r_engine_timeout))
+        # 后端 redis 阻塞读有 ~5s 硬超时(host 网络/库默认), 单个长 BRPOP 会被掐断 → 任务误判超时。
+        # 故用 <5s 的短窗 BRPOP 轮询到总超时; 偶发 TimeoutError 重连后继续。worker 端本就是同款循环。
+        import time as _time
+        result_key = f"scc:result:{task.id}"
+        deadline = _time.monotonic() + int(settings.r_engine_timeout)
+        popped = None
+        while _time.monotonic() < deadline:
+            try:
+                popped = await r.brpop(result_key, timeout=3)
+            except Exception as e:
+                logger.debug(f"[queue] task={task.id} brpop 短超时/抖动, 重连续等: {e}")
+                try:
+                    await r.aclose()
+                except Exception:
+                    pass
+                r = aioredis.from_url(settings.redis_url)
+                continue
+            if popped:
+                break
         if not popped:
             raise Exception("worker 超时无响应(可能无空闲 worker 或子进程卡死)")
         raw = popped[1]
