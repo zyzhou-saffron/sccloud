@@ -41,7 +41,8 @@ repeat {
   proj_path <- spec$project_path %||% spec$params$project_path %||% ""
   lock_key  <- if (nzchar(proj_path)) paste0("scc:lock:", proj_path) else NULL
   if (!is.null(lock_key)) {
-    got <- tryCatch(r$SET(lock_key, worker_id, "EX", "120", "NX"), error = function(e) NULL)
+    # 用底层 command() 发带 EX/NX 选项的 SET(redux 便捷 r$SET 不支持选项参数)。成功回 "OK", NX 失败回 NULL。
+    got <- tryCatch(r$command(list("SET", lock_key, worker_id, "EX", "120", "NX")), error = function(e) NULL)
     if (is.null(got)) {
       tryCatch(r$LPUSH(QUEUE, job[[2]]), error = function(e) NULL)
       Sys.sleep(0.5)
