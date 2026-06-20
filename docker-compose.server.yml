@@ -83,6 +83,70 @@ services:
       timeout: 60s
       retries: 3
 
+  # ---- R 计算引擎 — 快请求专用实例 (Plumber :8788, #42 重任务/快请求分流) ----
+  # 同镜像/同挂载；plot_markers / cellchat_pathway 等只读重出图走这里，永不被 inferCNV 等重任务堵
+  # command 覆盖端口为 8788（$$ 转义，避免 compose 把 $run 当变量插值）
+  r-engine-quick:
+    image: sccloud-r-engine
+    command: ["R", "-e", "plumber::plumb('plumber.R')$$run(host='0.0.0.0', port=8788)"]
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      REDIS_URL: "redis://127.0.0.1:6380/0"
+    volumes:
+      - ./backend:/app
+      - ${PROJECTS_ROOT:-/data/projects}:${PROJECTS_ROOT:-/data/projects}
+      - ./r-engine/data:/app/data
+      - ./r-engine/plumber.R:/app/plumber.R:ro
+      - ./r-engine/R:/app/R:ro
+    mem_limit: 32g
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8788/health"]
+      interval: 30s
+      timeout: 60s
+      retries: 3
+
+  # ---- 重任务引擎池成员 (#42 Phase2): 与 r-engine 同镜像/同端点, 仅端口不同 ----
+  # backend 从 Redis 池 scc:heavy_engines 借空闲引擎; 池含 8787/8791/8790 → 3 路并发。
+  # 加引擎只需再复制一份(改端口)并把 URL 加进 config.r_engine_pool。
+  r-engine-2:
+    image: sccloud-r-engine
+    command: ["R", "-e", "plumber::plumb('plumber.R')$$run(host='0.0.0.0', port=8791)"]
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      REDIS_URL: "redis://127.0.0.1:6380/0"
+    volumes:
+      - ${PROJECTS_ROOT:-/data/projects}:${PROJECTS_ROOT:-/data/projects}
+      - ./r-engine/data:/app/data
+      - ./r-engine/plumber.R:/app/plumber.R:ro
+      - ./r-engine/R:/app/R:ro
+    mem_limit: 128g
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8791/health"]
+      interval: 30s
+      timeout: 60s
+      retries: 3
+
+  r-engine-3:
+    image: sccloud-r-engine
+    command: ["R", "-e", "plumber::plumb('plumber.R')$$run(host='0.0.0.0', port=8790)"]
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      REDIS_URL: "redis://127.0.0.1:6380/0"
+    volumes:
+      - ${PROJECTS_ROOT:-/data/projects}:${PROJECTS_ROOT:-/data/projects}
+      - ./r-engine/data:/app/data
+      - ./r-engine/plumber.R:/app/plumber.R:ro
+      - ./r-engine/R:/app/R:ro
+    mem_limit: 128g
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8790/health"]
+      interval: 30s
+      timeout: 60s
+      retries: 3
+
   # ---- 数据库 (MariaDB :3307) ----
   db:
     image: mariadb:11
