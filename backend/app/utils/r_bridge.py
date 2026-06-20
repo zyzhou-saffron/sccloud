@@ -48,65 +48,19 @@ async def call_r_engine(
     task.started_at = datetime.now(timezone.utc)
     db.commit()
 
-    # ── 选引擎(#42 Phase2)：快请求走 quick(8788)；重任务从 Redis 池借一个空闲重引擎(用完 finally 归还) ──
-    # BRPOP 原子取，两个并发任务绝不会拿到同一引擎；池空则阻塞排队；等不到则退化为默认引擎。
-    acquired_engine = None
-    pool_redis = None
-    if endpoint in QUICK_STEPS:
-        base_url = settings.r_engine_quick_url
-    else:
-        try:
-            import redis.asyncio as aioredis
-            pool_redis = aioredis.from_url(settings.redis_url)
-            popped = await pool_redis.brpop("scc:heavy_engines", timeout=int(settings.r_engine_timeout))
-            if popped:
-                ev = popped[1]
-                acquired_engine = ev.decode() if isinstance(ev, (bytes, bytearray)) else ev
-                base_url = acquired_engine
-                logger.info(f"[engine-pool] task={task.id} 借到引擎 {acquired_engine} for {endpoint}")
-            else:
-                base_url = settings.r_engine_url  # 等不到空闲引擎 → 退化为默认引擎
-        except Exception as e:
-            logger.warning(f"[engine-pool] 借引擎失败,退化为默认引擎: {e}")
-            base_url = settings.r_engine_url
-
+    # ── 选执行路径(#42 Phase2 重构: 队列+worker 取代引擎池)──
+    #   快请求(plot_markers/cellchat_pathway): 直接 HTTP 调 quick 引擎(8788)，秒级返回。
+    #   重任务: 投进 Redis 队列 scc:heavyqueue → worker BRPOP → spawn 独立 run_job 进程
+    #           (用 pr$call 原地复用现有 plumber 端点) → 干净可 kill、算完即退、内存全回收。
+    #   并发度 = worker 副本数；结果不串台靠 scc:result:<task.id> 每任务独立键 + 各自协程 BRPOP。
     try:
-        r_url = f"{base_url}/{endpoint}"
-        effective_timeout = timeout or float(settings.r_engine_timeout)
-        last_error = None
+        if endpoint in QUICK_STEPS:
+            result = await _post_http(
+                settings.r_engine_quick_url, endpoint, payload, timeout, settings, task, db
+            )
+        else:
+            result = await _run_via_queue(endpoint, payload, task, db, settings)
 
-        for attempt in range(2):  # max 1 retry
-            try:
-                logger.info(f"[call_r_engine] {endpoint} attempt={attempt+1}, timeout={effective_timeout}s")
-                async with httpx.AsyncClient(
-                    timeout=httpx.Timeout(
-                        connect=10.0,
-                        read=effective_timeout,
-                        write=120.0,
-                        pool=10.0,
-                    )
-                ) as client:
-                    response = await client.post(r_url, json=payload)
-                break
-            except (httpx.ReadTimeout, httpx.RemoteProtocolError, httpx.ReadError) as e:
-                last_error = e
-                if attempt == 0:
-                    logger.warning(f"[call_r_engine] {endpoint} attempt {attempt+1} failed: {e}, retrying...")
-                    task.progress_message = "连接中断，正在重试..."
-                    db.commit()
-                    continue
-                raise
-
-        if response.status_code != 200:
-            # 尝试提取 R 引擎返回的原始错误消息
-            try:
-                err_body = response.json()
-                r_msg = err_body.get("error", response.text)
-            except Exception:
-                r_msg = response.text
-            raise Exception(r_msg)
-
-        result = response.json()
         if isinstance(result, list):
             # R jsonlite wraps single-element dicts as [{...}]; extract dict candidates
             dict_candidates = [item for item in result if isinstance(item, dict)]
@@ -157,25 +111,115 @@ async def call_r_engine(
         return result
 
     except Exception as e:
-        # 更新任务: 失败
-        task.status = "failed"
-        task.error_msg = str(e)[:1000]
+        # 中途被 kill 的任务 _run_via_queue 已置 cancelled 并 commit；此处 refresh 后不覆盖成 failed。
+        try:
+            db.refresh(task)
+        except Exception:
+            pass
+        if task.status != "cancelled":
+            task.status = "failed"
+            task.error_msg = str(e)[:1000]
         task.completed_at = datetime.now(timezone.utc)
         db.commit()
         raise
+
+
+async def _post_http(
+    base_url: str,
+    endpoint: str,
+    payload: dict,
+    timeout: float | None,
+    settings,
+    task: Task,
+    db: Session,
+) -> dict:
+    """直接 HTTP 调某个 R 引擎端点(quick 引擎/秒级请求用)，返回解析后的 JSON。"""
+    r_url = f"{base_url}/{endpoint}"
+    effective_timeout = timeout or float(settings.r_engine_timeout)
+    response = None
+    for attempt in range(2):  # max 1 retry
+        try:
+            logger.info(f"[call_r_engine] {endpoint} attempt={attempt+1}, timeout={effective_timeout}s")
+            async with httpx.AsyncClient(
+                timeout=httpx.Timeout(connect=10.0, read=effective_timeout, write=120.0, pool=10.0)
+            ) as client:
+                response = await client.post(r_url, json=payload)
+            break
+        except (httpx.ReadTimeout, httpx.RemoteProtocolError, httpx.ReadError) as e:
+            if attempt == 0:
+                logger.warning(f"[call_r_engine] {endpoint} attempt 1 failed: {e}, retrying...")
+                task.progress_message = "连接中断，正在重试..."
+                db.commit()
+                continue
+            raise
+
+    if response.status_code != 200:
+        try:
+            r_msg = response.json().get("error", response.text)
+        except Exception:
+            r_msg = response.text
+        raise Exception(r_msg)
+    return response.json()
+
+
+async def _run_via_queue(
+    endpoint: str,
+    payload: dict,
+    task: Task,
+    db: Session,
+    settings,
+) -> dict:
+    """把重任务投进 Redis 队列, 由 worker spawn 独立 run_job 进程(可 kill)执行, 阻塞等结果。(#42 Phase2)
+
+    约定键:
+      scc:heavyqueue       — 待办作业 JSON (LPUSH 入队 / worker BRPOP)
+      scc:result:<task.id> — 该任务结果 (worker LPUSH / 此处 BRPOP, 每任务独立键 → 不串台)
+      scc:cancel:<task.id> — 取消标志 (worker 轮询到即 kill -9 子进程; 由前端"停止"按钮 SET, M3 接)
+    """
+    import redis.asyncio as aioredis
+
+    r = aioredis.from_url(settings.redis_url)
+    try:
+        job = {
+            "step": endpoint,
+            "project_path": payload.get("project_path"),
+            "params": payload.get("params", {}),
+            "task_id": str(task.id),
+        }
+        # 清掉上一轮可能残留的取消标志/结果, 避免误判
+        await r.delete(f"scc:cancel:{task.id}", f"scc:result:{task.id}")
+        await r.lpush("scc:heavyqueue", json.dumps(job))
+        logger.info(f"[queue] task={task.id} step={endpoint} 已入队, 等 worker 执行...")
+
+        popped = await r.brpop(f"scc:result:{task.id}", timeout=int(settings.r_engine_timeout))
+        if not popped:
+            raise Exception("worker 超时无响应(可能无空闲 worker 或子进程卡死)")
+        raw = popped[1]
+        result = json.loads(raw.decode() if isinstance(raw, (bytes, bytearray)) else raw)
     finally:
-        # 归还引擎(无论成功/失败/异常)，避免引擎从池里漏掉 (#42 Phase2)
-        if acquired_engine and pool_redis is not None:
-            try:
-                await pool_redis.lpush("scc:heavy_engines", acquired_engine)
-                logger.info(f"[engine-pool] task={task.id} 归还引擎 {acquired_engine}")
-            except Exception:
-                pass
-        if pool_redis is not None:
-            try:
-                await pool_redis.aclose()
-            except Exception:
-                pass
+        try:
+            await r.aclose()
+        except Exception:
+            pass
+
+    def _msg(v):
+        return v[0] if isinstance(v, list) and v else str(v)
+
+    if isinstance(result, dict):
+        # 被中途 kill: worker 回写 {status: cancelled} → 置 cancelled 并提交, 让上层 except 不覆盖成 failed
+        if result.get("status") == "cancelled":
+            task.status = "cancelled"
+            task.completed_at = datetime.now(timezone.utc)
+            db.commit()
+            raise Exception("任务已被取消")
+        # worker 级失败(run_job 崩溃/OOM, 无结果文件) → {status: error, error: ...}
+        if result.get("status") == "error":
+            raise Exception(_msg(result.get("message") or result.get("error") or "worker 执行失败"))
+        # 端点抛错 → body 形如 {"error": "..."}(无 status); plumber 真实消息可能在 message
+        if "error" in result and "status" not in result:
+            raise Exception(_msg(result.get("message") or result.get("error")))
+
+    return result
 
 
 def create_task(

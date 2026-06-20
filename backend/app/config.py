@@ -28,8 +28,8 @@ class Settings(BaseSettings):
     r_engine_url: str = "http://localhost:8787"
     # 快请求专用引擎（plot_markers / cellchat_pathway 等只读重出图），避免被重任务(inferCNV 等)堵塞 (#42)
     r_engine_quick_url: str = "http://127.0.0.1:8788"
-    # 重任务引擎池(#42 Phase2)：逗号分隔的引擎 URL。backend 从 Redis 池借空闲引擎→并发=池大小。
-    r_engine_pool: str = "http://127.0.0.1:8787,http://127.0.0.1:8791,http://127.0.0.1:8790"
+    # 重任务(#42 Phase2)走 Redis 队列 scc:heavyqueue + worker(run_job 独立进程)，并发=worker 副本数，
+    # 不再用引擎池(已移除 r_engine_pool)。r_engine_url 仅留给少数直连调用(如 meta_csv 导出)。
     r_engine_timeout: int = 7200
 
     # ---- 文件存储 ----
