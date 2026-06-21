@@ -78,6 +78,12 @@ repeat {
       cancelled <- TRUE; break
     }
     if (!is.null(lock_key)) tryCatch(r$EXPIRE(lock_key, 120), error = function(e) NULL)  # 续锁
+    # 上报本容器实时内存(memory.current, 含 run_job 子进程) → 后端动态预算汇总 scc:wmem:*
+    mem <- tryCatch(suppressWarnings(readLines("/sys/fs/cgroup/memory.current", warn = FALSE)[1]),
+                    error = function(e) NA)
+    if (!is.na(mem) && nzchar(mem))
+      tryCatch(r$command(list("SET", paste0("scc:wmem:", task_id), mem, "EX", "15")),
+               error = function(e) NULL)
     Sys.sleep(1)
   }
 
@@ -92,6 +98,7 @@ repeat {
   }
   tryCatch(r$LPUSH(paste0("scc:result:", task_id), out), error = function(e) NULL)
   r$DEL(paste0("scc:pid:", task_id))
+  tryCatch(r$DEL(paste0("scc:wmem:", task_id)), error = function(e) NULL)  # 清实时内存上报
   if (!is.null(lock_key)) tryCatch(r$DEL(lock_key), error = function(e) NULL)  # 释放目录锁
   message("[worker ", worker_id, "] task=", task_id, " 完成(cancelled=", cancelled, ")")
   unlink(c(spec_file, result_out, pid_file))

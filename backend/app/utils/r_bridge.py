@@ -220,12 +220,13 @@ async def _run_via_queue(
         # 从总预算预约 weight(满则等 admission_wait_grace_sec 给前面任务腾位, 仍满 → 资源紧张)
         _dl = _t.monotonic() + settings.admission_wait_grace_sec
         while not await admission.try_reserve(
-                r, str(task.id), weight, settings.heavy_mem_budget_gb, settings.r_engine_timeout):
+                r, str(task.id), weight, settings, settings.r_engine_timeout):
             if _t.monotonic() >= _dl:
                 raise Exception("服务器资源紧张, 请稍后重试")
             await asyncio.sleep(3)
         reserved = True
-        logger.info(f"[admission] task={task.id} {endpoint} 预约 {weight}GB / 预算 {settings.heavy_mem_budget_gb}GB")
+        _bud = await admission.dynamic_budget_gb(r, settings)
+        logger.info(f"[admission] task={task.id} {endpoint} 预约 {weight}GB / 动态预算 {_bud:.0f}GB")
 
         job = {
             "step": endpoint,

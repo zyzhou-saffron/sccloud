@@ -1,7 +1,7 @@
 """
 重任务内存准入控制 (admission control, #42)。
 
-思路: 每个重任务按"估算峰值内存"从总预算 heavy_mem_budget_gb 里**预约**一份额度;
+思路: 每个重任务按"估算峰值内存"从**动态预算**(宿主 MemAvailable + 在跑重任务实占 − 余量)里**预约**一份额度;
 - 预约成功 → 入队执行, 结束时释放;
 - 预约不下(预算满) → 提交时回 503「服务器资源紧张, 请稍后重试」(而不是硬塞导致宿主 OOM);
 - 估算 > 单 worker 封顶 → 回 400「数据过大, 超单任务内存上限」(再多并发也跑不动, 早拒早好)。
@@ -27,8 +27,42 @@ import os
 
 logger = logging.getLogger(__name__)
 
-RESV_HASH = "scc:mem_resv"          # Redis hash: task_id -> 预约 GB
+RESV_HASH = "scc:mem_resv"          # Redis hash: task_id -> 预约峰值 GB
 ALIVE_FMT = "scc:resv_alive:{tid}"  # TTL 存活键; reaper 据此回收泄漏的预约
+WMEM_PREFIX = "scc:wmem:"           # worker 上报: scc:wmem:<task_id> = 任务容器实时 memory.current(bytes), 短 TTL 自清
+
+
+def host_mem_available_gb() -> float:
+    """宿主真实可用内存(GB)。backend 容器无 LXCFS, /proc/meminfo 即宿主内存, 反映含别人非-Docker 进程的真实空闲。"""
+    try:
+        with open("/proc/meminfo") as f:
+            for line in f:
+                if line.startswith("MemAvailable:"):
+                    return int(line.split()[1]) / 1024 / 1024  # KB → GB
+    except Exception:
+        pass
+    return 256.0  # 读不到 → 保守退化值
+
+
+async def heavy_actual_gb(r) -> float:
+    """在跑重任务的实际内存占用之和(GB)。worker 在监督循环里把各自 memory.current 写到 scc:wmem:*。"""
+    try:
+        keys = await r.keys(WMEM_PREFIX + "*")
+        if not keys:
+            return 0.0
+        vals = await r.mget(keys)
+        return sum(float(v) / 1024 / 1024 / 1024 for v in vals if v)  # bytes → GB
+    except Exception:
+        return 0.0
+
+
+async def dynamic_budget_gb(r, settings) -> float:
+    """动态总预算 = MemAvailable + 在跑重任务实占 − 安全余量。
+    加回"实占"是为了不和 MemAvailable 双重扣减(MemAvailable 已减过这些任务的当前占用, 而预约扣的是它们的峰值)。
+    净效果: 约束变成 sum(预约峰值) ≤ 宿主总内存 − 非重任务占用 − 余量, 既实时又防超订。"""
+    avail = host_mem_available_gb()
+    actual = await heavy_actual_gb(r)
+    return max(0.0, avail + actual - float(settings.heavy_mem_reserve_gb))
 
 # (base_gb, slope_gb_per_MB) — 过两实测点的直线
 _W = {
@@ -89,8 +123,9 @@ end
 """
 
 
-async def try_reserve(r, task_id: str, weight: float, budget: float, ttl: int) -> bool:
-    """原子地从预算预约 weight。成功返回 True 并落 TTL 存活键(防泄漏)。"""
+async def try_reserve(r, task_id: str, weight: float, settings, ttl: int) -> bool:
+    """原子地从**动态预算**预约 weight(峰值估算)。成功返回 True 并落 TTL 存活键(防泄漏)。"""
+    budget = await dynamic_budget_gb(r, settings)
     ok = await r.eval(_RESERVE_LUA, 1, RESV_HASH, str(weight), str(budget), str(task_id))
     if ok:
         try:
@@ -129,13 +164,14 @@ async def precheck(step: str, project_path: str | None, settings) -> tuple[bool,
         r = aioredis.from_url(settings.redis_url, socket_timeout=None)
         try:
             used = await current_reserved_gb(r)
+            budget = await dynamic_budget_gb(r, settings)
         finally:
             try:
                 await r.aclose()
             except Exception:
                 pass
-        if used + weight > settings.heavy_mem_budget_gb:
-            return False, 503, "服务器资源紧张, 请稍后重试(当前重任务内存预算已满)。"
+        if used + weight > budget:
+            return False, 503, "服务器资源紧张, 请稍后重试(当前可用内存不足以再起这个任务)。"
     except Exception as e:
         logger.warning(f"[admission] precheck redis 异常, 放行: {e}")
     return True, 0, ""
