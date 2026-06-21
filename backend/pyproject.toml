@@ -28,3 +28,11 @@ dev = [
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+# 只打包 app*(排除 tests), 否则 flat-layout 自动发现 app+tests 两个顶层包会报错
+include = ["app*"]
