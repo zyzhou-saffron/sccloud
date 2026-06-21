@@ -51,7 +51,15 @@ async def heavy_actual_gb(r) -> float:
         if not keys:
             return 0.0
         vals = await r.mget(keys)
-        return sum(float(v) / 1024 / 1024 / 1024 for v in vals if v)  # bytes → GB
+        total = 0.0
+        for v in vals:
+            if not v:
+                continue
+            try:
+                total += float(v.decode() if isinstance(v, (bytes, bytearray)) else v)
+            except (ValueError, AttributeError):
+                pass
+        return total / 1024 / 1024 / 1024  # bytes → GB
     except Exception:
         return 0.0
 
