@@ -1,0 +1,163 @@
+name: MiMo PR Review
+
+on:
+  pull_request_target:
+    types: [opened, reopened, ready_for_review, synchronize]
+
+concurrency:
+  group: mimo-pr-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  pr-review:
+    if: |
+      github.event.pull_request.draft == false &&
+      !endsWith(github.actor, '[bot]') &&
+      !contains(github.event.pull_request.labels.*.name, 'bot-skip')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Check existing bot review
+        id: check_bot
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const marker = "*scCloud Review Bot*";
+            const currentHeadSha = context.payload.pull_request.head.sha;
+            const reviews = await github.paginate(
+              github.rest.pulls.listReviews,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: context.payload.pull_request.number,
+                per_page: 100
+              }
+            );
+            const botReviews = reviews
+              .filter(r => (r.body || "").includes(marker) && r.user?.type === "Bot")
+              .sort((a, b) => new Date(b.submitted_at) - new Date(a.submitted_at));
+            const hasReviewForCurrentHead = botReviews.some(r => r.commit_id === currentHeadSha);
+            const latestBotReview = botReviews[0];
+            const isFollowUp = Boolean(latestBotReview?.commit_id && latestBotReview.commit_id !== currentHeadSha);
+
+            core.setOutput("current_head_sha", currentHeadSha);
+            core.setOutput("has_review", hasReviewForCurrentHead ? "true" : "false");
+            core.setOutput("is_follow_up", isFollowUp ? "true" : "false");
+            core.setOutput("latest_review_id", latestBotReview ? String(latestBotReview.id) : "");
+
+            if (hasReviewForCurrentHead) {
+              core.info(`Review already exists for ${currentHeadSha}; skipping.`);
+            }
+
+      - name: Checkout
+        if: steps.check_bot.outputs.has_review != 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: refs/pull/${{ github.event.pull_request.number }}/merge
+          fetch-depth: 0
+
+      - name: Fetch PR diff and context
+        if: steps.check_bot.outputs.has_review != 'true'
+        id: pr_context
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PR_NUMBER=${{ github.event.pull_request.number }}
+          REPO=${{ github.repository }}
+
+          gh pr view "$PR_NUMBER" -R "$REPO" --json number,title,body,author,additions,deletions,changedFiles > /tmp/pr_meta.json
+          gh pr diff "$PR_NUMBER" -R "$REPO" | head -c 80000 > /tmp/pr_diff.txt
+
+          if [ "${{ steps.check_bot.outputs.is_follow_up }}" = "true" ] && [ -n "${{ steps.check_bot.outputs.latest_review_id }}" ]; then
+            gh api "repos/$REPO/pulls/$PR_NUMBER/reviews/${{ steps.check_bot.outputs.latest_review_id }}" > /tmp/prev_review.json 2>/dev/null || true
+            gh api "repos/$REPO/pulls/$PR_NUMBER/reviews/${{ steps.check_bot.outputs.latest_review_id }}/comments" > /tmp/prev_comments.json 2>/dev/null || true
+          fi
+
+      - name: Call MiMo API for review
+        if: steps.check_bot.outputs.has_review != 'true'
+        id: mimo
+        env:
+          MIMO_API_KEY: ${{ secrets.MIMO_API_KEY }}
+          MIMO_BASE_URL: ${{ vars.MIMO_BASE_URL || 'https://token-plan-cn.xiaomimimo.com/anthropic' }}
+        run: |
+          PROMPT=$(cat .github/prompts/mimo-pr-review.md)
+          PR_META=$(cat /tmp/pr_meta.json)
+          PR_DIFF=$(cat /tmp/pr_diff.txt)
+
+          SYSTEM="You are a code review assistant. Follow the instructions in the prompt exactly."
+
+          USER_MSG="## PR Metadata
+          \`\`\`json
+          ${PR_META}
+          \`\`\`
+
+          ## PR Diff
+          \`\`\`diff
+          ${PR_DIFF}
+          \`\`\`
+
+          Review mode: $([ "${{ steps.check_bot.outputs.is_follow_up }}" = "true" ] && echo "follow-up after new commits" || echo "initial")
+
+          Current HEAD SHA: ${{ steps.check_bot.outputs.current_head_sha }}
+
+          Please review this PR following the instructions in the system prompt."
+
+          RESPONSE=$(curl -s -X POST "${MIMO_BASE_URL}/v1/messages" \
+            -H "Content-Type: application/json" \
+            -H "x-api-key: ${MIMO_API_KEY}" \
+            -H "anthropic-version: 2023-06-01" \
+            -d "$(jq -n \
+              --arg system "$PROMPT" \
+              --arg user "$USER_MSG" \
+              '{
+                model: "mimo-v2.5-pro",
+                max_tokens: 16000,
+                system: $system,
+                messages: [{role: "user", content: $user}]
+              }')")
+
+          REVIEW_TEXT=$(echo "$RESPONSE" | jq -r '.content[] | select(.type=="text") | .text' 2>/dev/null)
+
+          if [ -z "$REVIEW_TEXT" ] || [ "$REVIEW_TEXT" = "null" ]; then
+            echo "API call failed or returned empty response"
+            echo "$RESPONSE" | head -500
+            exit 1
+          fi
+
+          echo "$REVIEW_TEXT" > /tmp/review_text.md
+          echo "Review generated successfully ($(wc -c < /tmp/review_text.md) bytes)"
+
+      - name: Post review to PR
+        if: steps.check_bot.outputs.has_review != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PR_NUMBER=${{ github.event.pull_request.number }}
+          REPO=${{ github.repository }}
+          CURRENT_SHA=${{ steps.check_bot.outputs.current_head_sha }}
+
+          LIVE_SHA=$(gh pr view "$PR_NUMBER" -R "$REPO" --json headRefOid -q .headRefOid)
+          if [ "$LIVE_SHA" != "$CURRENT_SHA" ]; then
+            echo "PR head moved from $CURRENT_SHA to $LIVE_SHA; skip stale review."
+            exit 0
+          fi
+
+          REVIEW_BODY=$(cat /tmp/review_text.md)
+
+          PAYLOAD=$(jq -n \
+            --arg body "$REVIEW_BODY" \
+            --arg sha "$CURRENT_SHA" \
+            '{
+              event: "COMMENT",
+              commit_id: $sha,
+              body: $body
+            }')
+
+          echo "$PAYLOAD" | gh api "repos/$REPO/pulls/$PR_NUMBER/reviews" \
+            --method POST \
+            --input -
+
+          echo "Review posted successfully."
