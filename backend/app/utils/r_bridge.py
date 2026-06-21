@@ -225,7 +225,11 @@ async def _run_via_queue(
                 r, str(task.id), weight, settings, settings.r_engine_timeout):
             if _t.monotonic() >= _dl:
                 raise Exception("服务器资源紧张, 请稍后重试")
-            try:  # 预算暂满时给前端反馈, 别让用户以为卡死 (bot #64)
+            # 等预算期间用户点了"停止" → 立刻退出, 别傻等到 grace 超时 (bot #64)。
+            # cancel 端点先 commit DB=cancelled 再 SET scc:cancel, 故此键在即 DB 已 cancelled; 上层 except 保持 cancelled。
+            if await r.exists(f"scc:cancel:{task.id}"):
+                raise Exception("任务已被取消")
+            try:  # 预算暂满时给前端反馈, 别让用户以为卡死
                 task.progress_message = "排队等待内存资源..."
                 db.commit()
             except Exception:
