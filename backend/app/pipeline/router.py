@@ -400,7 +400,8 @@ async def cancel_pipeline(
         for t in running_tasks:
             await r.set(f"scc:cancel:{t.id}", "1", ex=int(settings.r_engine_timeout))
         await r.aclose()
-    except Exception:
-        pass
+    except Exception as e:
+        # Redis 不可用不阻塞取消(DB 已置 cancelled, 退化为步骤间停), 但别静默吞——留日志便于排查 (bot #64)
+        logger.warning(f"[cancel] pipeline={pipeline_id} 发送 Redis 取消信号失败: {e}")
 
     return {"status": "cancelled", "pipeline_id": pipeline_id}

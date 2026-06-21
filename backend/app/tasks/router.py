@@ -5,6 +5,7 @@ scCloud v2 — 任务管理路由
 """
 
 import asyncio
+import logging
 from datetime import datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File
@@ -15,6 +16,7 @@ from app.auth.deps import get_current_user
 from app.db.models import Project, Task, User, get_db
 from app.utils.r_bridge import call_r_engine, create_task
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/tasks", tags=["任务管理"])
 
 
@@ -626,8 +628,9 @@ async def cancel_task(
         r = aioredis.from_url(settings.redis_url)
         await r.set(f"scc:cancel:{task.id}", "1", ex=int(settings.r_engine_timeout))
         await r.aclose()
-    except Exception:
-        pass
+    except Exception as e:
+        # Redis 不可用不阻塞取消(DB 已置 cancelled, 退化为步骤间停), 但别静默吞——留日志便于排查 (bot #64)
+        logger.warning(f"[cancel] 发送 Redis 取消信号失败 task={task.id}: {e}")
 
     db.refresh(task)
     return task
