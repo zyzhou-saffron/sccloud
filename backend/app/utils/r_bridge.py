@@ -105,8 +105,10 @@ async def call_r_engine(
         # 直接用它 commit 会卡死(实测 commit 不返回)。故收尾改用全新 session(借新连接, pre_ping 探活)，
         # 与 ProgressSyncer 每次新建 session 能正常写库同理。
         _result_path = (result.get("result_path") if isinstance(result, dict) else None) or result_data_path
+        # skip_if_cancelled: 用户点"停止"已置 DB=cancelled, 但 worker 若恰好正常算完会回 success →
+        # 这里不能把 cancelled 覆盖回 completed(bot #64 Major)。_finalize_task 新 session 重查到 cancelled 即跳过。
         _finalize_task(task_id, status="completed", progress=100,
-                       message="✅ 分析完成", result_path=_result_path)
+                       message="✅ 分析完成", result_path=_result_path, skip_if_cancelled=True)
         return result
 
     except Exception as e:

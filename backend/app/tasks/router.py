@@ -626,7 +626,7 @@ async def cancel_task(
         from app.config import get_settings
         settings = get_settings()
         r = aioredis.from_url(settings.redis_url)
-        await r.set(f"scc:cancel:{task.id}", "1", ex=int(settings.r_engine_timeout))
+        await r.set(f"scc:cancel:{task.id}", "1", ex=600)  # worker 每秒轮询, 10min 足够; 别留 2h (bot #64)
         await r.aclose()
     except Exception as e:
         # Redis 不可用不阻塞取消(DB 已置 cancelled, 退化为步骤间停), 但别静默吞——留日志便于排查 (bot #64)
