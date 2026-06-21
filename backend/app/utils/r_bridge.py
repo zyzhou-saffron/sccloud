@@ -202,10 +202,31 @@ async def _run_via_queue(
       scc:cancel:<task.id> — 取消标志 (worker 轮询到即 kill -9 子进程; 由前端"停止"按钮 SET, M3 接)
     """
     import redis.asyncio as aioredis
+    import asyncio
+    import time as _t
+    from app.utils import admission
+
+    # ── 内存准入(admission control) ── 估算权重: 超单 worker 封顶 → 直接拒(再多并发也跑不动)
+    weight = admission.estimate_weight_gb(endpoint, payload.get("project_path"))
+    if weight > settings.worker_mem_cap_gb:
+        raise Exception(
+            f"数据过大：{endpoint} 预计需 ~{weight:.0f}GB, 超过单任务内存上限 "
+            f"{settings.worker_mem_cap_gb}GB。请拆分数据, 或联系管理员调大 worker mem_limit。")
 
     # socket_timeout=None: 后端 redis.asyncio 默认对阻塞读有 5s 硬超时, 会把长 BRPOP 掐断 → 任务误判超时。
     r = aioredis.from_url(settings.redis_url, socket_timeout=None)
+    reserved = False
     try:
+        # 从总预算预约 weight(满则等 admission_wait_grace_sec 给前面任务腾位, 仍满 → 资源紧张)
+        _dl = _t.monotonic() + settings.admission_wait_grace_sec
+        while not await admission.try_reserve(
+                r, str(task.id), weight, settings.heavy_mem_budget_gb, settings.r_engine_timeout):
+            if _t.monotonic() >= _dl:
+                raise Exception("服务器资源紧张, 请稍后重试")
+            await asyncio.sleep(3)
+        reserved = True
+        logger.info(f"[admission] task={task.id} {endpoint} 预约 {weight}GB / 预算 {settings.heavy_mem_budget_gb}GB")
+
         job = {
             "step": endpoint,
             "project_path": payload.get("project_path"),
@@ -224,6 +245,8 @@ async def _run_via_queue(
         raw = popped[1]
         result = json.loads(raw.decode() if isinstance(raw, (bytes, bytearray)) else raw)
     finally:
+        if reserved:
+            await admission.release(r, str(task.id))
         try:
             await r.aclose()
         except Exception:

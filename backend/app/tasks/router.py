@@ -163,6 +163,14 @@ async def submit_task(
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
 
+    # 内存准入预检(#42): 预算满 → 503「资源紧张请稍后重试」; 数据过大超单任务上限 → 400。
+    # 权威预约在 call_r_engine 执行时做; 这里只为提交即时反馈弹窗。
+    from app.utils import admission
+    from app.config import get_settings as _get_settings
+    _ok, _code, _msg = await admission.precheck(req.step, project.storage_path, _get_settings())
+    if not _ok:
+        raise HTTPException(status_code=_code, detail=_msg)
+
     # 检查是否有同步骤的进行中任务
     # plot_markers / cellchat_pathway 是只读可视化，允许多参数并发；其他步骤保持互斥
     if req.step in ("plot_markers", "cellchat_pathway"):

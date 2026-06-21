@@ -42,9 +42,33 @@ async def lifespan(app: FastAPI):
     syncer_task = asyncio.create_task(syncer.run())
     # 启动数据清理服务 (后台协程)
     cleanup_task = asyncio.create_task(data_cleanup.run())
+    # 启动内存预约回收器 (#42 admission): 回收后端崩溃泄漏的预约
+    reaper_task = asyncio.create_task(_reservation_reaper())
     yield
     syncer_task.cancel()
     cleanup_task.cancel()
+    reaper_task.cancel()
+
+
+async def _reservation_reaper():
+    """每 60s 回收存活键已过期的内存预约(防后端崩溃后预算永久漏占)。"""
+    import redis.asyncio as aioredis
+    from app.utils import admission
+    s = get_settings()
+    while True:
+        try:
+            await asyncio.sleep(60)
+            r = aioredis.from_url(s.redis_url, socket_timeout=None)
+            try:
+                n = await admission.reap_stale(r)
+                if n:
+                    logger.info(f"[admission] reaper 回收 {n} 个泄漏预约")
+            finally:
+                await r.aclose()
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.warning(f"[admission] reaper 异常: {e}")
 
 
 # ===== 创建应用 =====

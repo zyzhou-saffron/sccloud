@@ -32,6 +32,12 @@ class Settings(BaseSettings):
     # 不再用引擎池(已移除 r_engine_pool)。r_engine_url 仅留给少数直连调用(如 meta_csv 导出)。
     r_engine_timeout: int = 7200
 
+    # ---- 重任务内存准入(admission control, #42) ----
+    # 重任务按估算内存权重从总预算里"预约"; 预算满则提交时拒("资源紧张请稍后重试"), 防止并发把 502GB 宿主 OOM。
+    heavy_mem_budget_gb: int = 420   # 给重任务的总内存预算(502 宿主 − OS/DB/引擎 余量)
+    worker_mem_cap_gb: int = 64      # 单 worker 封顶; 估算 > 此值的任务直接拒("数据过大")
+    admission_wait_grace_sec: int = 180  # 预算暂满时等待多久再放弃(给排在前面的任务腾出空间)
+
     # ---- 文件存储 ----
     projects_root: str = "/data/projects"
     max_upload_size_gb: int = 30

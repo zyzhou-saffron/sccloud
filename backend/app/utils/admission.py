@@ -1,0 +1,157 @@
+"""
+重任务内存准入控制 (admission control, #42)。
+
+思路: 每个重任务按"估算峰值内存"从总预算 heavy_mem_budget_gb 里**预约**一份额度;
+- 预约成功 → 入队执行, 结束时释放;
+- 预约不下(预算满) → 提交时回 503「服务器资源紧张, 请稍后重试」(而不是硬塞导致宿主 OOM);
+- 估算 > 单 worker 封顶 → 回 400「数据过大, 超单任务内存上限」(再多并发也跑不动, 早拒早好)。
+
+估算权重按 3.6MB / 80MB 两点实测标定的线性模型 weight = (base + slope×上传数据MB) × 安全系数。
+真实峰值(GB)实测:
+  step       3.6MB   80MB
+  qc          1.5     2.8
+  normalize   2.1    30.7   ← SCT 大数据内存大户
+  reduce      1.5     7.5
+  cluster     1.6     8.2
+  annotate    3.3     9.4
+  markers     2.0    11.6
+  enrich      3.7     3.8
+  monocle     5.0   >63(OOM)  ← 大数据最凶
+  cellchat    1.8     7.3
+  wgcna       3.2    10.0
+  infercnv   11.0     (标定中, 暂用保守值)
+"""
+import glob
+import logging
+import os
+
+logger = logging.getLogger(__name__)
+
+RESV_HASH = "scc:mem_resv"          # Redis hash: task_id -> 预约 GB
+ALIVE_FMT = "scc:resv_alive:{tid}"  # TTL 存活键; reaper 据此回收泄漏的预约
+
+# (base_gb, slope_gb_per_MB) — 过两实测点的直线
+_W = {
+    "qc":        (1.44, 0.017),
+    "normalize": (0.76, 0.374),
+    "reduce":    (1.23, 0.079),
+    "cluster":   (1.33, 0.086),
+    "annotate":  (3.02, 0.080),
+    "markers":   (1.50, 0.126),
+    "enrich":    (3.66, 0.002),
+    "monocle":   (2.20, 0.900),   # OOM 截尾, slope 取保守
+    "cellchat":  (1.52, 0.073),
+    "wgcna":     (2.85, 0.089),
+    "infercnv":  (7.00, 1.000),   # 标定中, 取陡保守值
+    # 其余轻量子步骤
+    "markers_pairwise": (1.5, 0.13),
+    "subset_cluster":   (1.3, 0.09),
+    "merge_celltypes":  (1.3, 0.05),
+    "marker_expr":      (1.0, 0.02),
+    "convert":          (1.0, 0.05),
+}
+_DEFAULT = (4.0, 0.4)
+_SAFETY = 1.25
+
+
+def _input_mb(project_path: str) -> float:
+    """用上传的原始数据大小(MB)作为数据规模(细胞数)的代理。退化用项目目录里最大 rds。"""
+    try:
+        up = glob.glob(os.path.join(project_path, "_uploaded", "*"))
+        cands = [f for f in up if os.path.isfile(f)]
+        if not cands:
+            cands = glob.glob(os.path.join(project_path, "*.rds"))
+        if not cands:
+            return 50.0
+        return max(os.path.getsize(f) for f in cands) / 1e6
+    except Exception:
+        return 50.0
+
+
+def estimate_weight_gb(step: str, project_path: str | None) -> float:
+    """估算某步骤在该项目数据上的峰值内存(GB), 用于预算预约。"""
+    base, slope = _W.get(step, _DEFAULT)
+    mb = _input_mb(project_path) if project_path else 50.0
+    return round(max(2.0, (base + slope * mb) * _SAFETY), 1)
+
+
+# 原子预约: 累加 hash 现有预约, 容得下才 HSET 并返回 1
+_RESERVE_LUA = """
+local sum = 0
+for _, v in ipairs(redis.call('HVALS', KEYS[1])) do sum = sum + tonumber(v) end
+local w = tonumber(ARGV[1]); local budget = tonumber(ARGV[2])
+if sum + w <= budget then
+  redis.call('HSET', KEYS[1], ARGV[3], w)
+  return 1
+else
+  return 0
+end
+"""
+
+
+async def try_reserve(r, task_id: str, weight: float, budget: float, ttl: int) -> bool:
+    """原子地从预算预约 weight。成功返回 True 并落 TTL 存活键(防泄漏)。"""
+    ok = await r.eval(_RESERVE_LUA, 1, RESV_HASH, str(weight), str(budget), str(task_id))
+    if ok:
+        try:
+            await r.set(ALIVE_FMT.format(tid=task_id), "1", ex=ttl)
+        except Exception:
+            pass
+    return bool(ok)
+
+
+async def release(r, task_id: str) -> None:
+    try:
+        await r.hdel(RESV_HASH, str(task_id))
+        await r.delete(ALIVE_FMT.format(tid=task_id))
+    except Exception:
+        pass
+
+
+async def current_reserved_gb(r) -> float:
+    try:
+        vals = await r.hvals(RESV_HASH)
+        return sum(float(v) for v in vals)
+    except Exception:
+        return 0.0
+
+
+async def precheck(step: str, project_path: str | None, settings) -> tuple[bool, int, str]:
+    """提交时建议性预检(不预约, 仅快速失败给前端弹窗)。返回 (ok, http_code, msg)。"""
+    if step in ("plot_markers", "cellchat_pathway"):  # quick 步骤不走预算
+        return True, 0, ""
+    weight = estimate_weight_gb(step, project_path)
+    if weight > settings.worker_mem_cap_gb:
+        return False, 400, (f"数据过大：该步骤预计需 ~{weight:.0f}GB, 超过单任务内存上限 "
+                            f"{settings.worker_mem_cap_gb}GB。请拆分数据或联系管理员调大上限。")
+    try:
+        import redis.asyncio as aioredis
+        r = aioredis.from_url(settings.redis_url, socket_timeout=None)
+        try:
+            used = await current_reserved_gb(r)
+        finally:
+            try:
+                await r.aclose()
+            except Exception:
+                pass
+        if used + weight > settings.heavy_mem_budget_gb:
+            return False, 503, "服务器资源紧张, 请稍后重试(当前重任务内存预算已满)。"
+    except Exception as e:
+        logger.warning(f"[admission] precheck redis 异常, 放行: {e}")
+    return True, 0, ""
+
+
+async def reap_stale(r) -> int:
+    """回收存活键已过期(后端崩溃泄漏)的预约。供后台 reaper 定期调用。"""
+    n = 0
+    try:
+        fields = await r.hkeys(RESV_HASH)
+        for f in fields:
+            tid = f.decode() if isinstance(f, (bytes, bytearray)) else f
+            alive = await r.exists(ALIVE_FMT.format(tid=tid))
+            if not alive:
+                await r.hdel(RESV_HASH, tid)
+                n += 1
+    except Exception:
+        pass
+    return n

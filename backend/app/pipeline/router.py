@@ -116,6 +116,22 @@ async def create_pipeline(
         if not project_id or not isinstance(params, dict):
             raise HTTPException(status_code=400, detail="Missing project_id or params")
 
+        # 内存准入预检(#42): 若全流程里任一步骤的估算内存 > 单任务上限, 早拒(否则会跑到一半 OOM 失败)。
+        from app.db.models import Project as _Project
+        from app.utils import admission
+        from app.config import get_settings as _get_settings
+        _proj = db.query(_Project).filter(_Project.id == project_id).first()
+        if _proj and _proj.storage_path:
+            _settings = _get_settings()
+            _enabled = set(params.get("enabled_steps", [])) | {"qc", "normalize", "reduce", "cluster", "annotate"}
+            for _st in _enabled:
+                _w = admission.estimate_weight_gb(_st, _proj.storage_path)
+                if _w > _settings.worker_mem_cap_gb:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=(f"数据过大：全流程 {_st} 步骤预计需 ~{_w:.0f}GB, 超过单任务内存上限 "
+                                f"{_settings.worker_mem_cap_gb}GB。请拆分数据或联系管理员调大上限。"))
+
         # 检查项目权限（简化版本，实际应该更复杂）
         # 这里假设 user_id 等于当前 token 的 user_id
 
