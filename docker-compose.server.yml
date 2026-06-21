@@ -138,7 +138,9 @@ services:
       - ./r-engine/worker.R:/app/worker.R:ro
       - ./r-engine/plumber.R:/app/plumber.R:ro
       - ./r-engine/R:/app/R:ro
-    mem_limit: 128g
+    # 实测全流程单步峰值: 常规步骤 1.5-5GB、inferCNV 最高 ~11GB(小数据)。64g 封顶对当前数据
+    # 绰绰有余且 8×64=512 不会拖垮 502GB 宿主(实际占用远低于封顶); 超大数据集的 inferCNV 另议(admission)。
+    mem_limit: 64g
     healthcheck:
       disable: true
 
