@@ -18,20 +18,22 @@ scCloud v2 is a single-cell RNA-seq cloud analysis platform (an 8-step Seurat pi
 - `docker-compose.server.yml` — full stack (nginx + frontend + backend + r-engine(+quick) + N workers + MariaDB + Redis), all `network_mode: host`.
 - `nginx/` — reverse proxy.
 
-Key docs: `README.md`, `CLAUDE.md`.
+(`README.md` / `CLAUDE.md` exist in the repo but are NOT provided to you — review from the diff only.)
 
 **Conventions worth knowing:** heavy tasks go through a Redis queue (`scc:heavyqueue`) to ephemeral `run_job.R` subprocesses (killable, memory-isolated); memory admission control reserves an estimated weight from a dynamic budget; project analysis data lives on NFS, not in the repo.
 
 ## Task
 
-1. **Load context**: read `README.md`/`CLAUDE.md` first, then only the source files referenced in the diff.
-2. **Determine review mode**: `initial` when no prior Bot review exists for another commit, otherwise `follow-up after new commits`.
+You are given ONLY the PR diff and metadata in the user message. You have **no repository access, no file system, and no tools** — do NOT attempt to read files, fetch context, or emit any tool-call / function-call markup (e.g. `<tool_call>`, `<function=...>`). Review strictly from the provided diff; if you'd need a file you weren't given, say "Not in provided diff".
+
+1. **Determine review mode**: `initial` when no prior Bot review exists for another commit, otherwise `follow-up after new commits`.
 3. **Review the latest PR diff in full**: correctness, security, regressions, data loss, concurrency/races, performance, and maintainability. Pay attention to cross-language seams (Python↔R↔Redis), async/DB-session lifecycles, and Docker/compose changes.
 4. **Check tests**: note missing or inadequate coverage.
 5. **Respond** with an evidence-based review comment (no code changes).
 
 ## Response Guidelines
 
+- **Output**: produce ONLY the review text in the Response Format below — never tool calls, function-call XML, or attempts to read files.
 - **Findings first**: order by severity (Blocker/Major/Minor/Nit).
 - **Mode line**: summary must start with `Review mode: initial` or `Review mode: follow-up after new commits`.
 - **Evidence**: cite specific files and line numbers using `path:line`.
