@@ -21,11 +21,16 @@
   wgcna       3.2    10.0
   infercnv   11.0     (标定中, 暂用保守值)
 """
+import asyncio
 import glob
 import logging
 import os
 
 logger = logging.getLogger(__name__)
+
+# 串行化"算预算 + 原子预约": 后端单进程单事件循环, 这把锁消除 dynamic_budget 快照与 Lua eval
+# 之间的 TOCTOU(多协程同时看到够用各自预约 → 超订)。每次预约只是几次 Redis 往返, 锁持有极短。(bot #64)
+_reserve_lock = asyncio.Lock()
 
 RESV_HASH = "scc:mem_resv"          # Redis hash: task_id -> 预约峰值 GB
 ALIVE_FMT = "scc:resv_alive:{tid}"  # TTL 存活键; reaper 据此回收泄漏的预约
@@ -133,8 +138,9 @@ end
 
 async def try_reserve(r, task_id: str, weight: float, settings, ttl: int) -> bool:
     """原子地从**动态预算**预约 weight(峰值估算)。成功返回 True 并落 TTL 存活键(防泄漏)。"""
-    budget = await dynamic_budget_gb(r, settings)
-    ok = await r.eval(_RESERVE_LUA, 1, RESV_HASH, str(weight), str(budget), str(task_id))
+    async with _reserve_lock:  # 算预算+eval 整体串行, 防快照 TOCTOU 超订
+        budget = await dynamic_budget_gb(r, settings)
+        ok = await r.eval(_RESERVE_LUA, 1, RESV_HASH, str(weight), str(budget), str(task_id))
     if ok:
         try:
             await r.set(ALIVE_FMT.format(tid=task_id), "1", ex=ttl)

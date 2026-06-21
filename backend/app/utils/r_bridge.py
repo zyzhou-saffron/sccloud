@@ -225,6 +225,11 @@ async def _run_via_queue(
                 r, str(task.id), weight, settings, settings.r_engine_timeout):
             if _t.monotonic() >= _dl:
                 raise Exception("服务器资源紧张, 请稍后重试")
+            try:  # 预算暂满时给前端反馈, 别让用户以为卡死 (bot #64)
+                task.progress_message = "排队等待内存资源..."
+                db.commit()
+            except Exception:
+                pass
             await asyncio.sleep(3)
         reserved = True
         _bud = await admission.dynamic_budget_gb(r, settings)

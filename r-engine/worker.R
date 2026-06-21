@@ -71,7 +71,9 @@ repeat {
   # 监督
   cancelled <- FALSE
   while (pid_alive(pid)) {
-    flag <- tryCatch(r$GET(paste0("scc:cancel:", task_id)), error = function(e) NULL)
+    # Redis 断连时重连, 否则整段任务期间读不到 cancel、续不了目录锁(bot #64)。BRPOP 主循环也是这套。
+    flag <- tryCatch(r$GET(paste0("scc:cancel:", task_id)),
+                     error = function(e) { r <<- tryCatch(connect(), error = function(e2) r); NULL })
     if (!is.null(flag)) {
       message("[worker ", worker_id, "] CANCEL task=", task_id, " → kill -9 ", pid)
       system(paste("kill -9", pid), ignore.stderr = TRUE)
