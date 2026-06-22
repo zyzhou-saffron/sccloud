@@ -241,26 +241,25 @@ async function fetchTaskResult(taskId: string): Promise<Record<string, unknown> 
 // 不再需要显式点击加载图表按钮。
 
 // 切走再切回来时, 这些"按需子任务"(亚类提取 / 单簇特征分布图 / 双簇对比表)的结果只存在本地
-// state, 组件卸载即丢。此函数从后端找该 step 最近一次已完成任务 + 结果, 用于挂载时恢复展示。
-async function fetchLatestCompleted(
-  projectId: number,
-  step: string,
-): Promise<{ task: Task; result: Record<string, unknown> } | null> {
+// state, 组件卸载即丢。下面两个辅助函数 + 既有的 fetchTaskResult 用于挂载时从后端恢复:
+//   listCompletedTasks 一次拉全部已完成任务(每个组件只请求一次), latestOfStep 客户端挑最近一条。
+async function listCompletedTasks(projectId: number): Promise<Task[]> {
   try {
     const list = await apiFetch<{ tasks: Task[] }>(
       `/api/tasks?project_id=${projectId}&status=completed`,
     );
-    const latest = (list.tasks || [])
-      .filter((t) => t.step === step)
-      .sort(
-        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
-      )[0];
-    if (!latest) return null;
-    const result = await apiFetch<Record<string, unknown>>(`/api/tasks/${latest.id}/result`);
-    return { task: latest, result };
+    return list.tasks || [];
   } catch {
-    return null;
+    return [];
   }
+}
+
+function latestOfStep(tasks: Task[], step: string): Task | undefined {
+  return tasks
+    .filter((t) => t.step === step)
+    .sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+    )[0];
 }
 
 // 把后端存的逗号分隔/数组形式的簇参数还原成字符串数组(用于恢复选择项)
@@ -634,15 +633,19 @@ function ClusterResult({ data, task }: { data: Record<string, unknown> | null; t
   const [subsetError, setSubsetError] = useState<string | null>(null);
   const [subsetTask, setSubsetTask] = useState<Task | null>(null);
 
-  // 挂载时恢复上次"细胞亚类提取"结果(切走再切回来不丢)
+  // 挂载时恢复上次"细胞亚类提取"结果(切走再切回来不丢)。
+  // 该功能只展示一个 RDS 下载链接(由 subsetTask.result_path 驱动), 没有结果数据可视化,
+  // 故只需最近一条已完成任务, 不必再取 /result。prev ?? 保证不覆盖用户本次新提取的任务。
   useEffect(() => {
     if (!task?.project_id) return;
     let alive = true;
-    fetchLatestCompleted(task.project_id, "subset_cluster").then((r) => {
-      if (!alive || !r) return;
-      setSubsetTask(r.task);
-      const cls = paramToList(r.task.params?.clusters);
-      if (cls.length) setSelectedClusters(cls);
+    listCompletedTasks(task.project_id).then((tasks) => {
+      if (!alive) return;
+      const t = latestOfStep(tasks, "subset_cluster");
+      if (!t) return;
+      setSubsetTask((prev) => prev ?? t);
+      const cls = paramToList(t.params?.clusters);
+      if (cls.length) setSelectedClusters((prev) => (prev.length ? prev : cls));
     });
     return () => { alive = false; };
   }, [task?.project_id]);
@@ -1234,29 +1237,42 @@ function MarkersResult({ task, data, taskCache, clusterLevels: parentClusterLeve
   }, [analyzedClusters]);
 
   // 挂载时恢复上次"单簇特征分布图"(plot_markers) / "双簇对比表"(markers_pairwise) 的计算结果,
-  // 切走再切回来不丢。找该 step 最近一次已完成任务 + 结果, 同时还原所选簇。
+  // 切走再切回来不丢。只拉一次已完成任务列表, 再分别取两个 step 的结果。
+  // 结果状态(tab3Data/tab4Data 等)用 prev ?? 守护: 若用户已现算出新结果则不被旧结果覆盖。
   useEffect(() => {
     if (!task?.project_id) return;
     let alive = true;
-    fetchLatestCompleted(task.project_id, "plot_markers").then((r) => {
-      if (!alive || !r) return;
-      setTab3TaskId(r.task.id);
-      setTab3Task(r.task);
-      setTab3Data(r.result);
-      const cl = paramToList(r.task.params?.cluster);
-      if (cl.length) setTab3Selected(cl);
-    });
-    fetchLatestCompleted(task.project_id, "markers_pairwise").then((r) => {
-      if (!alive || !r) return;
-      setTab4TaskId(r.task.id);
-      setTab4Task(r.task);
-      setTab4Data(((r.result.top_genes ?? []) as GeneRow[]));
-      const vd = r.result.volcano_data;
-      setTab4Volcano(Array.isArray(vd) && vd.length > 0 ? (vd as VolcanoPoint[]) : null);
-      const c1 = paramToList(r.task.params?.cluster_1);
-      const c2 = paramToList(r.task.params?.cluster_2);
-      if (c1.length) setTab4G1(c1);
-      if (c2.length) setTab4G2(c2);
+    listCompletedTasks(task.project_id).then(async (tasks) => {
+      if (!alive) return;
+      const pm = latestOfStep(tasks, "plot_markers");
+      if (pm) {
+        const res = await fetchTaskResult(pm.id);
+        if (alive && res) {
+          setTab3Data((prev) => prev ?? res);
+          setTab3Task((prev) => prev ?? pm);
+          setTab3TaskId((prev) => prev ?? pm.id);
+          const cl = paramToList(pm.params?.cluster);
+          if (cl.length) setTab3Selected(cl);
+        }
+      }
+      if (!alive) return;
+      const mp = latestOfStep(tasks, "markers_pairwise");
+      if (mp) {
+        const res = await fetchTaskResult(mp.id);
+        if (alive && res) {
+          setTab4Data((prev) => prev ?? ((res.top_genes ?? []) as GeneRow[]));
+          setTab4Task((prev) => prev ?? mp);
+          setTab4TaskId((prev) => prev ?? mp.id);
+          const vd = res.volcano_data;
+          setTab4Volcano((prev) =>
+            prev ?? (Array.isArray(vd) && vd.length > 0 ? (vd as VolcanoPoint[]) : null),
+          );
+          const c1 = paramToList(mp.params?.cluster_1);
+          const c2 = paramToList(mp.params?.cluster_2);
+          if (c1.length) setTab4G1(c1);
+          if (c2.length) setTab4G2(c2);
+        }
+      }
     });
     return () => { alive = false; };
   }, [task?.project_id]);
