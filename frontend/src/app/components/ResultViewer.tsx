@@ -10,7 +10,7 @@
  */
 "use client";
 
-import React, { Component, type ComponentType, type ReactNode, useEffect, useMemo, useState } from "react";
+import React, { Component, type ComponentType, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { type Task, submitTask, getTask, apiFetch, tryRefresh, getAuthToken} from "../lib/api";
 import ProgressTracker from "./ProgressTracker";
 
@@ -632,21 +632,25 @@ function ClusterResult({ data, task }: { data: Record<string, unknown> | null; t
   const [submittingSubset, setSubmittingSubset] = useState(false);
   const [subsetError, setSubsetError] = useState<string | null>(null);
   const [subsetTask, setSubsetTask] = useState<Task | null>(null);
+  // 用户本次挂载内已手动提取过 → 不再用历史结果覆盖(remount 后 ref 重置, 会重新恢复最新一条)
+  const subsetTouchedRef = useRef(false);
 
   // 挂载时恢复上次"细胞亚类提取"结果(切走再切回来不丢)。
   // 该功能只展示一个 RDS 下载链接(由 subsetTask.result_path 驱动), 没有结果数据可视化,
-  // 故只需最近一条已完成任务, 不必再取 /result。prev ?? 保证不覆盖用户本次新提取的任务。
+  // 故只需最近一条已完成任务, 不必再取 /result。
   useEffect(() => {
     if (!task?.project_id) return;
     let alive = true;
-    listCompletedTasks(task.project_id).then((tasks) => {
-      if (!alive) return;
-      const t = latestOfStep(tasks, "subset_cluster");
-      if (!t) return;
-      setSubsetTask((prev) => prev ?? t);
-      const cls = paramToList(t.params?.clusters);
-      if (cls.length) setSelectedClusters((prev) => (prev.length ? prev : cls));
-    });
+    listCompletedTasks(task.project_id)
+      .then((tasks) => {
+        if (!alive || subsetTouchedRef.current) return;
+        const t = latestOfStep(tasks, "subset_cluster");
+        if (!t) return;
+        setSubsetTask(t);
+        const cls = paramToList(t.params?.clusters);
+        if (cls.length) setSelectedClusters(cls);
+      })
+      .catch(() => {});
     return () => { alive = false; };
   }, [task?.project_id]);
 
@@ -1057,6 +1061,7 @@ function ClusterResult({ data, task }: { data: Record<string, unknown> | null; t
                 disabled={selectedClusters.length === 0 || submittingSubset}
                 onClick={async () => {
                   if (selectedClusters.length === 0) return;
+                  subsetTouchedRef.current = true;  // 用户手动提取 → 阻止历史结果回填覆盖
                   setSubmittingSubset(true);
                   setSubsetError(null);
                   try {
@@ -1227,6 +1232,8 @@ function MarkersResult({ task, data, taskCache, clusterLevels: parentClusterLeve
   const [tab4Loading, setTab4Loading] = useState(false);
   const [tab4Error, setTab4Error] = useState<string | null>(null);
   const [tab4Volcano, setTab4Volcano] = useState<VolcanoPoint[] | null>(null);
+  // 用户本次挂载内已手动计算过 → 不再用历史结果覆盖(remount 后 ref 重置, 会重新恢复最新一条)
+  const markersTouchedRef = useRef(false);
 
   useEffect(() => {
     if (analyzedClusters.length > 0) {
@@ -1238,42 +1245,43 @@ function MarkersResult({ task, data, taskCache, clusterLevels: parentClusterLeve
 
   // 挂载时恢复上次"单簇特征分布图"(plot_markers) / "双簇对比表"(markers_pairwise) 的计算结果,
   // 切走再切回来不丢。只拉一次已完成任务列表, 再分别取两个 step 的结果。
-  // 结果状态(tab3Data/tab4Data 等)用 prev ?? 守护: 若用户已现算出新结果则不被旧结果覆盖。
+  // markersTouchedRef: 用户本次挂载内已手动计算则整段恢复跳过(数据 + 选择项一致, 不会互相覆盖);
+  // 每次 await 后都重新检查 alive/ref, 避免卸载或抢跑后仍 setState。
   useEffect(() => {
     if (!task?.project_id) return;
     let alive = true;
-    listCompletedTasks(task.project_id).then(async (tasks) => {
-      if (!alive) return;
-      const pm = latestOfStep(tasks, "plot_markers");
-      if (pm) {
-        const res = await fetchTaskResult(pm.id);
-        if (alive && res) {
-          setTab3Data((prev) => prev ?? res);
-          setTab3Task((prev) => prev ?? pm);
-          setTab3TaskId((prev) => prev ?? pm.id);
-          const cl = paramToList(pm.params?.cluster);
-          if (cl.length) setTab3Selected(cl);
+    listCompletedTasks(task.project_id)
+      .then(async (tasks) => {
+        if (!alive || markersTouchedRef.current) return;
+        const pm = latestOfStep(tasks, "plot_markers");
+        if (pm) {
+          const res = await fetchTaskResult(pm.id);
+          if (alive && !markersTouchedRef.current && res) {
+            setTab3Data(res);
+            setTab3Task(pm);
+            setTab3TaskId(pm.id);
+            const cl = paramToList(pm.params?.cluster);
+            if (cl.length) setTab3Selected(cl);
+          }
         }
-      }
-      if (!alive) return;
-      const mp = latestOfStep(tasks, "markers_pairwise");
-      if (mp) {
-        const res = await fetchTaskResult(mp.id);
-        if (alive && res) {
-          setTab4Data((prev) => prev ?? ((res.top_genes ?? []) as GeneRow[]));
-          setTab4Task((prev) => prev ?? mp);
-          setTab4TaskId((prev) => prev ?? mp.id);
-          const vd = res.volcano_data;
-          setTab4Volcano((prev) =>
-            prev ?? (Array.isArray(vd) && vd.length > 0 ? (vd as VolcanoPoint[]) : null),
-          );
-          const c1 = paramToList(mp.params?.cluster_1);
-          const c2 = paramToList(mp.params?.cluster_2);
-          if (c1.length) setTab4G1(c1);
-          if (c2.length) setTab4G2(c2);
+        if (!alive || markersTouchedRef.current) return;
+        const mp = latestOfStep(tasks, "markers_pairwise");
+        if (mp) {
+          const res = await fetchTaskResult(mp.id);
+          if (alive && !markersTouchedRef.current && res) {
+            setTab4Data((res.top_genes ?? []) as GeneRow[]);
+            setTab4Task(mp);
+            setTab4TaskId(mp.id);
+            const vd = res.volcano_data;
+            setTab4Volcano(Array.isArray(vd) && vd.length > 0 ? (vd as VolcanoPoint[]) : null);
+            const c1 = paramToList(mp.params?.cluster_1);
+            const c2 = paramToList(mp.params?.cluster_2);
+            if (c1.length) setTab4G1(c1);
+            if (c2.length) setTab4G2(c2);
+          }
         }
-      }
-    });
+      })
+      .catch(() => {});
     return () => { alive = false; };
   }, [task?.project_id]);
 
@@ -1295,6 +1303,7 @@ function MarkersResult({ task, data, taskCache, clusterLevels: parentClusterLeve
     setError: (v: string | null) => void,
     onSuccess: (taskId: string, result: any, completedTask: Task) => void,
   ) => {
+    markersTouchedRef.current = true;  // 用户手动计算 → 阻止历史结果回填覆盖
     setLoader(true);
     setError(null);
     try {
