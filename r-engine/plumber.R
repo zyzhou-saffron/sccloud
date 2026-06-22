@@ -280,7 +280,8 @@ if 'Sample' in adata.obs.columns:
       filename = jsonlite::unbox(filename),
       n_cells = jsonlite::unbox(as.integer(n_cells)),
       n_genes = jsonlite::unbox(as.integer(n_genes)),
-      # 兼容旧字段(此前语义被贴反): 统一为 行=细胞, 列=基因
+      # 兼容旧字段: 统一为 n_rows=细胞数, n_cols=基因数 (注意与 Seurat 内部 nrow=基因/ncol=细胞
+      # 相反, 此处对齐的是前端"行=细胞/列=基因"显示约定; 新代码请直接用 n_cells/n_genes)
       n_rows = jsonlite::unbox(as.integer(n_cells)),
       n_cols = jsonlite::unbox(as.integer(n_genes)),
       genes = head(genes, 100),
@@ -386,7 +387,8 @@ if 'Sample' in adata.obs.columns:
     filename = jsonlite::unbox(filename),
     n_cells = jsonlite::unbox(as.integer(n_cells)),
     n_genes = jsonlite::unbox(as.integer(n_genes)),
-    # 兼容旧字段(此前语义被贴反): 统一为 行=细胞, 列=基因
+    # 兼容旧字段: 统一为 n_rows=细胞数, n_cols=基因数 (注意与 Seurat 内部 nrow=基因/ncol=细胞
+    # 相反, 此处对齐的是前端"行=细胞/列=基因"显示约定; 新代码请直接用 n_cells/n_genes)
     n_rows = jsonlite::unbox(as.integer(n_cells)),
     n_cols = jsonlite::unbox(as.integer(n_genes)),
     genes = head(genes, 100),

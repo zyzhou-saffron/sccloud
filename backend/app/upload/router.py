@@ -373,7 +373,9 @@ async def inspect_file(
 
         return InspectResponse(
             filename=unwrap(data["filename"]),
-            # 滚动部署兜底: 若 r-engine 尚未更新(无 n_cells/n_genes), 回退到旧字段而非 KeyError→500
+            # 滚动部署兜底: r-engine 未更新(响应无 n_cells/n_genes)时回退到旧字段, 避免 KeyError→500。
+            # 过渡期注意: h5ad 旧 n_rows 恰=细胞数(正确), 但 RDS/Loom 旧 n_rows=基因数(仍贴反),
+            # 待 r-engine 更新后自动修正。
             n_cells=int(unwrap(data.get("n_cells", data["n_rows"]))),
             n_genes=int(unwrap(data.get("n_genes", data["n_cols"]))),
             n_rows=int(unwrap(data["n_rows"])),
@@ -529,7 +531,9 @@ async def inspect_file_by_path(
 
         return InspectResponse(
             filename=unwrap(data["filename"]),
-            # 滚动部署兜底: 若 r-engine 尚未更新(无 n_cells/n_genes), 回退到旧字段而非 KeyError→500
+            # 滚动部署兜底: r-engine 未更新(响应无 n_cells/n_genes)时回退到旧字段, 避免 KeyError→500。
+            # 过渡期注意: h5ad 旧 n_rows 恰=细胞数(正确), 但 RDS/Loom 旧 n_rows=基因数(仍贴反),
+            # 待 r-engine 更新后自动修正。
             n_cells=int(unwrap(data.get("n_cells", data["n_rows"]))),
             n_genes=int(unwrap(data.get("n_genes", data["n_cols"]))),
             n_rows=int(unwrap(data["n_rows"])),
