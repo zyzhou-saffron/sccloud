@@ -240,6 +240,36 @@ async function fetchTaskResult(taskId: string): Promise<Record<string, unknown> 
 // 由于 WebGL 重构提升了性能，现在所有有步骤均自动加载结果数据
 // 不再需要显式点击加载图表按钮。
 
+// 切走再切回来时, 这些"按需子任务"(亚类提取 / 单簇特征分布图 / 双簇对比表)的结果只存在本地
+// state, 组件卸载即丢。此函数从后端找该 step 最近一次已完成任务 + 结果, 用于挂载时恢复展示。
+async function fetchLatestCompleted(
+  projectId: number,
+  step: string,
+): Promise<{ task: Task; result: Record<string, unknown> } | null> {
+  try {
+    const list = await apiFetch<{ tasks: Task[] }>(
+      `/api/tasks?project_id=${projectId}&status=completed`,
+    );
+    const latest = (list.tasks || [])
+      .filter((t) => t.step === step)
+      .sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+      )[0];
+    if (!latest) return null;
+    const result = await apiFetch<Record<string, unknown>>(`/api/tasks/${latest.id}/result`);
+    return { task: latest, result };
+  } catch {
+    return null;
+  }
+}
+
+// 把后端存的逗号分隔/数组形式的簇参数还原成字符串数组(用于恢复选择项)
+function paramToList(v: unknown): string[] {
+  if (Array.isArray(v)) return v.map(String);
+  if (typeof v === "string" && v) return v.split(",").map((s) => s.trim()).filter(Boolean);
+  return [];
+}
+
 export default function ResultViewer({ task, stepId, stepLabel, StepIcon, taskCache, clusterLevels, projectName }: ResultViewerProps) {
   const [resultData, setResultData] = useState<Record<string, unknown> | null>(null);
   const [loadingResult, setLoadingResult] = useState(false);
@@ -603,6 +633,19 @@ function ClusterResult({ data, task }: { data: Record<string, unknown> | null; t
   const [submittingSubset, setSubmittingSubset] = useState(false);
   const [subsetError, setSubsetError] = useState<string | null>(null);
   const [subsetTask, setSubsetTask] = useState<Task | null>(null);
+
+  // 挂载时恢复上次"细胞亚类提取"结果(切走再切回来不丢)
+  useEffect(() => {
+    if (!task?.project_id) return;
+    let alive = true;
+    fetchLatestCompleted(task.project_id, "subset_cluster").then((r) => {
+      if (!alive || !r) return;
+      setSubsetTask(r.task);
+      const cls = paramToList(r.task.params?.clusters);
+      if (cls.length) setSelectedClusters(cls);
+    });
+    return () => { alive = false; };
+  }, [task?.project_id]);
 
   // ── deck.gl 交互式散点图数据 ──
   const rawScatter = useMemo(() => safeScatter(data?.scatter_data), [data]);
@@ -1189,6 +1232,34 @@ function MarkersResult({ task, data, taskCache, clusterLevels: parentClusterLeve
        if (tab4G2.length === 0) setTab4G2(analyzedClusters.length > 1 ? [analyzedClusters[1]] : [analyzedClusters[0]]);
     }
   }, [analyzedClusters]);
+
+  // 挂载时恢复上次"单簇特征分布图"(plot_markers) / "双簇对比表"(markers_pairwise) 的计算结果,
+  // 切走再切回来不丢。找该 step 最近一次已完成任务 + 结果, 同时还原所选簇。
+  useEffect(() => {
+    if (!task?.project_id) return;
+    let alive = true;
+    fetchLatestCompleted(task.project_id, "plot_markers").then((r) => {
+      if (!alive || !r) return;
+      setTab3TaskId(r.task.id);
+      setTab3Task(r.task);
+      setTab3Data(r.result);
+      const cl = paramToList(r.task.params?.cluster);
+      if (cl.length) setTab3Selected(cl);
+    });
+    fetchLatestCompleted(task.project_id, "markers_pairwise").then((r) => {
+      if (!alive || !r) return;
+      setTab4TaskId(r.task.id);
+      setTab4Task(r.task);
+      setTab4Data(((r.result.top_genes ?? []) as GeneRow[]));
+      const vd = r.result.volcano_data;
+      setTab4Volcano(Array.isArray(vd) && vd.length > 0 ? (vd as VolcanoPoint[]) : null);
+      const c1 = paramToList(r.task.params?.cluster_1);
+      const c2 = paramToList(r.task.params?.cluster_2);
+      if (c1.length) setTab4G1(c1);
+      if (c2.length) setTab4G2(c2);
+    });
+    return () => { alive = false; };
+  }, [task?.project_id]);
 
   // 格式化单元格值
   const fmtCell = (val: unknown): string => {
