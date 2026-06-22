@@ -10,7 +10,7 @@
  */
 "use client";
 
-import React, { Component, type ComponentType, type ReactNode, useEffect, useMemo, useState } from "react";
+import React, { Component, type ComponentType, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { type Task, submitTask, getTask, apiFetch, tryRefresh, getAuthToken} from "../lib/api";
 import ProgressTracker from "./ProgressTracker";
 
@@ -239,6 +239,37 @@ async function fetchTaskResult(taskId: string): Promise<Record<string, unknown> 
 
 // 由于 WebGL 重构提升了性能，现在所有有步骤均自动加载结果数据
 // 不再需要显式点击加载图表按钮。
+
+// 切走再切回来时, 这些"按需子任务"(亚类提取 / 单簇特征分布图 / 双簇对比表)的结果只存在本地
+// state, 组件卸载即丢。下面两个辅助函数 + 既有的 fetchTaskResult 用于挂载时从后端恢复:
+//   listCompletedTasks 一次拉全部已完成任务(每个组件只请求一次), latestOfStep 客户端挑最近一条。
+async function listCompletedTasks(projectId: number): Promise<Task[]> {
+  try {
+    const list = await apiFetch<{ tasks: Task[] }>(
+      `/api/tasks?project_id=${projectId}&status=completed`,
+    );
+    return list.tasks || [];
+  } catch (e) {
+    console.warn("[ResultViewer] 拉取已完成任务列表失败, 跳过结果恢复:", e);
+    return [];
+  }
+}
+
+function latestOfStep(tasks: Task[], step: string): Task | undefined {
+  return tasks
+    .filter((t) => t.step === step)
+    .sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+    )[0];
+}
+
+// 把后端存的逗号分隔/数组形式的簇参数还原成字符串数组(用于恢复选择项)
+function paramToList(v: unknown): string[] {
+  if (Array.isArray(v)) return v.map(String);
+  if (typeof v === "number" && !Number.isNaN(v)) return [String(v)];
+  if (typeof v === "string" && v) return v.split(",").map((s) => s.trim()).filter(Boolean);
+  return [];
+}
 
 export default function ResultViewer({ task, stepId, stepLabel, StepIcon, taskCache, clusterLevels, projectName }: ResultViewerProps) {
   const [resultData, setResultData] = useState<Record<string, unknown> | null>(null);
@@ -603,6 +634,27 @@ function ClusterResult({ data, task }: { data: Record<string, unknown> | null; t
   const [submittingSubset, setSubmittingSubset] = useState(false);
   const [subsetError, setSubsetError] = useState<string | null>(null);
   const [subsetTask, setSubsetTask] = useState<Task | null>(null);
+  // 用户本次挂载内已手动提取过 → 不再用历史结果覆盖(remount 后 ref 重置, 会重新恢复最新一条)
+  const subsetTouchedRef = useRef(false);
+
+  // 挂载时恢复上次"细胞亚类提取"结果(切走再切回来不丢)。
+  // 该功能只展示一个 RDS 下载链接(由 subsetTask.result_path 驱动), 没有结果数据可视化,
+  // 故只需最近一条已完成任务, 不必再取 /result。
+  useEffect(() => {
+    if (!task?.project_id) return;
+    let alive = true;
+    listCompletedTasks(task.project_id)
+      .then((tasks) => {
+        if (!alive || subsetTouchedRef.current) return;
+        const t = latestOfStep(tasks, "subset_cluster");
+        if (!t) return;
+        setSubsetTask(t);
+        const cls = paramToList(t.params?.clusters);
+        if (cls.length) setSelectedClusters(cls);
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [task?.project_id]);
 
   // ── deck.gl 交互式散点图数据 ──
   const rawScatter = useMemo(() => safeScatter(data?.scatter_data), [data]);
@@ -994,6 +1046,7 @@ function ClusterResult({ data, task }: { data: Record<string, unknown> | null; t
                       className="accent-[#C86019]"
                       checked={selectedClusters.includes(cl)}
                       onChange={(e) => {
+                        subsetTouchedRef.current = true;  // 用户改选 → 不让历史恢复覆盖其选择
                         if (e.target.checked) setSelectedClusters(prev => [...prev, cl]);
                         else setSelectedClusters(prev => prev.filter(c => c !== cl));
                       }}
@@ -1011,6 +1064,7 @@ function ClusterResult({ data, task }: { data: Record<string, unknown> | null; t
                 disabled={selectedClusters.length === 0 || submittingSubset}
                 onClick={async () => {
                   if (selectedClusters.length === 0) return;
+                  subsetTouchedRef.current = true;  // 用户手动提取 → 阻止历史结果回填覆盖
                   setSubmittingSubset(true);
                   setSubsetError(null);
                   try {
@@ -1181,6 +1235,10 @@ function MarkersResult({ task, data, taskCache, clusterLevels: parentClusterLeve
   const [tab4Loading, setTab4Loading] = useState(false);
   const [tab4Error, setTab4Error] = useState<string | null>(null);
   const [tab4Volcano, setTab4Volcano] = useState<VolcanoPoint[] | null>(null);
+  // 用户本次挂载内已手动计算过 → 不再用历史结果覆盖(remount 后 ref 重置, 会重新恢复最新一条)。
+  // tab3/tab4 各一把: 只算了单簇图不应连带挡住双簇表的历史恢复, 反之亦然。
+  const tab3TouchedRef = useRef(false);
+  const tab4TouchedRef = useRef(false);
 
   useEffect(() => {
     if (analyzedClusters.length > 0) {
@@ -1189,6 +1247,54 @@ function MarkersResult({ task, data, taskCache, clusterLevels: parentClusterLeve
        if (tab4G2.length === 0) setTab4G2(analyzedClusters.length > 1 ? [analyzedClusters[1]] : [analyzedClusters[0]]);
     }
   }, [analyzedClusters]);
+
+  // 挂载时恢复上次"单簇特征分布图"(plot_markers) / "双簇对比表"(markers_pairwise) 的计算结果,
+  // 切走再切回来不丢。只拉一次已完成任务列表, 再分别取两个 step 的结果。
+  // tab3/tab4TouchedRef: 对应 tab 本次挂载内已手动计算则该 tab 恢复跳过(数据 + 选择项一致);
+  // 每次 await 后都重新检查 alive/ref, 避免卸载或抢跑后仍 setState。
+  useEffect(() => {
+    if (!task?.project_id) return;
+    let alive = true;
+    listCompletedTasks(task.project_id)
+      .then(async (tasks) => {
+        if (!alive) return;
+        const pm = latestOfStep(tasks, "plot_markers");
+        if (pm && !tab3TouchedRef.current) {
+          // 各 tab 独立 try: 一个 tab 恢复失败不应阻断另一个(fetchTaskResult 现已内部吞错,
+          // 此处再包一层防御, 万一日后改了其签名也不会连带挂掉另一 tab)
+          try {
+            const res = await fetchTaskResult(pm.id);
+            if (alive && !tab3TouchedRef.current && res) {
+              setTab3Data(res);
+              setTab3Task(pm);
+              setTab3TaskId(pm.id);
+              const cl = paramToList(pm.params?.cluster);
+              if (cl.length) setTab3Selected(cl);
+            }
+          } catch { /* best-effort: 跳过单簇图恢复 */ }
+        }
+        if (!alive) return;
+        const mp = latestOfStep(tasks, "markers_pairwise");
+        if (mp && !tab4TouchedRef.current) {
+          try {
+            const res = await fetchTaskResult(mp.id);
+            if (alive && !tab4TouchedRef.current && res) {
+              setTab4Data((res.top_genes ?? []) as GeneRow[]);
+              setTab4Task(mp);
+              setTab4TaskId(mp.id);
+              const vd = res.volcano_data;
+              setTab4Volcano(Array.isArray(vd) && vd.length > 0 ? (vd as VolcanoPoint[]) : null);
+              const c1 = paramToList(mp.params?.cluster_1);
+              const c2 = paramToList(mp.params?.cluster_2);
+              if (c1.length) setTab4G1(c1);
+              if (c2.length) setTab4G2(c2);
+            }
+          } catch { /* best-effort: 跳过双簇表恢复 */ }
+        }
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [task?.project_id]);
 
   // 格式化单元格值
   const fmtCell = (val: unknown): string => {
@@ -1208,6 +1314,9 @@ function MarkersResult({ task, data, taskCache, clusterLevels: parentClusterLeve
     setError: (v: string | null) => void,
     onSuccess: (taskId: string, result: any, completedTask: Task) => void,
   ) => {
+    // 用户手动计算 → 按 step 阻止对应 tab 的历史结果回填覆盖
+    if (step === "plot_markers") tab3TouchedRef.current = true;
+    else if (step === "markers_pairwise") tab4TouchedRef.current = true;
     setLoader(true);
     setError(null);
     try {
