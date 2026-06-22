@@ -34,6 +34,20 @@ export default function NumberInput({
     setText(Number.isFinite(value) ? String(value) : "");
   }, [value]);
 
+  // min/max 动态变化(跨字段联动 / 加载到非法历史值)时, 若当前值越界则就地夹紧并上报,
+  // 不必等用户再次失焦。只依赖 [min, max] —— 避免在 value/text 变化(打字)时反复夹紧打断输入。
+  useEffect(() => {
+    const n = Number(text);
+    if (!Number.isFinite(n)) return;
+    const lo = min ?? -Infinity;
+    const hi = max ?? Infinity;
+    if (n >= lo && n <= hi) return;
+    const clamped = Math.min(Math.max(n, lo), hi);
+    setText(String(clamped));
+    if (clamped !== value) onChange(clamped);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [min, max]);
+
   const commit = () => {
     let n = Number(text);
     if (text.trim() === "" || !Number.isFinite(n)) {
