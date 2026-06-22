@@ -249,7 +249,8 @@ async function listCompletedTasks(projectId: number): Promise<Task[]> {
       `/api/tasks?project_id=${projectId}&status=completed`,
     );
     return list.tasks || [];
-  } catch {
+  } catch (e) {
+    console.warn("[ResultViewer] 拉取已完成任务列表失败, 跳过结果恢复:", e);
     return [];
   }
 }
@@ -1259,30 +1260,36 @@ function MarkersResult({ task, data, taskCache, clusterLevels: parentClusterLeve
         if (!alive) return;
         const pm = latestOfStep(tasks, "plot_markers");
         if (pm && !tab3TouchedRef.current) {
-          const res = await fetchTaskResult(pm.id);
-          if (alive && !tab3TouchedRef.current && res) {
-            setTab3Data(res);
-            setTab3Task(pm);
-            setTab3TaskId(pm.id);
-            const cl = paramToList(pm.params?.cluster);
-            if (cl.length) setTab3Selected(cl);
-          }
+          // 各 tab 独立 try: 一个 tab 恢复失败不应阻断另一个(fetchTaskResult 现已内部吞错,
+          // 此处再包一层防御, 万一日后改了其签名也不会连带挂掉另一 tab)
+          try {
+            const res = await fetchTaskResult(pm.id);
+            if (alive && !tab3TouchedRef.current && res) {
+              setTab3Data(res);
+              setTab3Task(pm);
+              setTab3TaskId(pm.id);
+              const cl = paramToList(pm.params?.cluster);
+              if (cl.length) setTab3Selected(cl);
+            }
+          } catch { /* best-effort: 跳过单簇图恢复 */ }
         }
         if (!alive) return;
         const mp = latestOfStep(tasks, "markers_pairwise");
         if (mp && !tab4TouchedRef.current) {
-          const res = await fetchTaskResult(mp.id);
-          if (alive && !tab4TouchedRef.current && res) {
-            setTab4Data((res.top_genes ?? []) as GeneRow[]);
-            setTab4Task(mp);
-            setTab4TaskId(mp.id);
-            const vd = res.volcano_data;
-            setTab4Volcano(Array.isArray(vd) && vd.length > 0 ? (vd as VolcanoPoint[]) : null);
-            const c1 = paramToList(mp.params?.cluster_1);
-            const c2 = paramToList(mp.params?.cluster_2);
-            if (c1.length) setTab4G1(c1);
-            if (c2.length) setTab4G2(c2);
-          }
+          try {
+            const res = await fetchTaskResult(mp.id);
+            if (alive && !tab4TouchedRef.current && res) {
+              setTab4Data((res.top_genes ?? []) as GeneRow[]);
+              setTab4Task(mp);
+              setTab4TaskId(mp.id);
+              const vd = res.volcano_data;
+              setTab4Volcano(Array.isArray(vd) && vd.length > 0 ? (vd as VolcanoPoint[]) : null);
+              const c1 = paramToList(mp.params?.cluster_1);
+              const c2 = paramToList(mp.params?.cluster_2);
+              if (c1.length) setTab4G1(c1);
+              if (c2.length) setTab4G2(c2);
+            }
+          } catch { /* best-effort: 跳过双簇表恢复 */ }
         }
       })
       .catch(() => {});
