@@ -15,6 +15,7 @@ import ResultViewer from "../../components/ResultViewer";
 import TaskHistory from "../../components/TaskHistory";
 import Tooltip from "../../components/Tooltip";
 import NumberInput from "./components/NumberInput";
+import { getFeatureCap } from "./utils";
 import {
   IconMicroscope, IconBarChart, IconAxis, IconCluster,
   IconTestTube, IconPathway, IconWaveform, IconTag, IconUpload, IconQuestion
@@ -111,10 +112,8 @@ function AnalysisPageContent() {
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>(
     ss?.uploadedFiles ?? (ss?.uploadedFile ? [ss.uploadedFile] : [])
   );
-  // 最大基因数 上限取数据集基因总数(细胞 nFeature 不会超过其样本基因数); 未知时回退 10 万
-  const featureCap = uploadedFiles.length
-    ? (Math.max(0, ...uploadedFiles.map(f => f.n_genes ?? f.n_cols ?? 0)) || 100000)
-    : 100000;
+  // 最大基因数 上限 = 数据集基因总数(见 getFeatureCap)
+  const featureCap = getFeatureCap(uploadedFiles);
   // 样本分组映射：sample_name → group_label
   const [sampleGroups, setSampleGroups] = useState<Record<string, string>>(
     ss?.sampleGroups ?? {}
@@ -796,7 +795,7 @@ function AnalysisPageContent() {
                         <IconQuestion size={14} className="text-stone-400 hover:text-[#C86019] transition-colors" />
                       </Tooltip>
                     </label>
-                    <NumberInput value={stepParams.max_features as number} onChange={(v) => updateParam("max_features", v)} min={stepParams.min_features as number} max={featureCap} className={inputCls} style={inputStyle} />
+                    <NumberInput value={stepParams.max_features as number} onChange={(v) => updateParam("max_features", v)} min={Math.min(stepParams.min_features as number, featureCap)} max={featureCap} className={inputCls} style={inputStyle} />
                   </div>
                   <div>
                     <label className="flex items-center gap-1.5 text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>

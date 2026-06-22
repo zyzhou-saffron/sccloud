@@ -11,6 +11,7 @@ import Tooltip from "../../../components/Tooltip";
 import AddSampleDropdown from "../../../components/AddSampleDropdown";
 import UploadedFilesTable, { type SampleRow } from "../../../components/UploadedFilesTable";
 import NumberInput from "./NumberInput";
+import { getFeatureCap } from "../utils";
 
 interface UploadedFile {
   name: string;
@@ -110,12 +111,8 @@ export default function PipelineForm({ projectId, token, onSubmit, uploadedFiles
     : groupColumns;
   const effectiveGroupCols = allGroupOptions.length > 0 ? allGroupOptions : ["Sample", "Group"];
 
-  // 数据集基因总数(取各文件最大): 单细胞每个细胞的 nFeature 最多等于其样本的基因数,
-  // 故用它作 最大基因数 的上限比静态 10 万更贴切; 无文件/未知时回退 10 万。
-  const datasetGenes = uploadedFiles.length
-    ? Math.max(0, ...uploadedFiles.map(f => f.n_genes ?? f.n_cols ?? 0))
-    : 0;
-  const featureCap = datasetGenes || 100000;
+  // 最大基因数 上限 = 数据集基因总数(见 getFeatureCap)
+  const featureCap = getFeatureCap(uploadedFiles);
 
   // 将 uploadedFiles 展平为样本行
   const sampleRows: SampleRow[] = uploadedFiles.flatMap(f => {
@@ -458,7 +455,7 @@ export default function PipelineForm({ projectId, token, onSubmit, uploadedFiles
                       <IconQuestion size={14} className="text-stone-400 hover:text-[#C86019] transition-colors" />
                     </Tooltip>
                   </label>
-                  <NumberInput value={params.qc.max_features as number} onChange={(v) => updateStepParam("qc", "max_features", v)} min={params.qc.min_features as number} max={featureCap} className={numberCls} style={inputStyle} />
+                  <NumberInput value={params.qc.max_features as number} onChange={(v) => updateStepParam("qc", "max_features", v)} min={Math.min(params.qc.min_features as number, featureCap)} max={featureCap} className={numberCls} style={inputStyle} />
                 </div>
                 <div>
                   <label className="flex items-center gap-1 text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>
