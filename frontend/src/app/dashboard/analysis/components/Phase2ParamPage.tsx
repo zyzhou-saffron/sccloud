@@ -8,6 +8,7 @@
 import React, { useEffect, useState } from "react";
 import { resumePipeline, type Pipeline } from "../../../lib/pipeline-api";
 import GeneExpressionPopup from "../../../components/GeneExpressionPopup";
+import NumberInput from "./NumberInput";
 import { createPortal } from "react-dom";
 import { IconTestTube, IconPathway, IconBranch, IconNetwork, IconDNA } from "../../../components/Icons";
 import { apiFetch } from "../../../lib/api";
@@ -287,15 +288,15 @@ export default function Phase2ParamPage({ pipeline, token, onComplete, species =
                       </div>
                       <div>
                         <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>最小细胞比例</label>
-                        <input type="number" value={params.markers.min_pct} onChange={(e) => updateParam("markers", "min_pct", Number(e.target.value))} min={0} max={1} step={0.01} className={numberCls} style={inputStyle} />
+                        <NumberInput value={params.markers.min_pct} onChange={(v) => updateParam("markers", "min_pct", v)} min={0} max={1} step={0.01} className={numberCls} style={inputStyle} />
                       </div>
                       <div>
                         <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>log2FC 阈值</label>
-                        <input type="number" value={params.markers.logfc_threshold} onChange={(e) => updateParam("markers", "logfc_threshold", Number(e.target.value))} step={0.05} className={numberCls} style={inputStyle} />
+                        <NumberInput value={params.markers.logfc_threshold} onChange={(v) => updateParam("markers", "logfc_threshold", v)} min={0} max={10} step={0.05} className={numberCls} style={inputStyle} />
                       </div>
                       <div>
                         <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>校正 P 值</label>
-                        <input type="number" value={params.markers.p_val_adj} onChange={(e) => updateParam("markers", "p_val_adj", Number(e.target.value))} min={0} max={1} step={0.01} className={numberCls} style={inputStyle} />
+                        <NumberInput value={params.markers.p_val_adj} onChange={(v) => updateParam("markers", "p_val_adj", v)} min={0} max={1} step={0.01} className={numberCls} style={inputStyle} />
                       </div>
                       <div>
                         <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>仅显著上调</label>
@@ -306,7 +307,7 @@ export default function Phase2ParamPage({ pipeline, token, onComplete, species =
                       </div>
                       <div>
                         <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>每组展示基因数</label>
-                        <input type="number" value={params.markers.ntop} onChange={(e) => updateParam("markers", "ntop", Number(e.target.value))} min={1} max={100} className={numberCls} style={inputStyle} />
+                        <NumberInput value={params.markers.ntop} onChange={(v) => updateParam("markers", "ntop", v)} min={1} max={100} className={numberCls} style={inputStyle} />
                       </div>
                     </div>
                   </div>
@@ -333,15 +334,15 @@ export default function Phase2ParamPage({ pipeline, token, onComplete, species =
                       </div>
                       <div>
                         <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>P值阈值</label>
-                        <input type="number" value={params.enrich.pvalue_cutoff} onChange={(e) => updateParam("enrich", "pvalue_cutoff", Number(e.target.value))} min={0} max={1} step={0.01} className={numberCls} style={inputStyle} />
+                        <NumberInput value={params.enrich.pvalue_cutoff} onChange={(v) => updateParam("enrich", "pvalue_cutoff", v)} min={0} max={1} step={0.01} className={numberCls} style={inputStyle} />
                       </div>
                       <div>
                         <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>Q值阈值</label>
-                        <input type="number" value={params.enrich.qvalue_cutoff} onChange={(e) => updateParam("enrich", "qvalue_cutoff", Number(e.target.value))} min={0} max={1} step={0.01} className={numberCls} style={inputStyle} />
+                        <NumberInput value={params.enrich.qvalue_cutoff} onChange={(v) => updateParam("enrich", "qvalue_cutoff", v)} min={0} max={1} step={0.01} className={numberCls} style={inputStyle} />
                       </div>
                       <div>
                         <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>显示条数</label>
-                        <input type="number" value={params.enrich.n_term} onChange={(e) => updateParam("enrich", "n_term", Number(e.target.value))} min={1} max={50} className={numberCls} style={inputStyle} />
+                        <NumberInput value={params.enrich.n_term} onChange={(v) => updateParam("enrich", "n_term", v)} min={1} max={50} className={numberCls} style={inputStyle} />
                       </div>
                       <div>
                         <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>P 值校正方法</label>
@@ -397,19 +398,19 @@ export default function Phase2ParamPage({ pipeline, token, onComplete, species =
                         <div className="mt-3 flex flex-wrap gap-x-6 gap-y-3">
                           <div>
                             <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>最低表达阈值</label>
-                            <input type="number" value={params.monocle.min_expr_threshold} onChange={(e) => updateParam("monocle", "min_expr_threshold", Number(e.target.value))} step={0.1} className={numberCls} style={inputStyle} />
+                            <NumberInput value={params.monocle.min_expr_threshold} onChange={(v) => updateParam("monocle", "min_expr_threshold", v)} min={0} max={1000} step={0.1} className={numberCls} style={inputStyle} />
                           </div>
                           <div>
                             <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>最低细胞检出率</label>
-                            <input type="number" value={params.monocle.min_cells_pct} onChange={(e) => updateParam("monocle", "min_cells_pct", Number(e.target.value))} min={0} max={1} step={0.005} className={numberCls} style={inputStyle} />
+                            <NumberInput value={params.monocle.min_cells_pct} onChange={(v) => updateParam("monocle", "min_cells_pct", v)} min={0} max={1} step={0.005} className={numberCls} style={inputStyle} />
                           </div>
                           <div>
                             <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>离散基因均值阈值</label>
-                            <input type="number" value={params.monocle.mean_expr} onChange={(e) => updateParam("monocle", "mean_expr", Number(e.target.value))} step={0.1} className={numberCls} style={inputStyle} />
+                            <NumberInput value={params.monocle.mean_expr} onChange={(v) => updateParam("monocle", "mean_expr", v)} min={0} max={1000} step={0.1} className={numberCls} style={inputStyle} />
                           </div>
                           <div>
                             <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>差异基因 q 值阈值</label>
-                            <input type="number" value={params.monocle.qvalue1} onChange={(e) => updateParam("monocle", "qvalue1", Number(e.target.value))} step={0.00001} className={numberCls} style={inputStyle} />
+                            <NumberInput value={params.monocle.qvalue1} onChange={(v) => updateParam("monocle", "qvalue1", v)} min={0} max={1} step={0.00001} className={numberCls} style={inputStyle} />
                           </div>
                           <div>
                             <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>反转拟时序方向</label>
@@ -446,7 +447,7 @@ export default function Phase2ParamPage({ pipeline, token, onComplete, species =
                       </div>
                       <div>
                         <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>通讯显著性阈值</label>
-                        <input type="number" value={params.cellchat.thresh} onChange={(e) => updateParam("cellchat", "thresh", Number(e.target.value))} min={0} max={0.5} step={0.01} className={numberCls} style={inputStyle} />
+                        <NumberInput value={params.cellchat.thresh} onChange={(v) => updateParam("cellchat", "thresh", v)} min={0} max={0.5} step={0.01} className={numberCls} style={inputStyle} />
                       </div>
                       <div>
                         <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>物种</label>
@@ -458,11 +459,11 @@ export default function Phase2ParamPage({ pipeline, token, onComplete, species =
                     <div className="flex flex-wrap gap-x-4 gap-y-2">
                       <div>
                         <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>最少细胞数</label>
-                        <input type="number" value={params.cellchat.min_cells} onChange={(e) => updateParam("cellchat", "min_cells", Number(e.target.value))} min={1} max={500} className={numberCls} style={inputStyle} />
+                        <NumberInput value={params.cellchat.min_cells} onChange={(v) => updateParam("cellchat", "min_cells", v)} min={1} max={500} className={numberCls} style={inputStyle} />
                       </div>
                       <div>
                         <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>展示通路数</label>
-                        <input type="number" value={params.cellchat.top_pathways} onChange={(e) => updateParam("cellchat", "top_pathways", Number(e.target.value))} min={1} max={20} className={numberCls} style={inputStyle} />
+                        <NumberInput value={params.cellchat.top_pathways} onChange={(v) => updateParam("cellchat", "top_pathways", v)} min={1} max={20} className={numberCls} style={inputStyle} />
                       </div>
                       <div>
                         <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>隐藏无通讯类型</label>
@@ -564,15 +565,15 @@ export default function Phase2ParamPage({ pipeline, token, onComplete, species =
                     <div className="flex flex-wrap gap-x-4 gap-y-2">
                       <div>
                         <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>最小细胞比例</label>
-                        <input type="number" value={params.wgcna.min_fraction} onChange={(e) => updateParam("wgcna", "min_fraction", Number(e.target.value))} min={0} max={1} step={0.01} className={numberCls} style={inputStyle} />
+                        <NumberInput value={params.wgcna.min_fraction} onChange={(v) => updateParam("wgcna", "min_fraction", v)} min={0} max={1} step={0.01} className={numberCls} style={inputStyle} />
                       </div>
                       <div>
                         <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>软阈值</label>
-                        <input type="number" value={params.wgcna.sft_threshold} onChange={(e) => updateParam("wgcna", "sft_threshold", Number(e.target.value))} min={0} max={1} step={0.05} className={numberCls} style={inputStyle} />
+                        <NumberInput value={params.wgcna.sft_threshold} onChange={(v) => updateParam("wgcna", "sft_threshold", v)} min={0} max={1} step={0.05} className={numberCls} style={inputStyle} />
                       </div>
                       <div>
                         <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>最近邻 K</label>
-                        <input type="number" value={params.wgcna.k} onChange={(e) => updateParam("wgcna", "k", Number(e.target.value))} min={1} max={100} className={numberCls} style={inputStyle} />
+                        <NumberInput value={params.wgcna.k} onChange={(v) => updateParam("wgcna", "k", v)} min={1} max={100} className={numberCls} style={inputStyle} />
                       </div>
                     </div>
 
@@ -598,19 +599,19 @@ export default function Phase2ParamPage({ pipeline, token, onComplete, species =
                           </div>
                           <div>
                             <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>最大共享邻居数</label>
-                            <input type="number" value={params.wgcna.max_shared} onChange={(e) => updateParam("wgcna", "max_shared", Number(e.target.value))} min={1} max={50} className={numberCls} style={inputStyle} />
+                            <NumberInput value={params.wgcna.max_shared} onChange={(v) => updateParam("wgcna", "max_shared", v)} min={1} max={50} className={numberCls} style={inputStyle} />
                           </div>
                           <div>
                             <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>最少细胞数</label>
-                            <input type="number" value={params.wgcna.min_cells} onChange={(e) => updateParam("wgcna", "min_cells", Number(e.target.value))} min={10} max={1000} className={numberCls} style={inputStyle} />
+                            <NumberInput value={params.wgcna.min_cells} onChange={(v) => updateParam("wgcna", "min_cells", v)} min={10} max={1000} className={numberCls} style={inputStyle} />
                           </div>
                           <div>
                             <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>Hub 基因数</label>
-                            <input type="number" value={params.wgcna.n_hubs} onChange={(e) => updateParam("wgcna", "n_hubs", Number(e.target.value))} min={1} max={50} className={numberCls} style={inputStyle} />
+                            <NumberInput value={params.wgcna.n_hubs} onChange={(v) => updateParam("wgcna", "n_hubs", v)} min={1} max={50} className={numberCls} style={inputStyle} />
                           </div>
                           <div>
                             <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>评分基因数</label>
-                            <input type="number" value={params.wgcna.n_genes_score} onChange={(e) => updateParam("wgcna", "n_genes_score", Number(e.target.value))} min={5} max={100} className={numberCls} style={inputStyle} />
+                            <NumberInput value={params.wgcna.n_genes_score} onChange={(v) => updateParam("wgcna", "n_genes_score", v)} min={5} max={100} className={numberCls} style={inputStyle} />
                           </div>
                         </div>
                       )}
@@ -624,11 +625,11 @@ export default function Phase2ParamPage({ pipeline, token, onComplete, species =
                     <div className="flex flex-wrap gap-x-4 gap-y-2">
                       <div>
                         <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>表达量截断值 (cutoff)</label>
-                        <input type="number" value={params.infercnv.cutoff_gene} onChange={(e) => updateParam("infercnv", "cutoff_gene", Number(e.target.value))} min={0} step={0.01} className={numberCls} style={inputStyle} />
+                        <NumberInput value={params.infercnv.cutoff_gene} onChange={(v) => updateParam("infercnv", "cutoff_gene", v)} min={0} max={10} step={0.01} className={numberCls} style={inputStyle} />
                       </div>
                       <div>
                         <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>线程数</label>
-                        <input type="number" value={params.infercnv.num_threads} onChange={(e) => updateParam("infercnv", "num_threads", Number(e.target.value))} min={1} max={16} className={numberCls} style={inputStyle} />
+                        <NumberInput value={params.infercnv.num_threads} onChange={(v) => updateParam("infercnv", "num_threads", v)} min={1} max={16} className={numberCls} style={inputStyle} />
                       </div>
                     </div>
 

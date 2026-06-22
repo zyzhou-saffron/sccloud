@@ -14,6 +14,7 @@ import ProgressTracker from "../../components/ProgressTracker";
 import ResultViewer from "../../components/ResultViewer";
 import TaskHistory from "../../components/TaskHistory";
 import Tooltip from "../../components/Tooltip";
+import NumberInput from "./components/NumberInput";
 import {
   IconMicroscope, IconBarChart, IconAxis, IconCluster,
   IconTestTube, IconPathway, IconWaveform, IconTag, IconUpload, IconQuestion
@@ -772,7 +773,7 @@ function AnalysisPageContent() {
                         <IconQuestion size={14} className="text-stone-400 hover:text-[#C86019] transition-colors" />
                       </Tooltip>
                     </label>
-                    <input type="range" min="0" max="100" value={stepParams.max_mt_ratio as number} onChange={(e) => updateParam("max_mt_ratio", Number(e.target.value))} className="w-full accent-[#C86019]" />
+                    <input type="range" min="0" max="100" value={stepParams.max_mt_ratio as number} onChange={(v) => updateParam("max_mt_ratio", v)} className="w-full accent-[#C86019]" />
                     <div className="text-xs text-right" style={{ color: "var(--clr-text-faint)", fontFamily: "var(--font-mono)" }}>{stepParams.max_mt_ratio as number}%</div>
                   </div>
                   <div>
@@ -782,7 +783,7 @@ function AnalysisPageContent() {
                         <IconQuestion size={14} className="text-stone-400 hover:text-[#C86019] transition-colors" />
                       </Tooltip>
                     </label>
-                    <input type="number" value={stepParams.min_features as number} onChange={(e) => updateParam("min_features", Number(e.target.value))} min={1} className={inputCls} style={inputStyle} />
+                    <NumberInput value={stepParams.min_features as number} onChange={(v) => updateParam("min_features", v)} min={0} max={stepParams.max_features as number} className={inputCls} style={inputStyle} />
                   </div>
                   <div>
                     <label className="flex items-center gap-1.5 text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>
@@ -791,7 +792,7 @@ function AnalysisPageContent() {
                         <IconQuestion size={14} className="text-stone-400 hover:text-[#C86019] transition-colors" />
                       </Tooltip>
                     </label>
-                    <input type="number" value={stepParams.max_features as number} onChange={(e) => updateParam("max_features", Number(e.target.value))} min={1} className={inputCls} style={inputStyle} />
+                    <NumberInput value={stepParams.max_features as number} onChange={(v) => updateParam("max_features", v)} min={stepParams.min_features as number} max={100000} className={inputCls} style={inputStyle} />
                   </div>
                   <div>
                     <label className="flex items-center gap-1.5 text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>
@@ -800,7 +801,7 @@ function AnalysisPageContent() {
                         <IconQuestion size={14} className="text-stone-400 hover:text-[#C86019] transition-colors" />
                       </Tooltip>
                     </label>
-                    <input type="number" value={stepParams.umi_min_pct as number} onChange={(e) => updateParam("umi_min_pct", Number(e.target.value))} min={0} max={1} step={0.01} className={inputCls} style={inputStyle} />
+                    <NumberInput value={stepParams.umi_min_pct as number} onChange={(v) => updateParam("umi_min_pct", v)} min={0} max={stepParams.umi_max_pct as number} step={0.01} className={inputCls} style={inputStyle} />
                   </div>
                   <div>
                     <label className="flex items-center gap-1.5 text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>
@@ -809,7 +810,7 @@ function AnalysisPageContent() {
                         <IconQuestion size={14} className="text-stone-400 hover:text-[#C86019] transition-colors" />
                       </Tooltip>
                     </label>
-                    <input type="number" value={stepParams.umi_max_pct as number} onChange={(e) => updateParam("umi_max_pct", Number(e.target.value))} min={0} max={1} step={0.01} className={inputCls} style={inputStyle} />
+                    <NumberInput value={stepParams.umi_max_pct as number} onChange={(v) => updateParam("umi_max_pct", v)} min={stepParams.umi_min_pct as number} max={1} step={0.01} className={inputCls} style={inputStyle} />
                   </div>
 
                 </>
@@ -841,7 +842,7 @@ function AnalysisPageContent() {
                         <IconQuestion size={14} className="text-stone-400 hover:text-[#C86019] transition-colors" />
                       </Tooltip>
                     </label>
-                    <input type="number" value={stepParams.n_pcs as number} onChange={(e) => updateParam("n_pcs", Number(e.target.value))} min={2} className={inputCls} style={inputStyle} />
+                    <NumberInput value={stepParams.n_pcs as number} onChange={(v) => updateParam("n_pcs", v)} min={2} max={100} className={inputCls} style={inputStyle} />
                   </div>
                   <div>
                     <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>分组方式</label>
@@ -875,7 +876,7 @@ function AnalysisPageContent() {
                         <IconQuestion size={14} className="text-stone-400 hover:text-[#C86019] transition-colors" />
                       </Tooltip>
                     </label>
-                    <input type="number" value={stepParams.n_dims as number} onChange={(e) => updateParam("n_dims", Number(e.target.value))} min={2} max={50} className={inputCls} style={inputStyle} />
+                    <NumberInput value={stepParams.n_dims as number} onChange={(v) => updateParam("n_dims", v)} min={2} max={50} className={inputCls} style={inputStyle} />
                   </div>
                   <div>
                     <label className="flex items-center gap-1.5 text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>
@@ -900,7 +901,7 @@ function AnalysisPageContent() {
                         <IconQuestion size={14} className="text-stone-400 hover:text-[#C86019] transition-colors" />
                       </Tooltip>
                     </label>
-                    <input type="range" min="0" max="2" step="0.01" value={stepParams.resolution as number} onChange={(e) => updateParam("resolution", Number(e.target.value))} className="w-full accent-[#C86019]" />
+                    <input type="range" min="0" max="2" step="0.01" value={stepParams.resolution as number} onChange={(v) => updateParam("resolution", v)} className="w-full accent-[#C86019]" />
                     <div className="flex justify-between text-[10px]" style={{ color: "var(--clr-text-faint)", fontFamily: "var(--font-mono)" }}>
                       <span>0</span><span style={{ color: "var(--clr-amber)",fontWeight:600 }}>{stepParams.resolution as number}</span><span>2</span>
                     </div>
@@ -917,7 +918,7 @@ function AnalysisPageContent() {
                         <IconQuestion size={14} className="text-stone-400 hover:text-[#C86019] transition-colors" />
                       </Tooltip>
                     </label>
-                    <input type="number" value={stepParams.min_pct as number} onChange={(e) => updateParam("min_pct", Number(e.target.value))} min={0} max={1} step={0.01} className={inputCls} style={inputStyle} />
+                    <NumberInput value={stepParams.min_pct as number} onChange={(v) => updateParam("min_pct", v)} min={0} max={1} step={0.01} className={inputCls} style={inputStyle} />
                   </div>
                   <div>
                     <label className="flex items-center gap-1.5 text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>
@@ -926,7 +927,7 @@ function AnalysisPageContent() {
                         <IconQuestion size={14} className="text-stone-400 hover:text-[#C86019] transition-colors" />
                       </Tooltip>
                     </label>
-                    <input type="number" value={stepParams.logfc_threshold as number} onChange={(e) => updateParam("logfc_threshold", Number(e.target.value))} step={0.05} className={inputCls} style={inputStyle} />
+                    <NumberInput value={stepParams.logfc_threshold as number} onChange={(v) => updateParam("logfc_threshold", v)} min={0} max={10} step={0.05} className={inputCls} style={inputStyle} />
                   </div>
                   <div>
                     <label className="flex items-center gap-1.5 text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>
@@ -935,7 +936,7 @@ function AnalysisPageContent() {
                         <IconQuestion size={14} className="text-stone-400 hover:text-[#C86019] transition-colors" />
                       </Tooltip>
                     </label>
-                    <input type="number" value={stepParams.p_val_adj as number ?? 0.05} onChange={(e) => updateParam("p_val_adj", Number(e.target.value))} step={0.01} min={0} max={1} className={inputCls} style={inputStyle} />
+                    <NumberInput value={stepParams.p_val_adj as number ?? 0.05} onChange={(v) => updateParam("p_val_adj", v)} step={0.01} min={0} max={1} className={inputCls} style={inputStyle} />
                   </div>
                   <div>
                     <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>检验方法</label>
@@ -950,7 +951,7 @@ function AnalysisPageContent() {
                         <IconQuestion size={14} className="text-stone-400 hover:text-[#C86019] transition-colors" />
                       </Tooltip>
                     </label>
-                    <input type="number" value={stepParams.ntop as number ?? 5} onChange={(e) => updateParam("ntop", Number(e.target.value))} min={1} max={50} className={inputCls} style={inputStyle} />
+                    <NumberInput value={stepParams.ntop as number ?? 5} onChange={(v) => updateParam("ntop", v)} min={1} max={50} className={inputCls} style={inputStyle} />
                   </div>
                   <div>
                     <label className="flex items-center gap-1.5 text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>
@@ -1093,9 +1094,9 @@ function AnalysisPageContent() {
                         <IconQuestion size={14} className="text-stone-400 hover:text-[#C86019] transition-colors" />
                       </Tooltip>
                     </label>
-                    <input type="number" step="0.01" min="0" max="1"
+                    <NumberInput min={0} max={1} step={0.01}
                       value={(stepParams.pvalue_cutoff as number) ?? 0.05}
-                      onChange={(e) => updateParam("pvalue_cutoff", parseFloat(e.target.value) || 0.05)}
+                      onChange={(v) => updateParam("pvalue_cutoff", v)}
                       className={selectCls} style={selectStyle} />
                   </div>
                   {/* Q值阈值 */}
@@ -1106,9 +1107,9 @@ function AnalysisPageContent() {
                         <IconQuestion size={14} className="text-stone-400 hover:text-[#C86019] transition-colors" />
                       </Tooltip>
                     </label>
-                    <input type="number" step="0.01" min="0" max="1"
+                    <NumberInput min={0} max={1} step={0.01}
                       value={(stepParams.qvalue_cutoff as number) ?? 0.2}
-                      onChange={(e) => updateParam("qvalue_cutoff", parseFloat(e.target.value) || 0.2)}
+                      onChange={(v) => updateParam("qvalue_cutoff", v)}
                       className={selectCls} style={selectStyle} />
                   </div>
                   {/* 展示条目数 */}
@@ -1119,9 +1120,9 @@ function AnalysisPageContent() {
                         <IconQuestion size={14} className="text-stone-400 hover:text-[#C86019] transition-colors" />
                       </Tooltip>
                     </label>
-                    <input type="number" step="1" min="1" max="50"
+                    <NumberInput min={1} max={50} step={1}
                       value={(stepParams.n_term as number) ?? 10}
-                      onChange={(e) => updateParam("n_term", parseInt(e.target.value) || 10)}
+                      onChange={(v) => updateParam("n_term", v)}
                       className={selectCls} style={selectStyle} />
                   </div>
                 </>
