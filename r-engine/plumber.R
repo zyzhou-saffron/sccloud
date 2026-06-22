@@ -999,8 +999,8 @@ function(req) {
     file.rename(tmp_path, csv_path)
   }
   list(
-    status = "success",
-    csv_path = csv_path
+    status = jsonlite::unbox("success"),
+    csv_path = jsonlite::unbox(csv_path)  # unbox → JSON 标量, 否则后端收到单元素数组报错
   )
 }
 
