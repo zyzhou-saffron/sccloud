@@ -29,24 +29,26 @@ export default function NumberInput({
 }) {
   const [text, setText] = useState<string>(Number.isFinite(value) ? String(value) : "");
 
-  // 外部值变化(重置/跨字段联动)时同步显示
+  // 外部 value 或 min/max 变化(重置 / 跨字段联动 / 加载到非法历史值)时: 同步显示,
+  // 并在 value 越界时就地夹紧并上报(无需用户再失焦, 故加载的越界值不会被原样提交)。
+  // 关键: 以 value(权威源)而非 text 为准 —— 避免 value 与边界同一批更新时读到上一渲染的陈旧 text。
+  // 依赖 [value, min, max] 不含 text, 故打字过程(只改 text 不改 value)不会被打断。
   useEffect(() => {
-    setText(Number.isFinite(value) ? String(value) : "");
-  }, [value]);
-
-  // min/max 动态变化(跨字段联动 / 加载到非法历史值)时, 若当前值越界则就地夹紧并上报,
-  // 不必等用户再次失焦。只依赖 [min, max] —— 避免在 value/text 变化(打字)时反复夹紧打断输入。
-  useEffect(() => {
-    const n = Number(text);
-    if (!Number.isFinite(n)) return;
+    if (!Number.isFinite(value)) {
+      setText("");
+      return;
+    }
     const lo = min ?? -Infinity;
     const hi = max ?? Infinity;
-    if (n >= lo && n <= hi) return;
-    const clamped = Math.min(Math.max(n, lo), hi);
-    setText(String(clamped));
-    if (clamped !== value) onChange(clamped);
+    if (value < lo || value > hi) {
+      const clamped = Math.min(Math.max(value, lo), hi);
+      setText(String(clamped));
+      onChange(clamped);
+    } else {
+      setText(String(value));
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [min, max]);
+  }, [value, min, max]);
 
   const commit = () => {
     let n = Number(text);
