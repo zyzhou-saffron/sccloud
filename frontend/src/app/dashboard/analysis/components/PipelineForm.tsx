@@ -10,6 +10,7 @@ import { IconQuestion } from "../../../components/Icons";
 import Tooltip from "../../../components/Tooltip";
 import AddSampleDropdown from "../../../components/AddSampleDropdown";
 import UploadedFilesTable, { type SampleRow } from "../../../components/UploadedFilesTable";
+import NumberInput from "./NumberInput";
 
 interface UploadedFile {
   name: string;
@@ -441,7 +442,7 @@ export default function PipelineForm({ projectId, token, onSubmit, uploadedFiles
                       <IconQuestion size={14} className="text-stone-400 hover:text-[#C86019] transition-colors" />
                     </Tooltip>
                   </label>
-                  <input type="number" value={params.qc.min_features as number} onChange={(e) => updateStepParam("qc", "min_features", Number(e.target.value))} min={1} className={numberCls} style={inputStyle} />
+                  <NumberInput value={params.qc.min_features as number} onChange={(v) => updateStepParam("qc", "min_features", v)} min={1} max={params.qc.max_features as number} className={numberCls} style={inputStyle} />
                 </div>
                 <div>
                   <label className="flex items-center gap-1 text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>
@@ -450,7 +451,7 @@ export default function PipelineForm({ projectId, token, onSubmit, uploadedFiles
                       <IconQuestion size={14} className="text-stone-400 hover:text-[#C86019] transition-colors" />
                     </Tooltip>
                   </label>
-                  <input type="number" value={params.qc.max_features as number} onChange={(e) => updateStepParam("qc", "max_features", Number(e.target.value))} min={1} className={numberCls} style={inputStyle} />
+                  <NumberInput value={params.qc.max_features as number} onChange={(v) => updateStepParam("qc", "max_features", v)} min={params.qc.min_features as number} max={100000} className={numberCls} style={inputStyle} />
                 </div>
                 <div>
                   <label className="flex items-center gap-1 text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>
@@ -459,7 +460,7 @@ export default function PipelineForm({ projectId, token, onSubmit, uploadedFiles
                       <IconQuestion size={14} className="text-stone-400 hover:text-[#C86019] transition-colors" />
                     </Tooltip>
                   </label>
-                  <input type="number" value={params.qc.umi_min_pct as number} onChange={(e) => updateStepParam("qc", "umi_min_pct", Number(e.target.value))} min={0} max={1} step={0.01} className={numberCls} style={inputStyle} />
+                  <NumberInput value={params.qc.umi_min_pct as number} onChange={(v) => updateStepParam("qc", "umi_min_pct", v)} min={0} max={params.qc.umi_max_pct as number} step={0.01} className={numberCls} style={inputStyle} />
                 </div>
                 <div>
                   <label className="flex items-center gap-1 text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>
@@ -468,7 +469,7 @@ export default function PipelineForm({ projectId, token, onSubmit, uploadedFiles
                       <IconQuestion size={14} className="text-stone-400 hover:text-[#C86019] transition-colors" />
                     </Tooltip>
                   </label>
-                  <input type="number" value={params.qc.umi_max_pct as number} onChange={(e) => updateStepParam("qc", "umi_max_pct", Number(e.target.value))} min={0} max={1} step={0.01} className={numberCls} style={inputStyle} />
+                  <NumberInput value={params.qc.umi_max_pct as number} onChange={(v) => updateStepParam("qc", "umi_max_pct", v)} min={params.qc.umi_min_pct as number} max={1} step={0.01} className={numberCls} style={inputStyle} />
                 </div>
               </div>
               <p className="text-[10px] mt-1" style={{ color: "var(--clr-text-faint)" }}>
@@ -503,7 +504,7 @@ export default function PipelineForm({ projectId, token, onSubmit, uploadedFiles
                       <IconQuestion size={14} className="text-stone-400 hover:text-[#C86019] transition-colors" />
                     </Tooltip>
                   </label>
-                  <input type="number" value={params.reduce.n_pcs as number} onChange={(e) => updateStepParam("reduce", "n_pcs", Number(e.target.value))} min={2} className={numberCls} style={inputStyle} />
+                  <NumberInput value={params.reduce.n_pcs as number} onChange={(v) => updateStepParam("reduce", "n_pcs", v)} min={2} max={100} className={numberCls} style={inputStyle} />
                 </div>
                 <div>
                   <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>分组方式</label>
@@ -549,7 +550,7 @@ export default function PipelineForm({ projectId, token, onSubmit, uploadedFiles
                       <IconQuestion size={14} className="text-stone-400 hover:text-[#C86019] transition-colors" />
                     </Tooltip>
                   </label>
-                  <input type="number" value={params.cluster.n_dims as number} onChange={(e) => updateStepParam("cluster", "n_dims", Number(e.target.value))} min={2} max={50} className={numberCls} style={inputStyle} />
+                  <NumberInput value={params.cluster.n_dims as number} onChange={(v) => updateStepParam("cluster", "n_dims", v)} min={2} max={50} className={numberCls} style={inputStyle} />
                 </div>
                 <div>
                   <label className="flex items-center gap-1 text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>
