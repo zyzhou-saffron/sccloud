@@ -157,9 +157,9 @@ function(req) {
       obj <- env[[seurat_names[1]]]
     }
 
-    # Seurat 对象通用处理
-    n_rows <- nrow(obj)
-    n_cols <- ncol(obj)
+    # Seurat 对象通用处理 (基因 × 细胞: 行=基因, 列=细胞)
+    n_cells <- ncol(obj)
+    n_genes <- nrow(obj)
     genes <- rownames(obj)
 
     gene_ids <- tryCatch({
@@ -199,8 +199,8 @@ function(req) {
     anndata <- reticulate::import("anndata")
     adata <- anndata$read_loom(file_path)
 
-    n_rows <- as.integer(adata$n_vars)
-    n_cols <- as.integer(adata$n_obs)
+    n_cells <- as.integer(adata$n_obs)
+    n_genes <- as.integer(adata$n_vars)
     genes <- as.character(reticulate::py_to_r(adata$var_names$to_list()))
 
     gene_ids <- tryCatch({
@@ -278,8 +278,12 @@ if 'Sample' in adata.obs.columns:
 
     return(list(
       filename = jsonlite::unbox(filename),
-      n_rows = jsonlite::unbox(as.integer(n_rows)),
-      n_cols = jsonlite::unbox(as.integer(n_cols)),
+      n_cells = jsonlite::unbox(as.integer(n_cells)),
+      n_genes = jsonlite::unbox(as.integer(n_genes)),
+      # 兼容旧字段: 统一为 n_rows=细胞数, n_cols=基因数 (注意与 Seurat 内部 nrow=基因/ncol=细胞
+      # 相反, 此处对齐的是前端"行=细胞/列=基因"显示约定; 新代码请直接用 n_cells/n_genes)
+      n_rows = jsonlite::unbox(as.integer(n_cells)),
+      n_cols = jsonlite::unbox(as.integer(n_genes)),
       genes = head(genes, 100),
       gene_ids = head(gene_ids, 100),
       file_size_mb = jsonlite::unbox(round(file.size(file_path) / 1024 / 1024, 2)),
@@ -297,8 +301,8 @@ if 'Sample' in adata.obs.columns:
     anndata <- reticulate::import("anndata")
     adata <- anndata$read_h5ad(file_path)
 
-    n_rows <- as.integer(adata$n_obs)
-    n_cols <- as.integer(adata$n_vars)
+    n_cells <- as.integer(adata$n_obs)
+    n_genes <- as.integer(adata$n_vars)
     genes <- as.character(reticulate::py_to_r(adata$var_names$to_list()))
 
     gene_ids <- tryCatch({
@@ -381,8 +385,12 @@ if 'Sample' in adata.obs.columns:
 
   list(
     filename = jsonlite::unbox(filename),
-    n_rows = jsonlite::unbox(as.integer(n_rows)),
-    n_cols = jsonlite::unbox(as.integer(n_cols)),
+    n_cells = jsonlite::unbox(as.integer(n_cells)),
+    n_genes = jsonlite::unbox(as.integer(n_genes)),
+    # 兼容旧字段: 统一为 n_rows=细胞数, n_cols=基因数 (注意与 Seurat 内部 nrow=基因/ncol=细胞
+    # 相反, 此处对齐的是前端"行=细胞/列=基因"显示约定; 新代码请直接用 n_cells/n_genes)
+    n_rows = jsonlite::unbox(as.integer(n_cells)),
+    n_cols = jsonlite::unbox(as.integer(n_genes)),
     genes = head(genes, 100),
     gene_ids = head(gene_ids, 100),
     file_size_mb = jsonlite::unbox(round(file.size(file_path) / 1024 / 1024, 2)),

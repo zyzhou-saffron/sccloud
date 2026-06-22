@@ -295,8 +295,10 @@ class SampleInfo(BaseModel):
 class InspectResponse(BaseModel):
     """文件解析结果"""
     filename: str
-    n_rows: int  # 细胞数 (行)
-    n_cols: int  # 基因数 (列)
+    n_cells: int  # 细胞数
+    n_genes: int  # 基因数
+    n_rows: int  # 兼容旧字段, 现统一 = 细胞数
+    n_cols: int  # 兼容旧字段, 现统一 = 基因数
     genes: list[str]  # 基因名列表
     gene_ids: list[str]  # Ensemble ID 列表
     file_size_mb: float
@@ -371,6 +373,11 @@ async def inspect_file(
 
         return InspectResponse(
             filename=unwrap(data["filename"]),
+            # 滚动部署兜底: r-engine 未更新(响应无 n_cells/n_genes)时回退到旧字段, 避免 KeyError→500。
+            # 过渡期注意: h5ad 旧 n_rows 恰=细胞数(正确), 但 RDS/Loom 旧 n_rows=基因数(仍贴反),
+            # 待 r-engine 更新后自动修正。
+            n_cells=int(unwrap(data.get("n_cells", data["n_rows"]))),
+            n_genes=int(unwrap(data.get("n_genes", data["n_cols"]))),
             n_rows=int(unwrap(data["n_rows"])),
             n_cols=int(unwrap(data["n_cols"])),
             genes=data["genes"][:100],
@@ -524,6 +531,11 @@ async def inspect_file_by_path(
 
         return InspectResponse(
             filename=unwrap(data["filename"]),
+            # 滚动部署兜底: r-engine 未更新(响应无 n_cells/n_genes)时回退到旧字段, 避免 KeyError→500。
+            # 过渡期注意: h5ad 旧 n_rows 恰=细胞数(正确), 但 RDS/Loom 旧 n_rows=基因数(仍贴反),
+            # 待 r-engine 更新后自动修正。
+            n_cells=int(unwrap(data.get("n_cells", data["n_rows"]))),
+            n_genes=int(unwrap(data.get("n_genes", data["n_cols"]))),
             n_rows=int(unwrap(data["n_rows"])),
             n_cols=int(unwrap(data["n_cols"])),
             genes=data["genes"][:100],

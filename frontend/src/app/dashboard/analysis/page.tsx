@@ -99,6 +99,8 @@ function AnalysisPageContent() {
     name: string;
     path: string;
     metadata_columns?: string[];
+    n_cells?: number;
+    n_genes?: number;
     n_rows?: number;
     n_cols?: number;
     file_size_mb?: number;
