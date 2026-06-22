@@ -62,7 +62,10 @@ async def download_meta_csv(
 ):
     """下载聚类后的meta.data CSV"""
     from app.utils.r_bridge import call_r_engine
-    task = db.query(Task).filter(Task.id == task_id, Task.user_id == current_user.id).first()
+    # 仅按 task_id 查(与 /plot、/result 等兄弟端点一致): 游客 token 续期会换 user_id,
+    # 跨会话查看同一项目时 current_user.id 可能 != task.user_id, 若再按 user_id 过滤会误 404。
+    # 访问控制沿用全站既有模型(凭不可猜的 task UUID + 登录态), 此处不再额外按 user 过滤。
+    task = db.query(Task).filter(Task.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
 
