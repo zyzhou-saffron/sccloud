@@ -265,6 +265,7 @@ function latestOfStep(tasks: Task[], step: string): Task | undefined {
 // 把后端存的逗号分隔/数组形式的簇参数还原成字符串数组(用于恢复选择项)
 function paramToList(v: unknown): string[] {
   if (Array.isArray(v)) return v.map(String);
+  if (typeof v === "number" && !Number.isNaN(v)) return [String(v)];
   if (typeof v === "string" && v) return v.split(",").map((s) => s.trim()).filter(Boolean);
   return [];
 }
