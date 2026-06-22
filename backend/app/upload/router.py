@@ -373,8 +373,9 @@ async def inspect_file(
 
         return InspectResponse(
             filename=unwrap(data["filename"]),
-            n_cells=int(unwrap(data["n_cells"])),
-            n_genes=int(unwrap(data["n_genes"])),
+            # 滚动部署兜底: 若 r-engine 尚未更新(无 n_cells/n_genes), 回退到旧字段而非 KeyError→500
+            n_cells=int(unwrap(data.get("n_cells", data["n_rows"]))),
+            n_genes=int(unwrap(data.get("n_genes", data["n_cols"]))),
             n_rows=int(unwrap(data["n_rows"])),
             n_cols=int(unwrap(data["n_cols"])),
             genes=data["genes"][:100],
@@ -528,8 +529,9 @@ async def inspect_file_by_path(
 
         return InspectResponse(
             filename=unwrap(data["filename"]),
-            n_cells=int(unwrap(data["n_cells"])),
-            n_genes=int(unwrap(data["n_genes"])),
+            # 滚动部署兜底: 若 r-engine 尚未更新(无 n_cells/n_genes), 回退到旧字段而非 KeyError→500
+            n_cells=int(unwrap(data.get("n_cells", data["n_rows"]))),
+            n_genes=int(unwrap(data.get("n_genes", data["n_cols"]))),
             n_rows=int(unwrap(data["n_rows"])),
             n_cols=int(unwrap(data["n_cols"])),
             genes=data["genes"][:100],
