@@ -13,6 +13,8 @@ interface UploadedFile {
   name: string;
   path: string;
   metadata_columns?: string[];
+  n_cells?: number;
+  n_genes?: number;
   n_rows?: number;
   n_cols?: number;
   file_size_mb?: number;
@@ -106,6 +108,8 @@ export default function AddSampleDropdown({
             name: file.name,
             path: file.path,
             metadata_columns: file.metadata_columns,
+            n_cells: file.n_cells,
+            n_genes: file.n_genes,
             n_rows: file.n_rows,
             n_cols: file.n_cols,
             file_size_mb: file.file_size_mb,
@@ -128,6 +132,8 @@ export default function AddSampleDropdown({
             name: r.inspect.filename,
             path: r.path,
             metadata_columns: r.inspect.metadata_columns,
+            n_cells: r.inspect.n_cells,
+            n_genes: r.inspect.n_genes,
             n_rows: r.inspect.n_rows,
             n_cols: r.inspect.n_cols,
             file_size_mb: r.inspect.file_size_mb,

@@ -10,6 +10,8 @@ import { IconUpload } from "./Icons";
 
 interface FileInfo {
   filename: string;
+  n_cells?: number;
+  n_genes?: number;
   n_rows: number;
   n_cols: number;
   genes: string[];
@@ -23,7 +25,7 @@ interface FileInfo {
 interface FileUploadModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onFileUploaded: (file: { name: string; path: string; metadata_columns?: string[]; n_rows?: number; n_cols?: number; file_size_mb?: number; samples?: { name: string; cell_count: number }[]; ensembl_version?: string }) => void;
+  onFileUploaded: (file: { name: string; path: string; metadata_columns?: string[]; n_cells?: number; n_genes?: number; n_rows?: number; n_cols?: number; file_size_mb?: number; samples?: { name: string; cell_count: number }[]; ensembl_version?: string }) => void;
   projectId: number;
   token: string;
   sampleGroups?: Record<string, string>;
@@ -135,6 +137,8 @@ export default function FileUploadModal({
       onFileUploaded({
         ...uploadedFile,
         metadata_columns: fileInfo?.metadata_columns,
+        n_cells: fileInfo?.n_cells,
+        n_genes: fileInfo?.n_genes,
         n_rows: fileInfo?.n_rows,
         n_cols: fileInfo?.n_cols,
         file_size_mb: fileInfo?.file_size_mb,
@@ -356,10 +360,10 @@ export default function FileUploadModal({
                       className="text-2xl font-bold"
                       style={{ color: "var(--clr-amber)" }}
                     >
-                      {fileInfo.n_rows.toLocaleString()}
+                      {(fileInfo.n_cells ?? fileInfo.n_rows).toLocaleString()}
                     </div>
                     <div className="text-xs mt-1" style={{ color: "var(--clr-text-muted)" }}>
-                      细胞数 (行)
+                      细胞数
                     </div>
                   </div>
                   <div className="text-center p-3 rounded-lg bg-white">
@@ -367,10 +371,10 @@ export default function FileUploadModal({
                       className="text-2xl font-bold"
                       style={{ color: "var(--clr-amber)" }}
                     >
-                      {fileInfo.n_cols.toLocaleString()}
+                      {(fileInfo.n_genes ?? fileInfo.n_cols).toLocaleString()}
                     </div>
                     <div className="text-xs mt-1" style={{ color: "var(--clr-text-muted)" }}>
-                      基因数 (列)
+                      基因数
                     </div>
                   </div>
                 </div>
@@ -378,7 +382,7 @@ export default function FileUploadModal({
                   className="text-center mt-3 text-sm font-semibold"
                   style={{ color: "var(--clr-text)" }}
                 >
-                  {fileInfo.n_rows.toLocaleString()} × {fileInfo.n_cols.toLocaleString()}
+                  {(fileInfo.n_cells ?? fileInfo.n_rows).toLocaleString()} 细胞 × {(fileInfo.n_genes ?? fileInfo.n_cols).toLocaleString()} 基因
                 </div>
               </div>
 
@@ -474,12 +478,12 @@ export default function FileUploadModal({
                     </tbody>
                   </table>
                 </div>
-                {fileInfo.n_cols > 100 && (
+                {(fileInfo.n_genes ?? fileInfo.n_cols) > 100 && (
                   <div
                     className="text-xs mt-2 text-center"
                     style={{ color: "var(--clr-text-faint)" }}
                   >
-                    仅显示前 100 个基因，共 {fileInfo.n_cols.toLocaleString()} 个
+                    仅显示前 100 个基因，共 {(fileInfo.n_genes ?? fileInfo.n_cols).toLocaleString()} 个
                   </div>
                 )}
               </div>

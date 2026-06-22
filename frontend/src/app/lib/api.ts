@@ -593,6 +593,8 @@ export async function listProjectFiles(projectId: number): Promise<ProjectFile[]
 
 export interface InspectResult {
   filename: string;
+  n_cells?: number;
+  n_genes?: number;
   n_rows: number;
   n_cols: number;
   genes: string[];

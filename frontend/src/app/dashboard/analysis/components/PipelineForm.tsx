@@ -15,6 +15,8 @@ interface UploadedFile {
   name: string;
   path: string;
   metadata_columns?: string[];
+  n_cells?: number;
+  n_genes?: number;
   n_rows?: number;
   n_cols?: number;
   file_size_mb?: number;
@@ -115,7 +117,7 @@ export default function PipelineForm({ projectId, token, onSubmit, uploadedFiles
         filePath: f.path,
         sampleName: s.name,
         cellCount: s.cell_count,
-        geneCount: f.n_cols ?? 0,
+        geneCount: f.n_genes ?? f.n_cols ?? 0,
         fileSizeMb: f.file_size_mb ?? 0,
         ensemblVersion: f.ensembl_version ?? "unknown",
       }));
@@ -125,8 +127,8 @@ export default function PipelineForm({ projectId, token, onSubmit, uploadedFiles
       fileName: f.name,
       filePath: f.path,
       sampleName: f.name.replace(/\.(rds|h5ad|h5seurat)$/i, ""),
-      cellCount: f.n_rows ?? 0,
-      geneCount: f.n_cols ?? 0,
+      cellCount: f.n_cells ?? f.n_rows ?? 0,
+      geneCount: f.n_genes ?? f.n_cols ?? 0,
       fileSizeMb: f.file_size_mb ?? 0,
       ensemblVersion: f.ensembl_version ?? "unknown",
     }];
