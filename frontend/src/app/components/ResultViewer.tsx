@@ -1044,6 +1044,7 @@ function ClusterResult({ data, task }: { data: Record<string, unknown> | null; t
                       className="accent-[#C86019]"
                       checked={selectedClusters.includes(cl)}
                       onChange={(e) => {
+                        subsetTouchedRef.current = true;  // 用户改选 → 不让历史恢复覆盖其选择
                         if (e.target.checked) setSelectedClusters(prev => [...prev, cl]);
                         else setSelectedClusters(prev => prev.filter(c => c !== cl));
                       }}
@@ -1232,8 +1233,10 @@ function MarkersResult({ task, data, taskCache, clusterLevels: parentClusterLeve
   const [tab4Loading, setTab4Loading] = useState(false);
   const [tab4Error, setTab4Error] = useState<string | null>(null);
   const [tab4Volcano, setTab4Volcano] = useState<VolcanoPoint[] | null>(null);
-  // 用户本次挂载内已手动计算过 → 不再用历史结果覆盖(remount 后 ref 重置, 会重新恢复最新一条)
-  const markersTouchedRef = useRef(false);
+  // 用户本次挂载内已手动计算过 → 不再用历史结果覆盖(remount 后 ref 重置, 会重新恢复最新一条)。
+  // tab3/tab4 各一把: 只算了单簇图不应连带挡住双簇表的历史恢复, 反之亦然。
+  const tab3TouchedRef = useRef(false);
+  const tab4TouchedRef = useRef(false);
 
   useEffect(() => {
     if (analyzedClusters.length > 0) {
@@ -1245,18 +1248,18 @@ function MarkersResult({ task, data, taskCache, clusterLevels: parentClusterLeve
 
   // 挂载时恢复上次"单簇特征分布图"(plot_markers) / "双簇对比表"(markers_pairwise) 的计算结果,
   // 切走再切回来不丢。只拉一次已完成任务列表, 再分别取两个 step 的结果。
-  // markersTouchedRef: 用户本次挂载内已手动计算则整段恢复跳过(数据 + 选择项一致, 不会互相覆盖);
+  // tab3/tab4TouchedRef: 对应 tab 本次挂载内已手动计算则该 tab 恢复跳过(数据 + 选择项一致);
   // 每次 await 后都重新检查 alive/ref, 避免卸载或抢跑后仍 setState。
   useEffect(() => {
     if (!task?.project_id) return;
     let alive = true;
     listCompletedTasks(task.project_id)
       .then(async (tasks) => {
-        if (!alive || markersTouchedRef.current) return;
+        if (!alive) return;
         const pm = latestOfStep(tasks, "plot_markers");
-        if (pm) {
+        if (pm && !tab3TouchedRef.current) {
           const res = await fetchTaskResult(pm.id);
-          if (alive && !markersTouchedRef.current && res) {
+          if (alive && !tab3TouchedRef.current && res) {
             setTab3Data(res);
             setTab3Task(pm);
             setTab3TaskId(pm.id);
@@ -1264,11 +1267,11 @@ function MarkersResult({ task, data, taskCache, clusterLevels: parentClusterLeve
             if (cl.length) setTab3Selected(cl);
           }
         }
-        if (!alive || markersTouchedRef.current) return;
+        if (!alive) return;
         const mp = latestOfStep(tasks, "markers_pairwise");
-        if (mp) {
+        if (mp && !tab4TouchedRef.current) {
           const res = await fetchTaskResult(mp.id);
-          if (alive && !markersTouchedRef.current && res) {
+          if (alive && !tab4TouchedRef.current && res) {
             setTab4Data((res.top_genes ?? []) as GeneRow[]);
             setTab4Task(mp);
             setTab4TaskId(mp.id);
@@ -1303,7 +1306,9 @@ function MarkersResult({ task, data, taskCache, clusterLevels: parentClusterLeve
     setError: (v: string | null) => void,
     onSuccess: (taskId: string, result: any, completedTask: Task) => void,
   ) => {
-    markersTouchedRef.current = true;  // 用户手动计算 → 阻止历史结果回填覆盖
+    // 用户手动计算 → 按 step 阻止对应 tab 的历史结果回填覆盖
+    if (step === "plot_markers") tab3TouchedRef.current = true;
+    else if (step === "markers_pairwise") tab4TouchedRef.current = true;
     setLoader(true);
     setError(null);
     try {
