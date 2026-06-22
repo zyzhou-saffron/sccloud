@@ -601,6 +601,12 @@ function ClusterResult({ data, task }: { data: Record<string, unknown> | null; t
   const umapName   = extractName(data?.plot_path)  ?? "plot_cluster.png";
   const sankeyName = extractName(data?.plot_path2) ?? "plot_cluster_sankey.png";
   const groupName  = extractName(data?.plot_path3) ?? "plot_cluster_group.png";
+  // meta.data 下载名对齐其它输出文件: 取聚类输出名里的 <项目名>_cluster_<时间戳>_ 前缀
+  // (后端命名规则 <项目>_<步骤>_<时间戳>_<内容>.<后缀>), 拼成 ..._meta_data.csv; 取不到则退回通用名
+  const metaCsvName = (() => {
+    const m = umapName.match(/^(.*_\d{14}_)/);
+    return m ? `${m[1]}meta_data.csv` : "meta_data.csv";
+  })();
   const umapSrc   = mkSrc(umapName);         // my_distPlot5: Cluster UMAP
   const sankeySrc = mkSrc(sankeyName);       // my_distPlot4: 样本 Cluster 占比图
   const groupSrc  = mkSrc(groupName);        // my_distPlot6: 分组 UMAP
@@ -956,7 +962,7 @@ function ClusterResult({ data, task }: { data: Record<string, unknown> | null; t
           <div className="flex gap-3">
             <AuthDownloadLink
               url={`/api/tasks/${taskId}/meta_csv`}
-              filename="meta_data.csv"
+              filename={metaCsvName}
               className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-medium transition-all hover:shadow-sm"
               style={{ border: "1px solid var(--clr-border)", color: "var(--clr-amber-dark)", background: "rgba(200,96,25,0.04)" }}
             >
