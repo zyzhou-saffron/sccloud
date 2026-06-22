@@ -94,6 +94,10 @@ async def download_meta_csv(
 
     result = resp.json()
     csv_path = result.get("csv_path")
+    # r-engine 经 jsonlite 序列化, 标量被包成单元素数组 → 解包, 否则 os.path.exists(list) 报
+    # "stat: path should be string... not list" → 500, 下载失败。
+    if isinstance(csv_path, list):
+        csv_path = csv_path[0] if csv_path else None
     if not csv_path or not _os.path.exists(csv_path):
         raise HTTPException(status_code=500, detail="CSV文件未生成")
 
