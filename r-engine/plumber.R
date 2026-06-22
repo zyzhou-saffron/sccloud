@@ -993,6 +993,8 @@ function(req) {
     pro <- readRDS(input_path)
     # 原子写: 临时文件 + rename, 防并发/双击下半成品 csv(与 save_with_canonical 一致)
     tmp_path <- paste0(csv_path, ".tmp.", Sys.getpid())
+    # 写/rename 失败时清理残留临时文件(rename 成功后 tmp 已不存在, 此处为 no-op)
+    on.exit(if (file.exists(tmp_path)) unlink(tmp_path), add = TRUE)
     write.csv(pro@meta.data, tmp_path, row.names = TRUE)
     file.rename(tmp_path, csv_path)
   }
