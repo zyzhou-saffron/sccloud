@@ -983,11 +983,16 @@ function(req) {
 
   input_path <- file.path(project_path, "seurat_clustered.rds")
   if (!file.exists(input_path)) stop("请先运行聚类步骤")
-  pro <- readRDS(input_path)
-
-  md <- pro@meta.data
   csv_path <- file.path(project_path, "meta_data.csv")
-  write.csv(md, csv_path, row.names = TRUE)
+
+  # 复用缓存: 已生成且不比 seurat_clustered.rds 旧, 就不重复 readRDS 整个对象。
+  # (大数据集 rds 上 G, 仅为取 meta.data 而整读非常慢, 是下载超时的根因; 缓存后重复下载秒回。)
+  cached <- file.exists(csv_path) &&
+    file.info(csv_path)$mtime >= file.info(input_path)$mtime
+  if (!cached) {
+    pro <- readRDS(input_path)
+    write.csv(pro@meta.data, csv_path, row.names = TRUE)
+  }
   list(
     status = "success",
     csv_path = csv_path
