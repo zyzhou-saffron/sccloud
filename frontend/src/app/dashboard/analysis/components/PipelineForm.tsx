@@ -431,7 +431,7 @@ export default function PipelineForm({ projectId, token, onSubmit, uploadedFiles
                     <IconQuestion size={14} className="text-stone-400 hover:text-[#C86019] transition-colors" />
                   </Tooltip>
                 </label>
-                <input type="range" min="0" max="100" value={params.qc.max_mt_ratio as number} onChange={(v) => updateStepParam("qc", "max_mt_ratio", v)} className="w-full accent-[#C86019]" />
+                <input type="range" min="0" max="100" value={params.qc.max_mt_ratio as number} onChange={(e) => updateStepParam("qc", "max_mt_ratio", Number(e.target.value))} className="w-full accent-[#C86019]" />
                 <div className="text-[10px] text-right" style={{ color: "var(--clr-text-faint)", fontFamily: "var(--font-mono)" }}>{params.qc.max_mt_ratio as number}%</div>
               </div>
               <div className="flex flex-wrap gap-x-6 gap-y-3">
@@ -442,7 +442,7 @@ export default function PipelineForm({ projectId, token, onSubmit, uploadedFiles
                       <IconQuestion size={14} className="text-stone-400 hover:text-[#C86019] transition-colors" />
                     </Tooltip>
                   </label>
-                  <NumberInput value={params.qc.min_features as number} onChange={(v) => updateStepParam("qc", "min_features", v)} min={0} max={params.qc.max_features as number} className={numberCls} style={inputStyle} />
+                  <NumberInput value={params.qc.min_features as number} onChange={(v) => updateStepParam("qc", "min_features", v)} min={1} max={params.qc.max_features as number} className={numberCls} style={inputStyle} />
                 </div>
                 <div>
                   <label className="flex items-center gap-1 text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>
@@ -588,7 +588,7 @@ export default function PipelineForm({ projectId, token, onSubmit, uploadedFiles
                       <IconQuestion size={14} className="text-stone-400 hover:text-[#C86019] transition-colors" />
                     </Tooltip>
                   </label>
-                  <input type="range" min="0" max="2" step="0.01" value={params.cluster.resolution as number} onChange={(v) => updateStepParam("cluster", "resolution", v)} className="w-full accent-[#C86019]" />
+                  <input type="range" min="0" max="2" step="0.01" value={params.cluster.resolution as number} onChange={(e) => updateStepParam("cluster", "resolution", Number(e.target.value))} className="w-full accent-[#C86019]" />
                   <div className="flex justify-between text-[10px]" style={{ color: "var(--clr-text-faint)", fontFamily: "var(--font-mono)" }}>
                     <span>0</span><span style={{ color: "var(--clr-amber)", fontWeight: 600 }}>{params.cluster.resolution as number}</span><span>2</span>
                   </div>

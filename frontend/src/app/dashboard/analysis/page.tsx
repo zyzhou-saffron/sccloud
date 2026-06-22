@@ -773,7 +773,7 @@ function AnalysisPageContent() {
                         <IconQuestion size={14} className="text-stone-400 hover:text-[#C86019] transition-colors" />
                       </Tooltip>
                     </label>
-                    <input type="range" min="0" max="100" value={stepParams.max_mt_ratio as number} onChange={(v) => updateParam("max_mt_ratio", v)} className="w-full accent-[#C86019]" />
+                    <input type="range" min="0" max="100" value={stepParams.max_mt_ratio as number} onChange={(e) => updateParam("max_mt_ratio", Number(e.target.value))} className="w-full accent-[#C86019]" />
                     <div className="text-xs text-right" style={{ color: "var(--clr-text-faint)", fontFamily: "var(--font-mono)" }}>{stepParams.max_mt_ratio as number}%</div>
                   </div>
                   <div>
@@ -783,7 +783,7 @@ function AnalysisPageContent() {
                         <IconQuestion size={14} className="text-stone-400 hover:text-[#C86019] transition-colors" />
                       </Tooltip>
                     </label>
-                    <NumberInput value={stepParams.min_features as number} onChange={(v) => updateParam("min_features", v)} min={0} max={stepParams.max_features as number} className={inputCls} style={inputStyle} />
+                    <NumberInput value={stepParams.min_features as number} onChange={(v) => updateParam("min_features", v)} min={1} max={stepParams.max_features as number} className={inputCls} style={inputStyle} />
                   </div>
                   <div>
                     <label className="flex items-center gap-1.5 text-xs font-medium mb-1.5" style={{ color: "var(--clr-text-muted)" }}>
@@ -901,7 +901,7 @@ function AnalysisPageContent() {
                         <IconQuestion size={14} className="text-stone-400 hover:text-[#C86019] transition-colors" />
                       </Tooltip>
                     </label>
-                    <input type="range" min="0" max="2" step="0.01" value={stepParams.resolution as number} onChange={(v) => updateParam("resolution", v)} className="w-full accent-[#C86019]" />
+                    <input type="range" min="0" max="2" step="0.01" value={stepParams.resolution as number} onChange={(e) => updateParam("resolution", Number(e.target.value))} className="w-full accent-[#C86019]" />
                     <div className="flex justify-between text-[10px]" style={{ color: "var(--clr-text-faint)", fontFamily: "var(--font-mono)" }}>
                       <span>0</span><span style={{ color: "var(--clr-amber)",fontWeight:600 }}>{stepParams.resolution as number}</span><span>2</span>
                     </div>
