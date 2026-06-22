@@ -116,6 +116,22 @@ async def create_pipeline(
         if not project_id or not isinstance(params, dict):
             raise HTTPException(status_code=400, detail="Missing project_id or params")
 
+        # 内存准入预检(#42): 若全流程里任一步骤的估算内存 > 单任务上限, 早拒(否则会跑到一半 OOM 失败)。
+        from app.db.models import Project as _Project
+        from app.utils import admission
+        from app.config import get_settings as _get_settings
+        _proj = db.query(_Project).filter(_Project.id == project_id).first()
+        if _proj and _proj.storage_path:
+            _settings = _get_settings()
+            _enabled = set(params.get("enabled_steps", [])) | {"qc", "normalize", "reduce", "cluster", "annotate"}
+            for _st in _enabled:
+                _w = admission.estimate_weight_gb(_st, _proj.storage_path)
+                if _w > _settings.worker_mem_cap_gb:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=(f"数据过大：全流程 {_st} 步骤预计需 ~{_w:.0f}GB, 超过单任务内存上限 "
+                                f"{_settings.worker_mem_cap_gb}GB。请拆分数据或联系管理员调大上限。"))
+
         # 检查项目权限（简化版本，实际应该更复杂）
         # 这里假设 user_id 等于当前 token 的 user_id
 
@@ -356,21 +372,36 @@ async def cancel_pipeline(
             detail=f"当前 pipeline 状态 '{pipeline.status}' 不可取消",
         )
 
-    # 取消当前正在运行的 task
+    # 取消该 pipeline 下所有未结束的 task
     from app.db.models import Task
-    running_task = (
+    running_tasks = (
         db.query(Task)
         .filter(
             Task.pipeline_id == pipeline_id,
             Task.status.in_(["pending", "running"]),
         )
-        .first()
+        .all()
     )
-    if running_task:
-        running_task.status = "cancelled"
-        running_task.completed_at = datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc)
+    for t in running_tasks:
+        t.status = "cancelled"
+        t.completed_at = now
 
     pipeline.status = "cancelled"
     db.commit()
+
+    # ── 取消全链路 (#42 M3)：给重任务发 Redis kill 信号 → worker 轮询到即 kill -9 子进程，
+    #    run_job 正在跑的当前步立刻中止(不必等步骤跑完)。Redis 不可用不阻塞取消(DB 已置 cancelled)。──
+    try:
+        import redis.asyncio as aioredis
+        from app.config import get_settings
+        settings = get_settings()
+        r = aioredis.from_url(settings.redis_url)
+        for t in running_tasks:
+            await r.set(f"scc:cancel:{t.id}", "1", ex=600)  # worker 每秒轮询, 10min 足够; 别留 2h (bot #64)
+        await r.aclose()
+    except Exception as e:
+        # Redis 不可用不阻塞取消(DB 已置 cancelled, 退化为步骤间停), 但别静默吞——留日志便于排查 (bot #64)
+        logger.warning(f"[cancel] pipeline={pipeline_id} 发送 Redis 取消信号失败: {e}")
 
     return {"status": "cancelled", "pipeline_id": pipeline_id}

@@ -6,10 +6,19 @@
 # 停止: docker compose -f docker-compose.server.yml --env-file .env.server down
 # 访问: http://<server-ip>:9000
 
+# ---- 容器日志轮转(防 json-file 日志撑爆 70GB 根盘 cs-root)----
+# 每容器最多 5×20MB=100MB; 扩 worker 时新容器自动继承。
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
 services:
   # ---- Nginx 反向代理 (统一入口 :9000) ----
   nginx:
     image: nginx:alpine
+    logging: *default-logging
     network_mode: host
     restart: unless-stopped
     depends_on: [frontend, backend]
@@ -18,6 +27,7 @@ services:
 
   # ---- 前端 (Next.js :3000) ----
   frontend:
+    logging: *default-logging
     build:
       context: ./frontend
       args:
@@ -32,6 +42,7 @@ services:
 
   # ---- API 网关 (FastAPI :8000) ----
   backend:
+    logging: *default-logging
     build: ./backend
     network_mode: host
     env_file: .env.server
@@ -58,6 +69,7 @@ services:
   # ---- R 计算引擎 (Plumber :8787) ----
   r-engine:
     image: sccloud-r-engine
+    logging: *default-logging
     # 一键部署: 优先用上面的 image(可改成 ghcr.io/<owner>/sccloud-r-engine:<tag> 直接拉);
     # build 作兜底, 供维护者本地重建(需先备好 r-engine/r-library, 见 README/issue)
     build:
@@ -88,6 +100,7 @@ services:
   # command 覆盖端口为 8788（$$ 转义，避免 compose 把 $run 当变量插值）
   r-engine-quick:
     image: sccloud-r-engine
+    logging: *default-logging
     command: ["R", "-e", "plumber::plumb('plumber.R')$$run(host='0.0.0.0', port=8788)"]
     network_mode: host
     restart: unless-stopped
@@ -106,12 +119,14 @@ services:
       timeout: 60s
       retries: 3
 
-  # ---- 重任务引擎池成员 (#42 Phase2): 与 r-engine 同镜像/同端点, 仅端口不同 ----
-  # backend 从 Redis 池 scc:heavy_engines 借空闲引擎; 池含 8787/8791/8790 → 3 路并发。
-  # 加引擎只需再复制一份(改端口)并把 URL 加进 config.r_engine_pool。
-  r-engine-2:
+  # ---- 重任务 worker (#42 Phase2: 队列 + 独立可 kill 子进程, 取代引擎池) ----
+  # 跑 worker.R: BRPOP scc:heavyqueue → spawn run_job.R(独立 Rscript 进程, 用 pr$call 原地复用
+  # 现有 plumber 端点) → 监督 + 收到取消即 kill -9。每个重任务一个独立进程 → 干净可 kill + 内存全回收。
+  # 起 N 路并发: 部署时 docker compose up --scale r-engine-worker=N。非 HTTP 服务, 禁 healthcheck。
+  r-engine-worker:
     image: sccloud-r-engine
-    command: ["R", "-e", "plumber::plumb('plumber.R')$$run(host='0.0.0.0', port=8791)"]
+    logging: *default-logging
+    command: ["Rscript", "/app/worker.R"]
     network_mode: host
     restart: unless-stopped
     environment:
@@ -119,37 +134,20 @@ services:
     volumes:
       - ${PROJECTS_ROOT:-/data/projects}:${PROJECTS_ROOT:-/data/projects}
       - ./r-engine/data:/app/data
+      - ./r-engine/run_job.R:/app/run_job.R:ro
+      - ./r-engine/worker.R:/app/worker.R:ro
       - ./r-engine/plumber.R:/app/plumber.R:ro
       - ./r-engine/R:/app/R:ro
-    mem_limit: 128g
+    # 实测全流程单步峰值: 常规步骤 1.5-5GB、inferCNV 最高 ~11GB(小数据)。64g 封顶对当前数据
+    # 绰绰有余且 8×64=512 不会拖垮 502GB 宿主(实际占用远低于封顶); 超大数据集的 inferCNV 另议(admission)。
+    mem_limit: 64g
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://127.0.0.1:8791/health"]
-      interval: 30s
-      timeout: 60s
-      retries: 3
-
-  r-engine-3:
-    image: sccloud-r-engine
-    command: ["R", "-e", "plumber::plumb('plumber.R')$$run(host='0.0.0.0', port=8790)"]
-    network_mode: host
-    restart: unless-stopped
-    environment:
-      REDIS_URL: "redis://127.0.0.1:6380/0"
-    volumes:
-      - ${PROJECTS_ROOT:-/data/projects}:${PROJECTS_ROOT:-/data/projects}
-      - ./r-engine/data:/app/data
-      - ./r-engine/plumber.R:/app/plumber.R:ro
-      - ./r-engine/R:/app/R:ro
-    mem_limit: 128g
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://127.0.0.1:8790/health"]
-      interval: 30s
-      timeout: 60s
-      retries: 3
+      disable: true
 
   # ---- 数据库 (MariaDB :3307) ----
   db:
     image: mariadb:11
+    logging: *default-logging
     network_mode: host
     restart: unless-stopped
     environment:
@@ -169,6 +167,7 @@ services:
   # ---- 消息队列 (Redis :6380) ----
   redis:
     image: redis:7-alpine
+    logging: *default-logging
     network_mode: host
     restart: unless-stopped
     command: redis-server --port 6380

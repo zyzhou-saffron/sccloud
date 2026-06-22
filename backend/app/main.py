@@ -31,40 +31,44 @@ def _run_alembic_upgrade():
         logger.warning(f"[alembic] upgrade failed: {e}")
 
 
-async def _init_engine_pool():
-    """启动时把重任务引擎池(Redis list scc:heavy_engines)重置为配置的全部引擎 URL (#42 Phase2)。
-    backend 跑重任务时 BRPOP 借一个空闲引擎、用完 LPUSH 还回 → 并发度 = 池大小。"""
-    import redis.asyncio as aioredis
-    s = get_settings()
-    urls = [u.strip() for u in (s.r_engine_pool or "").split(",") if u.strip()]
-    if not urls:
-        return
-    try:
-        r = aioredis.from_url(s.redis_url)
-        async with r.pipeline(transaction=True) as pipe:
-            pipe.delete("scc:heavy_engines")
-            pipe.rpush("scc:heavy_engines", *urls)
-            await pipe.execute()
-        await r.aclose()
-        logger.info(f"[engine-pool] 重引擎池已初始化: {urls}")
-    except Exception as e:
-        logger.warning(f"[engine-pool] 初始化失败(退化为单引擎 r_engine_url): {e}")
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期 — 启动时执行迁移、创建数据库表并启动后台服务。"""
     _run_alembic_upgrade()
     Base.metadata.create_all(bind=engine)
-    await _init_engine_pool()
+    # 重任务改走 Redis 队列 + worker(#42 Phase2)，无需再初始化引擎池。
     # 启动 Redis → DB 进度同步器 (后台协程)
     syncer = ProgressSyncer()
     syncer_task = asyncio.create_task(syncer.run())
     # 启动数据清理服务 (后台协程)
     cleanup_task = asyncio.create_task(data_cleanup.run())
+    # 启动内存预约回收器 (#42 admission): 回收后端崩溃泄漏的预约
+    reaper_task = asyncio.create_task(_reservation_reaper())
     yield
     syncer_task.cancel()
     cleanup_task.cancel()
+    reaper_task.cancel()
+
+
+async def _reservation_reaper():
+    """每 60s 回收存活键已过期的内存预约(防后端崩溃后预算永久漏占)。"""
+    import redis.asyncio as aioredis
+    from app.utils import admission
+    s = get_settings()
+    while True:
+        try:
+            await asyncio.sleep(60)
+            r = aioredis.from_url(s.redis_url, socket_timeout=None)
+            try:
+                n = await admission.reap_stale(r)
+                if n:
+                    logger.info(f"[admission] reaper 回收 {n} 个泄漏预约")
+            finally:
+                await r.aclose()
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.warning(f"[admission] reaper 异常: {e}")
 
 
 # ===== 创建应用 =====

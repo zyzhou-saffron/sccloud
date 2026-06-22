@@ -43,9 +43,12 @@ class ProgressSyncer:
         settings = get_settings()
         while True:
             try:
+                # socket_timeout=None: 否则 pubsub.listen() 的阻塞读会被默认 5s socket 超时掐断,
+                # 陷入"连接→5s超时→重连"风暴, 既丢进度又与任务收尾抢 DB 行锁。
                 r = aioredis.from_url(
                     settings.redis_url,
                     decode_responses=True,
+                    socket_timeout=None,
                 )
                 pubsub = r.pubsub()
                 await pubsub.psubscribe("task:*:progress")

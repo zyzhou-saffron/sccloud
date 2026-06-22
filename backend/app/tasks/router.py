@@ -5,6 +5,7 @@ scCloud v2 — 任务管理路由
 """
 
 import asyncio
+import logging
 from datetime import datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File
@@ -15,6 +16,7 @@ from app.auth.deps import get_current_user
 from app.db.models import Project, Task, User, get_db
 from app.utils.r_bridge import call_r_engine, create_task
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/tasks", tags=["任务管理"])
 
 
@@ -162,6 +164,14 @@ async def submit_task(
     )
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
+
+    # 内存准入预检(#42): 预算满 → 503「资源紧张请稍后重试」; 数据过大超单任务上限 → 400。
+    # 权威预约在 call_r_engine 执行时做; 这里只为提交即时反馈弹窗。
+    from app.utils import admission
+    from app.config import get_settings as _get_settings
+    _ok, _code, _msg = await admission.precheck(req.step, project.storage_path, _get_settings())
+    if not _ok:
+        raise HTTPException(status_code=_code, detail=_msg)
 
     # 检查是否有同步骤的进行中任务
     # plot_markers / cellchat_pathway 是只读可视化，允许多参数并发；其他步骤保持互斥
@@ -595,13 +605,13 @@ async def cancel_task(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """取消任务 (仅 pending 状态可取消)。"""
+    """取消任务 (pending/running 均可取消; running 重任务通过 Redis 信号让 worker kill 子进程)。"""
     # 不检查 user_id 所有权 — task_id 是 UUID（不可猜测），guest token 续期会换用户
     task = db.query(Task).filter(Task.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
 
-    if task.status not in ("pending",):
+    if task.status not in ("pending", "running"):
         raise HTTPException(
             status_code=400,
             detail=f"当前状态 '{task.status}' 不可取消",
@@ -609,5 +619,18 @@ async def cancel_task(
 
     task.status = "cancelled"
     db.commit()
+
+    # 取消全链路 (#42 M3)：发 Redis kill 信号 → worker kill -9 run_job 子进程，立刻中止当前步。
+    try:
+        import redis.asyncio as aioredis
+        from app.config import get_settings
+        settings = get_settings()
+        r = aioredis.from_url(settings.redis_url)
+        await r.set(f"scc:cancel:{task.id}", "1", ex=600)  # worker 每秒轮询, 10min 足够; 别留 2h (bot #64)
+        await r.aclose()
+    except Exception as e:
+        # Redis 不可用不阻塞取消(DB 已置 cancelled, 退化为步骤间停), 但别静默吞——留日志便于排查 (bot #64)
+        logger.warning(f"[cancel] 发送 Redis 取消信号失败 task={task.id}: {e}")
+
     db.refresh(task)
     return task

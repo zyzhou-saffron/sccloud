@@ -79,7 +79,18 @@ save_with_canonical <- function(archive_path, canonical_path, object = NULL) {
   if (!is.null(object)) {
     saveRDS(object, archive_path)
   }
-  file.copy(archive_path, canonical_path, overwrite = TRUE)
+  # 原子更新规范名(供下一步读取的固定名 .rds): 先复制到同目录临时文件, 再 file.rename 覆盖。
+  # 同一文件系统 rename 是原子操作 → 即便任务被 kill -9 砍在中途, canonical 要么是旧的完整版、
+  # 要么是新的完整版, 绝不会留下半截损坏文件让下一步读崩 (#42 半成品清理)。
+  tmp <- paste0(canonical_path, ".tmp.", Sys.getpid())
+  if (!file.copy(archive_path, tmp, overwrite = TRUE)) {
+    stop("save_with_canonical: 复制到临时文件失败: ", archive_path)
+  }
+  if (!file.rename(tmp, canonical_path)) {
+    # rename 失败(极少见, 如跨设备) → 退回直接覆盖并清理临时文件
+    file.copy(tmp, canonical_path, overwrite = TRUE)
+    unlink(tmp)
+  }
 }
 
 #' 从 annotate_result.json 同步合并后的 CellType 到 Seurat 对象
