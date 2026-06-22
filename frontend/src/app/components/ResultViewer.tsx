@@ -954,25 +954,15 @@ function ClusterResult({ data, task }: { data: Record<string, unknown> | null; t
       {activeTab === "metadata" && metaSample && metaSample.length > 0 && (
         <div className="space-y-2">
           <div className="flex gap-3">
-            <button
-              onClick={async () => {
-                try {
-                  const token = getAuthToken() || "";
-                  const resp = await fetch("/api/tasks/" + taskId + "/meta_csv", { headers: { Authorization: "Bearer " + token } });
-                  if (!resp.ok) throw new Error("Failed");
-                  const blob = await resp.blob();
-                  const a = document.createElement("a");
-                  a.href = URL.createObjectURL(blob);
-                  a.download = "meta_data.csv";
-                  a.click();
-                } catch(e) { alert("下载失败"); }
-              }}
+            <AuthDownloadLink
+              url={`/api/tasks/${taskId}/meta_csv`}
+              filename="meta_data.csv"
               className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-medium transition-all hover:shadow-sm"
               style={{ border: "1px solid var(--clr-border)", color: "var(--clr-amber-dark)", background: "rgba(200,96,25,0.04)" }}
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
               全部 meta.data .csv
-            </button>
+            </AuthDownloadLink>
           </div>
           <SectionTitle>
             meta.data 预览
