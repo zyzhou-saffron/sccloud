@@ -78,8 +78,10 @@ async def download_meta_csv(
 
     settings = _get_settings()
     # 30s 对大数据集(整读上 G 的 seurat_clustered.rds 取 meta.data)太紧 → 冷读/负载下超时报错。
-    # 放宽到 300s; R 端已加缓存, 重复下载不再重读。
-    async with httpx.AsyncClient(timeout=300.0) as client:
+    # read 放宽到 300s(R 端已加缓存, 重复下载不再重读); connect 仍短, 避免 r-engine 不可达时干等 5 分钟。
+    async with httpx.AsyncClient(
+        timeout=httpx.Timeout(connect=10.0, read=300.0, write=30.0, pool=10.0)
+    ) as client:
         resp = await client.post(
             f"{settings.r_engine_url}/meta_csv",
             json={"project_path": project.storage_path},

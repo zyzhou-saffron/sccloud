@@ -991,7 +991,10 @@ function(req) {
     file.info(csv_path)$mtime >= file.info(input_path)$mtime
   if (!cached) {
     pro <- readRDS(input_path)
-    write.csv(pro@meta.data, csv_path, row.names = TRUE)
+    # 原子写: 临时文件 + rename, 防并发/双击下半成品 csv(与 save_with_canonical 一致)
+    tmp_path <- paste0(csv_path, ".tmp.", Sys.getpid())
+    write.csv(pro@meta.data, tmp_path, row.names = TRUE)
+    file.rename(tmp_path, csv_path)
   }
   list(
     status = "success",
