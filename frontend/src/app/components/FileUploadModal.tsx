@@ -44,6 +44,7 @@ export default function FileUploadModal({
   const [error, setError] = useState<string | null>(null);
   const [fileInfo, setFileInfo] = useState<FileInfo | null>(null);
   const [uploadedFile, setUploadedFile] = useState<{ name: string; path: string } | null>(null);
+  const [dragging, setDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileUpload = async (file: File) => {
@@ -236,13 +237,28 @@ export default function FileUploadModal({
             <div
               className="border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all hover:border-[#C86019] hover:bg-[rgba(200,96,25,0.02)]"
               style={{
-                borderColor: uploadProgress !== null ? "var(--clr-amber)" : "var(--clr-border)",
-                background: uploadProgress !== null ? "rgba(200,96,25,0.03)" : undefined,
+                borderColor: (dragging || uploadProgress !== null) ? "var(--clr-amber)" : "var(--clr-border)",
+                background: dragging ? "rgba(200,96,25,0.06)" : (uploadProgress !== null ? "rgba(200,96,25,0.03)" : undefined),
               }}
               onClick={() => {
                 if (uploadProgress === null) {
                   fileInputRef.current?.click();
                 }
+              }}
+              onDragOver={(e) => {
+                e.preventDefault();  // 必须 preventDefault, 否则 onDrop 不触发(浏览器默认打开文件)
+                if (uploadProgress === null) setDragging(true);
+              }}
+              onDragLeave={(e) => {
+                e.preventDefault();
+                setDragging(false);
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDragging(false);
+                if (uploadProgress !== null) return;
+                const f = e.dataTransfer.files?.[0];
+                if (f) handleFileUpload(f);
               }}
             >
               <IconUpload
