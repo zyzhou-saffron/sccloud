@@ -23,6 +23,7 @@
 """
 import asyncio
 import glob
+import json
 import logging
 import os
 
@@ -100,6 +101,29 @@ _W = {
 _DEFAULT = (4.0, 0.4)
 _SAFETY = 1.25
 
+# 首选: 以细胞数为规模代理(比压缩文件 MB 稳——压缩比差异大, 真正决定内存的是细胞数)。
+# slope = 每千细胞 GB, 由 ~45451 细胞示例集逐步实测峰值 / 45.451 标定;
+# inferCNV 由 1888 细胞 11GB 这个点取陡值(它随细胞数涨得最快、最易 OOM)。
+_WC_BASE = 0.5  # 固定开销(R+Seurat 加载等)
+_WC = {
+    "qc":        0.06,
+    "normalize": 0.68,
+    "reduce":    0.17,
+    "cluster":   0.18,
+    "annotate":  0.21,
+    "markers":   0.26,
+    "enrich":    0.08,
+    "monocle":   1.40,
+    "cellchat":  0.16,
+    "wgcna":     0.22,
+    "infercnv":  5.80,
+    "markers_pairwise": 0.26,
+    "subset_cluster":   0.18,
+    "merge_celltypes":  0.10,
+    "marker_expr":      0.05,
+}
+_WC_DEFAULT = 0.5
+
 
 def _input_mb(project_path: str) -> float:
     """用上传的原始数据大小(MB)作为数据规模(细胞数)的代理。退化用项目目录里最大 rds。"""
@@ -115,11 +139,62 @@ def _input_mb(project_path: str) -> float:
         return 50.0
 
 
-def estimate_weight_gb(step: str, project_path: str | None) -> float:
-    """估算某步骤在该项目数据上的峰值内存(GB), 用于预算预约。"""
+def _n_cells(project_path: str) -> int | None:
+    """从已完成步骤的结果 json 读细胞数(stats.cells / qc 的 total_cells_after; jsonlite 会包成单元素数组)。
+    用于单步重跑/已跑过的项目; 全流程首次提交无结果 json, 由调用方传 n_cells。拿不到返回 None。"""
+    def _u(v):
+        return v[0] if isinstance(v, list) and v else v
+    try:
+        # 确定性顺序: 优先 qc(total_cells_after 是规范的过滤后细胞数), 其余按名排序, 避免 glob 顺序不定致估算飘
+        qc = os.path.join(project_path, "qc_result.json")
+        files = ([qc] if os.path.exists(qc) else []) + sorted(
+            f for f in glob.glob(os.path.join(project_path, "*_result.json"))
+            if os.path.basename(f) != "qc_result.json")
+        for f in files:
+            try:
+                with open(f) as fh:
+                    st = (json.load(fh) or {}).get("stats", {}) or {}
+                c = _u(st.get("cells")) or _u(st.get("total_cells_after"))
+                if c and int(c) > 0:
+                    return int(c)
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return None
+
+
+def _safe_int(v) -> int | None:
+    """容错把 JSON 来的数字(可能 float/str/None)转正整数, 否则 None。"""
+    try:
+        return int(v) if v is not None and float(v) > 0 else None
+    except (TypeError, ValueError):
+        return None
+
+
+def estimate_weight_gb(step: str, project_path: str | None, n_cells: int | None = None) -> float:
+    """估算某步骤峰值内存(GB)。
+    - 服务端从结果 json 读到的细胞数可信 → 直接用细胞公式;
+    - 全流程首次提交只有客户端传入的 n_cells(不可信) → 取'细胞估算'与'文件MB估算'的较大者,
+      防客户端报小绕过 400(文件MB由上传文件实测、客户端改不了);
+    - 都拿不到细胞数 → 退回纯文件 MB 旧公式。"""
+    def _cell_w(cells: int) -> float:
+        per1k = _WC.get(step, _WC_DEFAULT)
+        return (_WC_BASE + per1k * cells / 1000.0) * _SAFETY
+
+    server_cells = _n_cells(project_path) if project_path else None
+    client_cells = _safe_int(n_cells)
+
+    if server_cells and server_cells > 0:
+        cells = max(server_cells, client_cells or 0)
+        return round(max(2.0, _cell_w(cells)), 1)
+
     base, slope = _W.get(step, _DEFAULT)
     mb = _input_mb(project_path) if project_path else 50.0
-    return round(max(2.0, (base + slope * mb) * _SAFETY), 1)
+    w_file = (base + slope * mb) * _SAFETY
+    if client_cells:
+        return round(max(2.0, _cell_w(client_cells), w_file), 1)
+    return round(max(2.0, w_file), 1)
 
 
 # 原子预约: 累加 hash 现有预约, 容得下才 HSET 并返回 1

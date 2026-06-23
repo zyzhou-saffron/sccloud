@@ -124,8 +124,12 @@ async def create_pipeline(
         if _proj and _proj.storage_path:
             _settings = _get_settings()
             _enabled = set(params.get("enabled_steps", [])) | {"qc", "normalize", "reduce", "cluster", "annotate"}
+            # 前端按各样本细胞数求和传入(全流程首次提交无结果 json 可读)。
+            # 注意: total_cells 来自客户端、不可信; 这条 400 仅为提示性早拒, 真正的硬约束是
+            # 503 动态预算 + worker 容器 64g cgroup(估小了顶多任务自己 OOM 失败, 不伤系统)。
+            _total_cells = data.get("total_cells")
             for _st in _enabled:
-                _w = admission.estimate_weight_gb(_st, _proj.storage_path)
+                _w = admission.estimate_weight_gb(_st, _proj.storage_path, n_cells=_total_cells)
                 if _w > _settings.worker_mem_cap_gb:
                     raise HTTPException(
                         status_code=400,
