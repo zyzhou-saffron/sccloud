@@ -588,17 +588,18 @@ function(req) {
 
   # ---- 生成样本相关性散点图 (my_distPlot1) ----
   report(40, "生成样本相关性图...")
-  # 预览始终用 PNG；下载用用户选择的格式
+  # 预览始终用 PNG；下载用用户选择的格式（图对象只构建一次, 两个设备复用）
+  corr_p <- my_distPlot1(exp)
   corr_preview_archive <- make_output_name(project_path, "1", "qc", "correlation", "png")
   corr_plot_path <- file.path(project_path, corr_preview_archive)
   open_plot_device(corr_plot_path, 1400, 600, "png", units = "px")
-  print(my_distPlot1(exp))
+  print(corr_p)
   dev.off()
   if (plot_format != "png") {
     corr_download_archive <- make_output_name(project_path, "1", "qc", "correlation", plot_format)
     corr_download_path <- file.path(project_path, corr_download_archive)
     open_plot_device(corr_download_path, 1400, 600, plot_format, units = "px")
-    print(my_distPlot1(exp))
+    print(corr_p)
     dev.off()
   } else {
     corr_download_path <- corr_plot_path
@@ -645,17 +646,18 @@ function(req) {
 
   # ---- 生成过滤前后 VlnPlot 对比 (my_distPlot2) ----
   report(70, "生成质控小提琴图...")
-  # 预览始终用 PNG；下载用用户选择的格式
+  # 预览始终用 PNG；下载用用户选择的格式（图对象只构建一次, 两个设备复用）
+  vln_p <- my_distPlot2(exp, pro)
   vln_preview_archive <- make_output_name(project_path, "1", "qc", "violin", "png")
   vln_plot_path <- file.path(project_path, vln_preview_archive)
   open_plot_device(vln_plot_path, 1400, 1000, "png", units = "px")
-  print(my_distPlot2(exp, pro))
+  print(vln_p)
   dev.off()
   if (plot_format != "png") {
     vln_download_archive <- make_output_name(project_path, "1", "qc", "violin", plot_format)
     vln_download_path <- file.path(project_path, vln_download_archive)
     open_plot_device(vln_download_path, 1400, 1000, plot_format, units = "px")
-    print(my_distPlot2(exp, pro))
+    print(vln_p)
     dev.off()
   } else {
     vln_download_path <- vln_plot_path
@@ -932,42 +934,46 @@ function(req) {
 
   report(70, "生成聚类图...")
 
-  # 预览始终用 PNG；下载用用户选择的格式
+  # 预览始终用 PNG；下载用用户选择的格式（3 个图对象各只构建一次, 两个设备复用）
+  umap_p   <- my_distPlot5(pro)
+  sankey_p <- my_distPlot4(pro@meta.data)
+  group_p  <- my_distPlot6(pro, group_by)
+
   umap_preview_archive <- make_output_name(project_path, "4", "cluster", "umap", "png")
   plot_path <- file.path(project_path, umap_preview_archive)
   open_plot_device(plot_path, 1200, 800, "png", units = "px")
-  print(my_distPlot5(pro))
+  print(umap_p)
   dev.off()
 
   sankey_preview_archive <- make_output_name(project_path, "4", "cluster", "sankey", "png")
   plot_path2 <- file.path(project_path, sankey_preview_archive)
   open_plot_device(plot_path2, 1200, 1000, "png", units = "px")
-  print(my_distPlot4(pro@meta.data))
+  print(sankey_p)
   dev.off()
 
   group_preview_archive <- make_output_name(project_path, "4", "cluster", "group_umap", "png")
   plot_path3 <- file.path(project_path, group_preview_archive)
   open_plot_device(plot_path3, 1400, 1200, "png", units = "px")
-  print(my_distPlot6(pro, group_by))
+  print(group_p)
   dev.off()
 
   if (plot_format != "png") {
     umap_download_archive <- make_output_name(project_path, "4", "cluster", "umap", plot_format)
     plot_download_path <- file.path(project_path, umap_download_archive)
     open_plot_device(plot_download_path, 1200, 800, plot_format, units = "px")
-    print(my_distPlot5(pro))
+    print(umap_p)
     dev.off()
 
     sankey_download_archive <- make_output_name(project_path, "4", "cluster", "sankey", plot_format)
     plot_download_path2 <- file.path(project_path, sankey_download_archive)
     open_plot_device(plot_download_path2, 1200, 1000, plot_format, units = "px")
-    print(my_distPlot4(pro@meta.data))
+    print(sankey_p)
     dev.off()
 
     group_download_archive <- make_output_name(project_path, "4", "cluster", "group_umap", plot_format)
     plot_download_path3 <- file.path(project_path, group_download_archive)
     open_plot_device(plot_download_path3, 1400, 1200, plot_format, units = "px")
-    print(my_distPlot6(pro, group_by))
+    print(group_p)
     dev.off()
   } else {
     plot_download_path <- plot_path
@@ -1826,16 +1832,17 @@ function(req) {
   # 预览始终用 PNG；下载用用户选择的格式
   umap_preview_archive <- make_output_name(project_path, "8", "annotate", "umap", "png")
   plot_path <- file.path(project_path, umap_preview_archive)
+  # 图对象只构建一次, 两个设备复用
+  anno_p <- DimPlot(pro, reduction = 'umap', group.by = 'CellType',
+                    label = T, cols = clusterCols, repel = T)
   open_plot_device(plot_path, 1400, 800, "png", units = "px")
-  print(DimPlot(pro, reduction = 'umap', group.by = 'CellType',
-                label = T, cols = clusterCols, repel = T))
+  print(anno_p)
   dev.off()
   if (plot_format != "png") {
     umap_download_archive <- make_output_name(project_path, "8", "annotate", "umap", plot_format)
     plot_download_path <- file.path(project_path, umap_download_archive)
     open_plot_device(plot_download_path, 1400, 800, plot_format, units = "px")
-    print(DimPlot(pro, reduction = 'umap', group.by = 'CellType',
-                  label = T, cols = clusterCols, repel = T))
+    print(anno_p)
     dev.off()
   } else {
     plot_download_path <- plot_path
