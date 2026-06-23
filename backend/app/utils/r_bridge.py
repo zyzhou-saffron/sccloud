@@ -19,7 +19,7 @@ from app.config import get_settings
 from app.db.models import Task
 
 # 走 quick 引擎(8788)的只读/重出图秒级请求，避免被重任务(inferCNV/WGCNA/cellchat/pipeline)堵塞 (#42)
-QUICK_STEPS = {"plot_markers", "cellchat_pathway"}
+QUICK_STEPS = {"plot_markers", "cellchat_pathway", "subset_cluster"}
 
 
 async def call_r_engine(
