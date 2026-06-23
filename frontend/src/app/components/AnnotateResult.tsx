@@ -290,7 +290,9 @@ export default function AnnotateResult({
     const merge_map: Record<string, string> = {};
     const target = mergeTargetName.trim();
 
-    if (tableHighlightType === "celltype") {
+    // tableHighlightType 为 null 时(点 UMAP 图例/点选择), selectedForMerge 里是 celltype 名
+    // (deckMergeIdKey 默认 "celltype"), 应走 celltype 分支; 只有显式 "cluster" 才按簇 id 映射。
+    if (tableHighlightType !== "cluster") {
       for (const ct of selectedForMerge) {
         merge_map[ct] = target;
       }
