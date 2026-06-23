@@ -5,7 +5,8 @@
  */
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { Component, useEffect, useRef, useState, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
 import { getPipeline, resumePipeline, type Pipeline, type PipelineTask } from "../../../lib/pipeline-api";
 import { submitTask, hasPhase2Access, isGuest } from "../../../lib/api";
@@ -18,6 +19,48 @@ import {
   IconMicroscope, IconBarChart, IconAxis, IconCluster,
   IconTestTube, IconPathway, IconTag, IconBranch, IconNetwork, IconDNA,
 } from "../../../components/Icons";
+
+/* ===== Error Boundary — 防止 PipelineView 渲染崩溃 ===== */
+
+interface EBState { hasError: boolean; message: string }
+class PipelineErrorBoundary extends Component<{ children: ReactNode; onBack?: () => void }, EBState> {
+  constructor(props: { children: ReactNode; onBack?: () => void }) {
+    super(props);
+    this.state = { hasError: false, message: "" };
+  }
+  static getDerivedStateFromError(err: Error) {
+    return { hasError: true, message: err?.message ?? "未知错误" };
+  }
+  componentDidCatch(error: Error, info: { componentStack?: string }) {
+    console.error("PipelineView 渲染崩溃:", error, info?.componentStack);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex flex-col items-center justify-center py-20 gap-4">
+          <div className="w-16 h-16 rounded-full flex items-center justify-center" style={{ background: "var(--clr-gold-soft)" }}>
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--clr-amber)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+            </svg>
+          </div>
+          <h2 className="text-lg font-semibold" style={{ color: "var(--clr-text)" }}>Pipeline 渲染出错</h2>
+          <p className="text-sm" style={{ color: "var(--clr-text-muted)" }}>{this.state.message}</p>
+          <div className="flex gap-3 mt-2">
+            {this.props.onBack && (
+              <button onClick={this.props.onBack} className="px-5 py-2 rounded-lg text-sm font-medium transition-all hover:opacity-90 cursor-pointer" style={{ border: "1px solid var(--clr-border)", background: "var(--clr-bg-alt)", color: "var(--clr-text)" }}>
+                返回列表
+              </button>
+            )}
+            <button onClick={() => this.setState({ hasError: false, message: "" })} className="px-5 py-2 rounded-lg text-sm font-medium text-white transition-all hover:opacity-90 cursor-pointer" style={{ background: "var(--clr-amber)" }}>
+              重试
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 const STEPS = [
   { id: "preprocess", num: 1, label: "数据预处理与标准化", desc: "质控过滤 · SCTransform", Icon: IconMicroscope, subSteps: ["qc", "normalize"] },
@@ -46,6 +89,7 @@ interface PipelineViewProps {
 }
 
 export default function PipelineView({ pipelineId, token, projectName }: PipelineViewProps) {
+  const router = useRouter();
   const [pipeline, setPipeline] = useState<Pipeline | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -196,7 +240,7 @@ export default function PipelineView({ pipelineId, token, projectName }: Pipelin
       taskMap.set(t.step, t);
     }
   }
-  const activeStepDef = STEPS.find(s => s.id === activeStep)!;
+  const activeStepDef = STEPS.find(s => s.id === activeStep) ?? STEPS[0];
 
   // Phase 2 步骤是否已配置/执行
   const enabledPhase2 = (pipeline.params?.enabled_steps as string[]) || [];
@@ -206,7 +250,7 @@ export default function PipelineView({ pipelineId, token, projectName }: Pipelin
 
   // 组合步骤状态：优先级 running > failed > pending > completed
   const getStepStatus = (stepId: string) => {
-    const step = STEPS.find(s => s.id === stepId)!;
+    const step = STEPS.find(s => s.id === stepId) ?? STEPS[0];
     const subSteps = step.subSteps;
     const statuses = subSteps.map(id => {
       // 仅当 pipeline 真在运行时 current_step 才算"运行中"; 取消/失败/暂停后取任务真实状态
@@ -235,6 +279,7 @@ export default function PipelineView({ pipelineId, token, projectName }: Pipelin
   const rcCurrentStatus = reduceClusterTab === "cluster" ? clusterStatus : reduceStatus;
 
   return (
+    <PipelineErrorBoundary onBack={() => router.push("/dashboard/analysis")}>
     <div className="animate-fade-in space-y-3">
       {/* 顶部栏：返回 + 状态 */}
       <div className="flex items-center justify-between">
@@ -838,5 +883,6 @@ export default function PipelineView({ pipelineId, token, projectName }: Pipelin
         document.body
       )}
     </div>
+    </PipelineErrorBoundary>
   );
 }

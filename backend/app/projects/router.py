@@ -126,7 +126,9 @@ async def create_project(
         req.name,
     )
     os.makedirs(storage_path, exist_ok=True)
-    # R 引擎容器以 rengine 用户运行，需要写权限
+    # 后端容器以 root 运行、经 NFS root_squash 落地为 nobody; R 引擎容器以 uid=1000(rengine) 运行。
+    # 目录归 nobody:nobody, root_squash 下后端无法 chgrp 到 gid 1000, 故只能靠 o+w(0o777) 让 R 引擎可写。
+    # (不用 os.umask(0): 它是进程级、并发建目录会竞态; 这里显式 chmod 目标目录即可。)
     os.chmod(storage_path, 0o777)
 
     project = Project(

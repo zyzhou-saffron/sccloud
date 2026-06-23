@@ -90,8 +90,10 @@ export async function tryRefresh(): Promise<string | null> {
 /** 清除登录态并跳转首页 */
 function forceLogout(): never {
   clearAllAuth();
-  window.location.href = "/";
-  throw new Error("登录已过期，请重新登录");
+  // replace 而非 assign，避免 Back 回到已失效的页面
+  window.location.replace("/");
+  // 永不返回，但不 throw — 避免 error boundary 捕获后二次渲染导致崩溃
+  return undefined as never;
 }
 
 /** Guest 登录兜底 — 当 refresh 失败时自动获取新 guest token（存入 sessionStorage） */
