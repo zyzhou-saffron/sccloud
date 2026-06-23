@@ -588,11 +588,21 @@ function(req) {
 
   # ---- 生成样本相关性散点图 (my_distPlot1) ----
   report(40, "生成样本相关性图...")
-  corr_archive <- make_output_name(project_path, "1", "qc", "correlation", plot_format)
-  corr_plot_path <- file.path(project_path, corr_archive)
-open_plot_device(corr_plot_path, 1400, 600, plot_format, units = "px")
+  # 预览始终用 PNG；下载用用户选择的格式
+  corr_preview_archive <- make_output_name(project_path, "1", "qc", "correlation", "png")
+  corr_plot_path <- file.path(project_path, corr_preview_archive)
+  open_plot_device(corr_plot_path, 1400, 600, "png", units = "px")
   print(my_distPlot1(exp))
   dev.off()
+  if (plot_format != "png") {
+    corr_download_archive <- make_output_name(project_path, "1", "qc", "correlation", plot_format)
+    corr_download_path <- file.path(project_path, corr_download_archive)
+    open_plot_device(corr_download_path, 1400, 600, plot_format, units = "px")
+    print(my_distPlot1(exp))
+    dev.off()
+  } else {
+    corr_download_path <- corr_plot_path
+  }
 
   # ---- 提取散点原始数据供前端 WebGL 渲染 ----
   # 注意：Seurat 的 [[ 运算符被重载为访问 assay/slot，
@@ -635,11 +645,21 @@ open_plot_device(corr_plot_path, 1400, 600, plot_format, units = "px")
 
   # ---- 生成过滤前后 VlnPlot 对比 (my_distPlot2) ----
   report(70, "生成质控小提琴图...")
-  vln_archive <- make_output_name(project_path, "1", "qc", "violin", plot_format)
-  vln_plot_path <- file.path(project_path, vln_archive)
-open_plot_device(vln_plot_path, 1400, 1000, plot_format, units = "px")
+  # 预览始终用 PNG；下载用用户选择的格式
+  vln_preview_archive <- make_output_name(project_path, "1", "qc", "violin", "png")
+  vln_plot_path <- file.path(project_path, vln_preview_archive)
+  open_plot_device(vln_plot_path, 1400, 1000, "png", units = "px")
   print(my_distPlot2(exp, pro))
   dev.off()
+  if (plot_format != "png") {
+    vln_download_archive <- make_output_name(project_path, "1", "qc", "violin", plot_format)
+    vln_download_path <- file.path(project_path, vln_download_archive)
+    open_plot_device(vln_download_path, 1400, 1000, plot_format, units = "px")
+    print(my_distPlot2(exp, pro))
+    dev.off()
+  } else {
+    vln_download_path <- vln_plot_path
+  }
 
   report(85, "保存结果...")
 
@@ -698,8 +718,10 @@ open_plot_device(vln_plot_path, 1400, 1000, plot_format, units = "px")
     umi_gene_before = umiGene,
     umi_gene_after = umiGene1,
     corr_plot_path = corr_plot_path,
+    corr_download_path = corr_download_path,
     corr_scatter_data = corr_scatter_data,
     violin_plot_path = vln_plot_path,
+    violin_download_path = vln_download_path,
     mito_csv_path = mito_csv_path,
     umi_csv_path = umi_csv_path
   )
