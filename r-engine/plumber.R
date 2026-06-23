@@ -1855,6 +1855,7 @@ function(req) {
   } else {
     plot_download_path <- plot_path
   }
+  rm(anno_p)
 
   report(85, "保存数据...")
 

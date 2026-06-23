@@ -248,7 +248,8 @@ async def submit_task(
         db.commit()
 
     # 构造 R 引擎调用参数
-    # 确保项目目录可写（R 引擎以 uid 1000 运行）
+    # 确保项目目录可写: 后端容器 root 经 NFS root_squash 落地为 nobody, R 引擎为 uid 1000,
+    # 目录归 nobody:nobody 只能靠 o+w 让 R 引擎可写(完整说明见 projects/router create_project)。
     if project.storage_path and os.path.isdir(project.storage_path):
         os.chmod(project.storage_path, 0o777)
 
