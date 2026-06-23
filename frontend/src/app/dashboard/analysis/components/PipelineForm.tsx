@@ -225,8 +225,8 @@ export default function PipelineForm({ projectId, token, onSubmit, uploadedFiles
         project_id: projectId,
         params: pipelineParams,
         sample_groups: sampleGroups,
-        // 各样本细胞数求和, 供后端内存准入按细胞数估算(比文件大小准)
-        total_cells: sampleRows.reduce((s, r) => s + (r.cellCount || 0), 0),
+        // 各样本细胞数求和, 供后端内存准入按细胞数估算(比文件大小准)。Number() 防 cellCount 万一是字符串时变成串接
+        total_cells: sampleRows.reduce((s, r) => s + (Number(r.cellCount) || 0), 0),
       };
       if (annoFile && params.annotate.anno_type === "手动注释") {
         data.params.annotate.markers_table = annoFile.data;

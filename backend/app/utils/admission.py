@@ -145,7 +145,12 @@ def _n_cells(project_path: str) -> int | None:
     def _u(v):
         return v[0] if isinstance(v, list) and v else v
     try:
-        for f in glob.glob(os.path.join(project_path, "*_result.json")):
+        # 确定性顺序: 优先 qc(total_cells_after 是规范的过滤后细胞数), 其余按名排序, 避免 glob 顺序不定致估算飘
+        qc = os.path.join(project_path, "qc_result.json")
+        files = ([qc] if os.path.exists(qc) else []) + sorted(
+            f for f in glob.glob(os.path.join(project_path, "*_result.json"))
+            if os.path.basename(f) != "qc_result.json")
+        for f in files:
             try:
                 with open(f) as fh:
                     st = (json.load(fh) or {}).get("stats", {}) or {}
