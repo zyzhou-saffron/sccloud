@@ -251,7 +251,8 @@ export default function FileUploadModal({
               }}
               onDragLeave={(e) => {
                 e.preventDefault();
-                setDragging(false);
+                // 光标移入子元素(图标/文字)时 dragleave 也会触发 → 只有真正离开拖放区才清高亮, 否则闪烁
+                if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragging(false);
               }}
               onDrop={(e) => {
                 e.preventDefault();
