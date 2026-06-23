@@ -23,6 +23,7 @@
 """
 import asyncio
 import glob
+import json
 import logging
 import os
 
@@ -100,6 +101,29 @@ _W = {
 _DEFAULT = (4.0, 0.4)
 _SAFETY = 1.25
 
+# 首选: 以细胞数为规模代理(比压缩文件 MB 稳——压缩比差异大, 真正决定内存的是细胞数)。
+# slope = 每千细胞 GB, 由 ~45451 细胞示例集逐步实测峰值 / 45.451 标定;
+# inferCNV 由 1888 细胞 11GB 这个点取陡值(它随细胞数涨得最快、最易 OOM)。
+_WC_BASE = 0.5  # 固定开销(R+Seurat 加载等)
+_WC = {
+    "qc":        0.06,
+    "normalize": 0.68,
+    "reduce":    0.17,
+    "cluster":   0.18,
+    "annotate":  0.21,
+    "markers":   0.26,
+    "enrich":    0.08,
+    "monocle":   1.40,
+    "cellchat":  0.16,
+    "wgcna":     0.22,
+    "infercnv":  5.80,
+    "markers_pairwise": 0.26,
+    "subset_cluster":   0.18,
+    "merge_celltypes":  0.10,
+    "marker_expr":      0.05,
+}
+_WC_DEFAULT = 0.5
+
 
 def _input_mb(project_path: str) -> float:
     """用上传的原始数据大小(MB)作为数据规模(细胞数)的代理。退化用项目目录里最大 rds。"""
@@ -115,8 +139,33 @@ def _input_mb(project_path: str) -> float:
         return 50.0
 
 
-def estimate_weight_gb(step: str, project_path: str | None) -> float:
-    """估算某步骤在该项目数据上的峰值内存(GB), 用于预算预约。"""
+def _n_cells(project_path: str) -> int | None:
+    """从已完成步骤的结果 json 读细胞数(stats.cells / qc 的 total_cells_after; jsonlite 会包成单元素数组)。
+    用于单步重跑/已跑过的项目; 全流程首次提交无结果 json, 由调用方传 n_cells。拿不到返回 None。"""
+    def _u(v):
+        return v[0] if isinstance(v, list) and v else v
+    try:
+        for f in glob.glob(os.path.join(project_path, "*_result.json")):
+            try:
+                with open(f) as fh:
+                    st = (json.load(fh) or {}).get("stats", {}) or {}
+                c = _u(st.get("cells")) or _u(st.get("total_cells_after"))
+                if c and int(c) > 0:
+                    return int(c)
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return None
+
+
+def estimate_weight_gb(step: str, project_path: str | None, n_cells: int | None = None) -> float:
+    """估算某步骤峰值内存(GB)。优先按细胞数(更准、不受压缩比/_uploaded 残留大文件干扰),
+    拿不到细胞数才退回上传文件 MB 的旧公式。"""
+    cells = n_cells if (n_cells and n_cells > 0) else (_n_cells(project_path) if project_path else None)
+    if cells and cells > 0:
+        per1k = _WC.get(step, _WC_DEFAULT)
+        return round(max(2.0, (_WC_BASE + per1k * cells / 1000.0) * _SAFETY), 1)
     base, slope = _W.get(step, _DEFAULT)
     mb = _input_mb(project_path) if project_path else 50.0
     return round(max(2.0, (base + slope * mb) * _SAFETY), 1)

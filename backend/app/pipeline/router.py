@@ -124,8 +124,9 @@ async def create_pipeline(
         if _proj and _proj.storage_path:
             _settings = _get_settings()
             _enabled = set(params.get("enabled_steps", [])) | {"qc", "normalize", "reduce", "cluster", "annotate"}
+            _total_cells = data.get("total_cells")  # 前端按各样本细胞数求和传入(全流程首次提交无结果 json 可读)
             for _st in _enabled:
-                _w = admission.estimate_weight_gb(_st, _proj.storage_path)
+                _w = admission.estimate_weight_gb(_st, _proj.storage_path, n_cells=_total_cells)
                 if _w > _settings.worker_mem_cap_gb:
                     raise HTTPException(
                         status_code=400,
