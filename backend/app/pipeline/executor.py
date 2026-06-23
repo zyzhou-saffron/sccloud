@@ -313,6 +313,11 @@ async def _execute_step(db: Session, pipeline: Pipeline, step: str, step_params:
                 raise Exception("Project not found")
 
             # 构造 payload（参考 tasks/router.py 的做法）
+            # 确保项目目录可写（R 引擎以 uid 1000 运行）
+            import os
+            if project.storage_path and os.path.isdir(project.storage_path):
+                os.chmod(project.storage_path, 0o777)
+
             payload = {
                 "project_path": project.storage_path,
                 "params": {

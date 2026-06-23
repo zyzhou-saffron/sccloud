@@ -125,8 +125,10 @@ async def create_project(
         str(current_user.id),
         req.name,
     )
+    # umask 0 确保目录权限为 777（R 引擎以不同 uid 运行需要写权限）
+    old_umask = os.umask(0)
     os.makedirs(storage_path, exist_ok=True)
-    # R 引擎容器以 rengine 用户运行，需要写权限
+    os.umask(old_umask)
     os.chmod(storage_path, 0o777)
 
     project = Project(

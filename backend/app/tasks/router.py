@@ -6,6 +6,7 @@ scCloud v2 — 任务管理路由
 
 import asyncio
 import logging
+import os
 from datetime import datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File
@@ -247,6 +248,10 @@ async def submit_task(
         db.commit()
 
     # 构造 R 引擎调用参数
+    # 确保项目目录可写（R 引擎以 uid 1000 运行）
+    if project.storage_path and os.path.isdir(project.storage_path):
+        os.chmod(project.storage_path, 0o777)
+
     payload = {
         "project_path": project.storage_path,
         "params": {
