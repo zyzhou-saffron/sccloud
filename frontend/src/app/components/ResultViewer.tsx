@@ -519,11 +519,16 @@ function ReduceResult({ data, taskId }: { data: Record<string, unknown> | null; 
   const stats   = data?.stats as { method?: string; cells?: number; n_dims?: number } | undefined;
   const method  = (safeString(stats?.method) ?? "UMAP").toUpperCase();
 
-  // R 原版 PNG（保留为可下载备选）
+  // R 原版 PNG 预览；下载用用户选择的格式
   const plotPath    = safeString(data?.plot_path);
+  const plotDownloadPath = safeString(data?.plot_download_path);
   const plotFileName = plotPath ? plotPath.split("/").pop() : null;
+  const plotDownloadFileName = plotDownloadPath ? plotDownloadPath.split("/").pop() : plotFileName;
   const plotSrc     = plotFileName && taskId
     ? `/api/tasks/${taskId}/plot?name=${encodeURIComponent(plotFileName)}`
+    : null;
+  const plotDownloadSrc = plotDownloadFileName && taskId
+    ? `/api/tasks/${taskId}/plot?name=${encodeURIComponent(plotDownloadFileName)}`
     : null;
 
   // deck.gl 交互式散点图数据（主展示）
@@ -546,11 +551,11 @@ function ReduceResult({ data, taskId }: { data: Record<string, unknown> | null; 
             {method} 可视化
           </p>
           <DeckScatterPlot data={rawScatter} method={method as "UMAP" | "tSNE" | "PCA"} height={520}>
-            {plotSrc && (
+            {plotDownloadSrc && (
               <AuthDownloadLink
-                url={plotSrc}
-                filename={plotFileName || "reduce_plot.png"}
-                title="下载 R 原版高清图 (.png)"
+                url={plotDownloadSrc}
+                filename={plotDownloadFileName || "reduce_plot.png"}
+                title="下载 R 原版高清图"
                 className="absolute bottom-2 right-2 z-10 inline-flex items-center justify-center w-9 h-9 rounded-lg transition-all hover:scale-110"
                 style={{ background: "rgba(255,255,255,0.92)", boxShadow: "0 2px 8px rgba(0,0,0,0.10)", color: "var(--clr-amber)" }}
               >
@@ -573,8 +578,8 @@ function ReduceResult({ data, taskId }: { data: Record<string, unknown> | null; 
               style={{ border: "1px solid var(--clr-border)", background: "#fff" }}
             />
             <AuthDownloadLink
-              url={plotSrc}
-              filename={plotFileName || "reduce_plot.png"}
+              url={plotDownloadSrc || plotSrc}
+              filename={plotDownloadFileName || plotFileName || "reduce_plot.png"}
               className="absolute bottom-3 right-3 inline-flex items-center justify-center w-9 h-9 rounded-lg transition-all hover:scale-110"
               style={{ background: "rgba(255,255,255,0.92)", boxShadow: "0 2px 8px rgba(0,0,0,0.10)", color: "var(--clr-amber)" }}
             >
@@ -596,11 +601,15 @@ function ClusterResult({ data, task }: { data: Record<string, unknown> | null; t
   const stats = data?.stats as { clusters?: number; cluster_levels?: string[]; cells?: number } | undefined;
 
   // ── 图片 URL 构建（从 API 响应中动态提取文件名） ──
+  // plot_path* 为 PNG 预览；plot_download_path* 为用户选择格式的下载文件
   const mkSrc = (name: string) => taskId ? `/api/tasks/${taskId}/plot?name=${encodeURIComponent(name)}` : null;
   const extractName = (val: unknown) => { const s = safeString(val); return s ? s.split("/").pop()! : null; };
   const umapName   = extractName(data?.plot_path)  ?? "plot_cluster.png";
   const sankeyName = extractName(data?.plot_path2) ?? "plot_cluster_sankey.png";
   const groupName  = extractName(data?.plot_path3) ?? "plot_cluster_group.png";
+  const umapDownloadName   = extractName(data?.plot_download_path)  ?? umapName;
+  const sankeyDownloadName = extractName(data?.plot_download_path2) ?? sankeyName;
+  const groupDownloadName  = extractName(data?.plot_download_path3) ?? groupName;
   // meta.data 下载名对齐其它输出文件: 取聚类输出名里的 <项目名>_cluster_<时间戳>_ 前缀
   // (后端命名规则 <项目>_<步骤>_<时间戳>_<内容>.<后缀>), 拼成 ..._meta_data.csv; 取不到则退回通用名
   const metaCsvName = (() => {
@@ -610,6 +619,9 @@ function ClusterResult({ data, task }: { data: Record<string, unknown> | null; t
   const umapSrc   = mkSrc(umapName);         // my_distPlot5: Cluster UMAP
   const sankeySrc = mkSrc(sankeyName);       // my_distPlot4: 样本 Cluster 占比图
   const groupSrc  = mkSrc(groupName);        // my_distPlot6: 分组 UMAP
+  const umapDownloadSrc   = mkSrc(umapDownloadName);
+  const sankeyDownloadSrc = mkSrc(sankeyDownloadName);
+  const groupDownloadSrc  = mkSrc(groupDownloadName);
 
   // ── 表格数据 ──
   type FreqRow = { Cluster?: string; Sample?: string; CellNumber?: number; Freq?: number };
@@ -729,11 +741,11 @@ function ClusterResult({ data, task }: { data: Record<string, unknown> | null; t
                 Cluster UMAP 图
               </p>
               <DeckScatterPlot data={rawScatter} method="UMAP" height={560}>
-                {umapSrc && (
+                {umapDownloadSrc && (
                   <AuthDownloadLink
-                    url={umapSrc}
-                    filename={umapName}
-                    title="下载 R 原版高清图 (.png)"
+                    url={umapDownloadSrc}
+                    filename={umapDownloadName}
+                    title="下载 R 原版高清图"
                     className="absolute bottom-2 right-2 z-10 inline-flex items-center justify-center w-9 h-9 rounded-lg transition-all hover:scale-110"
                     style={{ background: "rgba(255,255,255,0.92)", boxShadow: "0 2px 8px rgba(0,0,0,0.10)", color: "var(--clr-amber)" }}
                   >
@@ -756,8 +768,8 @@ function ClusterResult({ data, task }: { data: Record<string, unknown> | null; t
                   style={{ border: "1px solid var(--clr-border)", background: "#fff" }}
                 />
                 <AuthDownloadLink
-                  url={umapSrc}
-                  filename={umapName}
+                  url={umapDownloadSrc || umapSrc}
+                  filename={umapDownloadName || umapName}
                   className="absolute bottom-3 right-3 inline-flex items-center justify-center w-9 h-9 rounded-lg transition-all hover:scale-110"
                   style={{ background: "rgba(255,255,255,0.92)", boxShadow: "0 2px 8px rgba(0,0,0,0.10)", color: "var(--clr-amber)", zIndex: 20 }}
                 >
@@ -926,8 +938,8 @@ function ClusterResult({ data, task }: { data: Record<string, unknown> | null; t
             <AuthImg src={sankeySrc} alt="Sample Cluster Proportion"
               className="w-full rounded border" style={{ border: "1px solid var(--clr-border)", background: "#fff" }} />
             <AuthDownloadLink
-              url={sankeySrc}
-              filename={sankeyName}
+              url={sankeyDownloadSrc || sankeySrc}
+              filename={sankeyDownloadName || sankeyName}
               className="absolute bottom-3 right-3 inline-flex items-center justify-center w-9 h-9 rounded-lg transition-all hover:scale-110"
               style={{ background: "rgba(255,255,255,0.92)", boxShadow: "0 2px 8px rgba(0,0,0,0.10)", color: "var(--clr-amber)" }}
             >
@@ -945,8 +957,8 @@ function ClusterResult({ data, task }: { data: Record<string, unknown> | null; t
             <AuthImg src={groupSrc} alt="Group Cluster UMAP"
               className="w-full rounded border" style={{ border: "1px solid var(--clr-border)", background: "#fff" }} />
             <AuthDownloadLink
-              url={groupSrc}
-              filename={groupName}
+              url={groupDownloadSrc || groupSrc}
+              filename={groupDownloadName || groupName}
               className="absolute bottom-3 right-3 inline-flex items-center justify-center w-9 h-9 rounded-lg transition-all hover:scale-110"
               style={{ background: "rgba(255,255,255,0.92)", boxShadow: "0 2px 8px rgba(0,0,0,0.10)", color: "var(--clr-amber)" }}
             >
