@@ -164,16 +164,37 @@ def _n_cells(project_path: str) -> int | None:
     return None
 
 
+def _safe_int(v) -> int | None:
+    """容错把 JSON 来的数字(可能 float/str/None)转正整数, 否则 None。"""
+    try:
+        return int(v) if v is not None and float(v) > 0 else None
+    except (TypeError, ValueError):
+        return None
+
+
 def estimate_weight_gb(step: str, project_path: str | None, n_cells: int | None = None) -> float:
-    """估算某步骤峰值内存(GB)。优先按细胞数(更准、不受压缩比/_uploaded 残留大文件干扰),
-    拿不到细胞数才退回上传文件 MB 的旧公式。"""
-    cells = n_cells if (n_cells and n_cells > 0) else (_n_cells(project_path) if project_path else None)
-    if cells and cells > 0:
+    """估算某步骤峰值内存(GB)。
+    - 服务端从结果 json 读到的细胞数可信 → 直接用细胞公式;
+    - 全流程首次提交只有客户端传入的 n_cells(不可信) → 取'细胞估算'与'文件MB估算'的较大者,
+      防客户端报小绕过 400(文件MB由上传文件实测、客户端改不了);
+    - 都拿不到细胞数 → 退回纯文件 MB 旧公式。"""
+    def _cell_w(cells: int) -> float:
         per1k = _WC.get(step, _WC_DEFAULT)
-        return round(max(2.0, (_WC_BASE + per1k * cells / 1000.0) * _SAFETY), 1)
+        return (_WC_BASE + per1k * cells / 1000.0) * _SAFETY
+
+    server_cells = _n_cells(project_path) if project_path else None
+    client_cells = _safe_int(n_cells)
+
+    if server_cells and server_cells > 0:
+        cells = max(server_cells, client_cells or 0)
+        return round(max(2.0, _cell_w(cells)), 1)
+
     base, slope = _W.get(step, _DEFAULT)
     mb = _input_mb(project_path) if project_path else 50.0
-    return round(max(2.0, (base + slope * mb) * _SAFETY), 1)
+    w_file = (base + slope * mb) * _SAFETY
+    if client_cells:
+        return round(max(2.0, _cell_w(client_cells), w_file), 1)
+    return round(max(2.0, w_file), 1)
 
 
 # 原子预约: 累加 hash 现有预约, 容得下才 HSET 并返回 1
