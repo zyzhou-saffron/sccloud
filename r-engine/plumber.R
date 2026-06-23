@@ -604,6 +604,7 @@ function(req) {
   } else {
     corr_download_path <- corr_plot_path
   }
+  rm(corr_p)
 
   # ---- 提取散点原始数据供前端 WebGL 渲染 ----
   # 注意：Seurat 的 [[ 运算符被重载为访问 assay/slot，
@@ -662,6 +663,7 @@ function(req) {
   } else {
     vln_download_path <- vln_plot_path
   }
+  rm(vln_p)
 
   report(85, "保存结果...")
 
@@ -934,52 +936,58 @@ function(req) {
 
   report(70, "生成聚类图...")
 
-  # 预览始终用 PNG；下载用用户选择的格式（3 个图对象各只构建一次, 两个设备复用）
-  umap_p   <- my_distPlot5(pro)
-  sankey_p <- my_distPlot4(pro@meta.data)
-  group_p  <- my_distPlot6(pro, group_by)
-
+  # 逐图: 各构建一次 → 渲 PNG 预览 →(非png)渲下载格式 → 立即 rm 释放;
+  # 一次只让一个 ggplot 驻留(避免 3 图同时在内存 + Seurat 对象致峰值飙高), 又不重复构建。
+  umap_p <- my_distPlot5(pro)
   umap_preview_archive <- make_output_name(project_path, "4", "cluster", "umap", "png")
   plot_path <- file.path(project_path, umap_preview_archive)
   open_plot_device(plot_path, 1200, 800, "png", units = "px")
   print(umap_p)
   dev.off()
-
-  sankey_preview_archive <- make_output_name(project_path, "4", "cluster", "sankey", "png")
-  plot_path2 <- file.path(project_path, sankey_preview_archive)
-  open_plot_device(plot_path2, 1200, 1000, "png", units = "px")
-  print(sankey_p)
-  dev.off()
-
-  group_preview_archive <- make_output_name(project_path, "4", "cluster", "group_umap", "png")
-  plot_path3 <- file.path(project_path, group_preview_archive)
-  open_plot_device(plot_path3, 1400, 1200, "png", units = "px")
-  print(group_p)
-  dev.off()
-
   if (plot_format != "png") {
     umap_download_archive <- make_output_name(project_path, "4", "cluster", "umap", plot_format)
     plot_download_path <- file.path(project_path, umap_download_archive)
     open_plot_device(plot_download_path, 1200, 800, plot_format, units = "px")
     print(umap_p)
     dev.off()
+  } else {
+    plot_download_path <- plot_path
+  }
+  rm(umap_p)
 
+  sankey_p <- my_distPlot4(pro@meta.data)
+  sankey_preview_archive <- make_output_name(project_path, "4", "cluster", "sankey", "png")
+  plot_path2 <- file.path(project_path, sankey_preview_archive)
+  open_plot_device(plot_path2, 1200, 1000, "png", units = "px")
+  print(sankey_p)
+  dev.off()
+  if (plot_format != "png") {
     sankey_download_archive <- make_output_name(project_path, "4", "cluster", "sankey", plot_format)
     plot_download_path2 <- file.path(project_path, sankey_download_archive)
     open_plot_device(plot_download_path2, 1200, 1000, plot_format, units = "px")
     print(sankey_p)
     dev.off()
+  } else {
+    plot_download_path2 <- plot_path2
+  }
+  rm(sankey_p)
 
+  group_p <- my_distPlot6(pro, group_by)
+  group_preview_archive <- make_output_name(project_path, "4", "cluster", "group_umap", "png")
+  plot_path3 <- file.path(project_path, group_preview_archive)
+  open_plot_device(plot_path3, 1400, 1200, "png", units = "px")
+  print(group_p)
+  dev.off()
+  if (plot_format != "png") {
     group_download_archive <- make_output_name(project_path, "4", "cluster", "group_umap", plot_format)
     plot_download_path3 <- file.path(project_path, group_download_archive)
     open_plot_device(plot_download_path3, 1400, 1200, plot_format, units = "px")
     print(group_p)
     dev.off()
   } else {
-    plot_download_path <- plot_path
-    plot_download_path2 <- plot_path2
     plot_download_path3 <- plot_path3
   }
+  rm(group_p)
 
   report(85, "保存数据...")
 
