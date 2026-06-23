@@ -6,6 +6,7 @@
 "use client";
 
 import React, { Component, useEffect, useRef, useState, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
 import { getPipeline, resumePipeline, type Pipeline, type PipelineTask } from "../../../lib/pipeline-api";
 import { submitTask, hasPhase2Access, isGuest } from "../../../lib/api";
@@ -30,7 +31,9 @@ class PipelineErrorBoundary extends Component<{ children: ReactNode; onBack?: ()
   static getDerivedStateFromError(err: Error) {
     return { hasError: true, message: err?.message ?? "未知错误" };
   }
-  componentDidCatch() {}
+  componentDidCatch(error: Error, info: { componentStack?: string }) {
+    console.error("PipelineView 渲染崩溃:", error, info?.componentStack);
+  }
   render() {
     if (this.state.hasError) {
       return (
@@ -86,6 +89,7 @@ interface PipelineViewProps {
 }
 
 export default function PipelineView({ pipelineId, token, projectName }: PipelineViewProps) {
+  const router = useRouter();
   const [pipeline, setPipeline] = useState<Pipeline | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -275,7 +279,7 @@ export default function PipelineView({ pipelineId, token, projectName }: Pipelin
   const rcCurrentStatus = reduceClusterTab === "cluster" ? clusterStatus : reduceStatus;
 
   return (
-    <PipelineErrorBoundary>
+    <PipelineErrorBoundary onBack={() => router.push("/dashboard/analysis")}>
     <div className="animate-fade-in space-y-3">
       {/* 顶部栏：返回 + 状态 */}
       <div className="flex items-center justify-between">
