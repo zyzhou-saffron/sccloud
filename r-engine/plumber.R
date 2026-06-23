@@ -825,12 +825,21 @@ function(req) {
 
   report(70, "生成降维图...")
 
-  # 双命名：归档名 + 管道链名
-  plot_archive <- make_output_name(project_path, "3", "reduce", method, plot_format)
-  plot_path <- file.path(project_path, plot_archive)
-open_plot_device(plot_path, 1200, 800, plot_format, units = "px")
+  # 预览始终用 PNG；下载用用户选择的格式
+  preview_archive <- make_output_name(project_path, "3", "reduce", method, "png")
+  plot_path <- file.path(project_path, preview_archive)
+  open_plot_device(plot_path, 1200, 800, "png", units = "px")
   my_distPlot3(pro, method, group_by, n_dims)
   dev.off()
+  if (plot_format != "png") {
+    download_archive <- make_output_name(project_path, "3", "reduce", method, plot_format)
+    plot_download_path <- file.path(project_path, download_archive)
+    open_plot_device(plot_download_path, 1200, 800, plot_format, units = "px")
+    my_distPlot3(pro, method, group_by, n_dims)
+    dev.off()
+  } else {
+    plot_download_path <- plot_path
+  }
 
   report(85, "保存数据...")
 
@@ -858,6 +867,7 @@ open_plot_device(plot_path, 1200, 800, plot_format, units = "px")
     status = "success",
     result_path = archive_path,
     plot_path = plot_path,
+    plot_download_path = plot_download_path,
     stats = list(
       cells = ncol(pro),
       method = method,
@@ -913,24 +923,48 @@ function(req) {
 
   report(70, "生成聚类图...")
 
-  # 双命名：归档名（3张图）
-  umap_archive <- make_output_name(project_path, "4", "cluster", "umap", plot_format)
-  plot_path <- file.path(project_path, umap_archive)
-open_plot_device(plot_path, 1200, 800, plot_format, units = "px")
+  # 预览始终用 PNG；下载用用户选择的格式
+  umap_preview_archive <- make_output_name(project_path, "4", "cluster", "umap", "png")
+  plot_path <- file.path(project_path, umap_preview_archive)
+  open_plot_device(plot_path, 1200, 800, "png", units = "px")
   print(my_distPlot5(pro))
   dev.off()
 
-  sankey_archive <- make_output_name(project_path, "4", "cluster", "sankey", plot_format)
-  plot_path2 <- file.path(project_path, sankey_archive)
-open_plot_device(plot_path2, 1200, 1000, plot_format, units = "px")
+  sankey_preview_archive <- make_output_name(project_path, "4", "cluster", "sankey", "png")
+  plot_path2 <- file.path(project_path, sankey_preview_archive)
+  open_plot_device(plot_path2, 1200, 1000, "png", units = "px")
   print(my_distPlot4(pro@meta.data))
   dev.off()
 
-  group_archive <- make_output_name(project_path, "4", "cluster", "group_umap", plot_format)
-  plot_path3 <- file.path(project_path, group_archive)
-open_plot_device(plot_path3, 1400, 1200, plot_format, units = "px")
+  group_preview_archive <- make_output_name(project_path, "4", "cluster", "group_umap", "png")
+  plot_path3 <- file.path(project_path, group_preview_archive)
+  open_plot_device(plot_path3, 1400, 1200, "png", units = "px")
   print(my_distPlot6(pro, group_by))
   dev.off()
+
+  if (plot_format != "png") {
+    umap_download_archive <- make_output_name(project_path, "4", "cluster", "umap", plot_format)
+    plot_download_path <- file.path(project_path, umap_download_archive)
+    open_plot_device(plot_download_path, 1200, 800, plot_format, units = "px")
+    print(my_distPlot5(pro))
+    dev.off()
+
+    sankey_download_archive <- make_output_name(project_path, "4", "cluster", "sankey", plot_format)
+    plot_download_path2 <- file.path(project_path, sankey_download_archive)
+    open_plot_device(plot_download_path2, 1200, 1000, plot_format, units = "px")
+    print(my_distPlot4(pro@meta.data))
+    dev.off()
+
+    group_download_archive <- make_output_name(project_path, "4", "cluster", "group_umap", plot_format)
+    plot_download_path3 <- file.path(project_path, group_download_archive)
+    open_plot_device(plot_download_path3, 1400, 1200, plot_format, units = "px")
+    print(my_distPlot6(pro, group_by))
+    dev.off()
+  } else {
+    plot_download_path <- plot_path
+    plot_download_path2 <- plot_path2
+    plot_download_path3 <- plot_path3
+  }
 
   report(85, "保存数据...")
 
@@ -983,6 +1017,9 @@ open_plot_device(plot_path3, 1400, 1200, plot_format, units = "px")
     plot_path = plot_path,
     plot_path2 = plot_path2,
     plot_path3 = plot_path3,
+    plot_download_path = plot_download_path,
+    plot_download_path2 = plot_download_path2,
+    plot_download_path3 = plot_download_path3,
     stats = list(
       cells = ncol(pro),
       clusters = length(levels(Idents(pro))),
@@ -1777,13 +1814,23 @@ function(req) {
 
   report(70, "生成注释图...")
 
-  # 双命名：UMAP 注释图
-  umap_archive <- make_output_name(project_path, "8", "annotate", "umap", plot_format)
-  plot_path <- file.path(project_path, umap_archive)
-open_plot_device(plot_path, 1400, 800, plot_format, units = "px")
+  # 预览始终用 PNG；下载用用户选择的格式
+  umap_preview_archive <- make_output_name(project_path, "8", "annotate", "umap", "png")
+  plot_path <- file.path(project_path, umap_preview_archive)
+  open_plot_device(plot_path, 1400, 800, "png", units = "px")
   print(DimPlot(pro, reduction = 'umap', group.by = 'CellType',
                 label = T, cols = clusterCols, repel = T))
   dev.off()
+  if (plot_format != "png") {
+    umap_download_archive <- make_output_name(project_path, "8", "annotate", "umap", plot_format)
+    plot_download_path <- file.path(project_path, umap_download_archive)
+    open_plot_device(plot_download_path, 1400, 800, plot_format, units = "px")
+    print(DimPlot(pro, reduction = 'umap', group.by = 'CellType',
+                  label = T, cols = clusterCols, repel = T))
+    dev.off()
+  } else {
+    plot_download_path <- plot_path
+  }
 
   report(85, "保存数据...")
 
@@ -1835,6 +1882,7 @@ open_plot_device(plot_path, 1400, 800, plot_format, units = "px")
     status = "success",
     result_path = archive_path,
     plot_path = plot_path,
+    plot_download_path = plot_download_path,
     stats = list(
       cells = ncol(pro),
       cell_types = length(unique(pro$CellType)),

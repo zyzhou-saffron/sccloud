@@ -62,6 +62,7 @@ interface AnnotateData {
   status: string;
   result_path?: string;
   plot_path?: string;
+  plot_download_path?: string;
   scatter_data?: { x: number[]; y: number[]; cluster: string[]; celltype?: string[] };
   stats?: {
     cells: number;
@@ -236,7 +237,9 @@ export default function AnnotateResult({
     return null;
   };
   const plotName = extractName(annotateData?.plot_path) ?? "plot_annotate.png";
+  const plotDownloadName = extractName(annotateData?.plot_download_path) ?? plotName;
   const plotSrc = taskId ? `/api/tasks/${taskId}/plot?name=${encodeURIComponent(plotName)}` : null;
+  const plotDownloadSrc = taskId ? `/api/tasks/${taskId}/plot?name=${encodeURIComponent(plotDownloadName)}` : null;
 
   // ── Marker 表格分页 ──
   const [markerPage, setMarkerPage] = useState(0);
@@ -572,11 +575,11 @@ export default function AnnotateResult({
             <p className="text-xs font-semibold" style={{ color: "var(--clr-amber-dark)" }}>
               细胞类型 UMAP 标注图
             </p>
-            {plotSrc && (
+            {plotDownloadSrc && (
               <button
                 onClick={async () => {
                   try {
-                    const resp = await fetch(`/api/tasks/${taskId}/plot?name=${encodeURIComponent(plotName)}`, {
+                    const resp = await fetch(`/api/tasks/${taskId}/plot?name=${encodeURIComponent(plotDownloadName)}`, {
                       headers: { Authorization: `Bearer ${token}` }
                     });
                     if (!resp.ok) throw new Error("下载失败");
@@ -584,7 +587,7 @@ export default function AnnotateResult({
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement("a");
                     a.href = url;
-                    a.download = plotName;
+                    a.download = plotDownloadName;
                     document.body.appendChild(a);
                     a.click();
                     document.body.removeChild(a);
@@ -625,7 +628,7 @@ export default function AnnotateResult({
             <button
               onClick={async () => {
                 try {
-                  const resp = await fetch(`/api/tasks/${taskId}/plot?name=${encodeURIComponent(plotName)}`, {
+                  const resp = await fetch(`/api/tasks/${taskId}/plot?name=${encodeURIComponent(plotDownloadName)}`, {
                     headers: { Authorization: `Bearer ${token}` }
                   });
                   if (!resp.ok) throw new Error("下载失败");
@@ -633,7 +636,7 @@ export default function AnnotateResult({
                   const url = URL.createObjectURL(blob);
                   const a = document.createElement("a");
                   a.href = url;
-                  a.download = plotName;
+                  a.download = plotDownloadName;
                   document.body.appendChild(a);
                   a.click();
                   document.body.removeChild(a);
