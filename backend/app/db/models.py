@@ -69,7 +69,7 @@ ROLE_DEFAULTS = {
     "guest": {"max_projects": 1, "total_quota": 10, "is_guest": True, "retention_days": 1},
     "user":  {"max_projects": 1, "total_quota": 10, "is_guest": False, "retention_days": 7},
     "super": {"max_projects": 5, "total_quota": 100, "is_guest": False, "retention_days": 30},
-    "admin": {"max_projects": 99, "total_quota": 99999, "is_guest": False, "retention_days": 30},
+    "admin": {"max_projects": 99, "total_quota": 99999, "is_guest": False, "retention_days": 200},
 }
 VALID_ROLES = {"guest", "user", "super", "admin"}
 

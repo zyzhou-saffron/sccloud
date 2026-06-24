@@ -50,7 +50,7 @@ class Settings(BaseSettings):
     retention_guest_days: int = 1
     retention_user_days: int = 7
     retention_super_days: int = 30
-    retention_admin_days: int = 30
+    retention_admin_days: int = 200
     cleanup_interval_hours: int = 6
 
     class Config:

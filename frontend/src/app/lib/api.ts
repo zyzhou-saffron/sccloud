@@ -327,7 +327,7 @@ export const ROLE_RETENTION_DAYS: Record<string, number> = {
   guest: 1,
   user: 7,
   super: 30,
-  admin: 30,
+  admin: 200,
 };
 
 export function getRetentionDays(): number {
