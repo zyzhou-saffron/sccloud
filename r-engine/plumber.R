@@ -2521,6 +2521,7 @@ function(req) {
 
   old_wd <- getwd()
   setwd(project_path)
+  on.exit(setwd(old_wd), add = TRUE)  # 确保退出时恢复工作目录
 
   progress_cb <- function(pct, msg) report(pct, msg)
 
@@ -2570,8 +2571,12 @@ function(req) {
     if (!is.null(result[[data_keys[i]]])) {
       fname <- make_output_name(project_path, "9", "monocle", data_names[i], "rds")
       fpath <- file.path(project_path, fname)
-      saveRDS(result[[data_keys[i]]], fpath)
-      data_paths[[data_names[i]]] <- fpath
+      tryCatch({
+        saveRDS(result[[data_keys[i]]], fpath)
+        data_paths[[data_names[i]]] <- fpath
+      }, error = function(e) {
+        message(paste0("Data save error (", data_names[i], "): ", e))
+      })
     }
   }
 
@@ -2592,8 +2597,12 @@ function(req) {
   if (!is.null(result$data8)) {
     csv_name <- make_output_name(project_path, "9", "monocle", "beam_diff_genes", "csv")
     csv_path <- file.path(project_path, csv_name)
-    write.csv(result$data8, csv_path, row.names = FALSE)
-    data_paths$beam_diff_genes_csv <- csv_path
+    tryCatch({
+      write.csv(result$data8, csv_path, row.names = FALSE)
+      data_paths$beam_diff_genes_csv <- csv_path
+    }, error = function(e) {
+      message(paste0("BEAM CSV save error: ", e))
+    })
   }
 
   report(100, "Monocle 分析完成")
@@ -2645,6 +2654,7 @@ function(req) {
 
   old_wd <- getwd()
   setwd(project_path)
+  on.exit(setwd(old_wd), add = TRUE)  # 确保退出时恢复工作目录
 
   progress_cb <- function(pct, msg) report(pct, msg)
 
