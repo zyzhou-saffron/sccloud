@@ -181,30 +181,23 @@ convert_ids_to_symbol <- function(seurat_obj, id_type = NULL, species = NULL, ke
   seurat_obj@misc$gene_id_type    <- id_type
   seurat_obj@misc$unmapped_genes  <- original_ids[original_ids == new_names]
 
-  # 替换所有 assay 的 rownames
-  for (assay_name in Seurat::Assays(seurat_obj)) {
-    counts_slot <- tryCatch(
-      Seurat::GetAssayData(seurat_obj, assay = assay_name, layer = "counts"),
-      error = function(e) NULL
-    )
-    if (!is.null(counts_slot)) {
-      rownames(counts_slot) <- new_names
-      seurat_obj[[assay_name]] <- Seurat::CreateAssayObject(counts = counts_slot)
-    }
-  }
+  # 确保基因名唯一（多个 Ensembl ID 可能映射到同一 symbol）
+  new_names <- make.unique(new_names)
 
-  # 替换 data slot
+  # 替换所有 assay 的 rownames（直接操作 Assay5 的 features 和 layers）
   for (assay_name in Seurat::Assays(seurat_obj)) {
-    data_slot <- tryCatch(
-      Seurat::GetAssayData(seurat_obj, assay = assay_name, layer = "data"),
-      error = function(e) NULL
-    )
-    if (!is.null(data_slot)) {
-      rownames(data_slot) <- new_names
-      seurat_obj <- Seurat::SetAssayData(
-        seurat_obj, assay = assay_name, layer = "data", new.data = data_slot
-      )
+    assay_obj <- seurat_obj[[assay_name]]
+    # 更新 features 行名（Assay5 的 rownames 存储在这里）
+    rownames(assay_obj@features) <- new_names
+    # 更新每个 layer 矩阵的行名
+    for (ln in names(assay_obj@layers)) {
+      mat <- assay_obj@layers[[ln]]
+      if (!is.null(mat) && nrow(mat) > 0) {
+        rownames(mat) <- new_names
+        assay_obj@layers[[ln]] <- mat
+      }
     }
+    seurat_obj[[assay_name]] <- assay_obj
   }
 
   n_mapped <- sum(original_ids != new_names | !grepl("^ENS", new_names))

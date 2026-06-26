@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { IconBeaker, IconConvert, IconGear, IconUsers } from "../components/Icons";
-import { isGuest, ROLE_LABELS, getAuthToken, getAuthItem, clearAuthData } from "../lib/api";
+import { isGuest, ROLE_LABELS, getAuthToken, getAuthItem } from "../lib/api";
 import AuthModal from "../components/AuthModal";
 
 /**
@@ -39,6 +39,12 @@ export default function DashboardLayout({
   const [navItems, setNavItems] = useState(NAV_ITEMS);
 
   useEffect(() => {
+    // 标签页已登出：跳回首页，不清 localStorage（其它标签页不受影响）
+    if (sessionStorage.getItem("tab_logged_out")) {
+      sessionStorage.removeItem("tab_logged_out");
+      router.replace("/");
+      return;
+    }
     const token = getAuthToken();
     const name = getAuthItem("username");
     if (!token) {
@@ -79,9 +85,11 @@ export default function DashboardLayout({
   }, [router, pathname]);
 
   const handleLogout = () => {
-    clearAuthData();
+    // 只清 sessionStorage — 当前标签页登出，其它标签页的 localStorage 不受影响
+    ["access_token","refresh_token","username","role","is_guest"].forEach(k => sessionStorage.removeItem(k));
+    // 标记当前标签页已登出，防止 localStorage token 又把页面拉回 dashboard
+    sessionStorage.setItem("tab_logged_out", "1");
     window.location.href = "/";
-    router.push("/");
   };
 
   return (

@@ -181,9 +181,10 @@ async def submit_task(
     # 权威预约在 call_r_engine 执行时做; 这里只为提交即时反馈弹窗。
     from app.utils import admission
     from app.config import get_settings as _get_settings
-    _ok, _code, _msg = await admission.precheck(req.step, project.storage_path, _get_settings())
-    if not _ok:
-        raise HTTPException(status_code=_code, detail=_msg)
+    if current_user.role != "admin":
+        _ok, _code, _msg = await admission.precheck(req.step, project.storage_path, _get_settings())
+        if not _ok:
+            raise HTTPException(status_code=_code, detail=_msg)
 
     # 检查是否有同步骤的进行中任务
     # plot_markers / cellchat_pathway 是只读可视化，允许多参数并发；其他步骤保持互斥

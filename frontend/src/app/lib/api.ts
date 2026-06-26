@@ -47,8 +47,9 @@ async function doRefreshToken(): Promise<string | null> {
   const refreshToken = getAuthItem("refresh_token");
   if (!refreshToken) return null;
 
-  const guest = getAuthItem("is_guest") === "true";
-  const storage = guest ? sessionStorage : localStorage;
+  // 有标签页会话写 sessionStorage，否则写 localStorage
+  const hasTabSession = typeof window !== "undefined" && sessionStorage.getItem("access_token") !== null;
+  const storage = hasTabSession ? sessionStorage : localStorage;
 
   try {
     const res = await fetch(`${API_BASE}/api/auth/refresh`, {
@@ -269,22 +270,34 @@ export async function upgradeGuest(
  * 保存认证数据。游客 → sessionStorage（标签页隔离），正式用户 → localStorage。
  */
 export function saveAuthData(data: AuthResponse, guest = false): void {
-  const storage = guest ? sessionStorage : localStorage;
-  storage.setItem("access_token", data.access_token);
-  storage.setItem("refresh_token", data.refresh_token);
-  storage.setItem("username", data.username);
-  storage.setItem("role", data.role || "user");
-  storage.setItem("is_guest", guest ? "true" : "false");
-  // 清除另一个 storage 的旧数据，避免冲突
-  const other = guest ? localStorage : sessionStorage;
-  AUTH_KEYS.forEach(k => other.removeItem(k));
+  // 游客 → sessionStorage only（标签页隔离）
+  // 正式用户 → sessionStorage（当前标签页）+ localStorage（新标签页继承）
+  if (guest) {
+    sessionStorage.setItem("access_token", data.access_token);
+    sessionStorage.setItem("refresh_token", data.refresh_token);
+    sessionStorage.setItem("username", data.username);
+    sessionStorage.setItem("role", data.role || "user");
+    sessionStorage.setItem("is_guest", "true");
+  } else {
+    AUTH_KEYS.forEach(k => sessionStorage.removeItem(k));
+    localStorage.setItem("access_token", data.access_token);
+    localStorage.setItem("refresh_token", data.refresh_token);
+    localStorage.setItem("username", data.username);
+    localStorage.setItem("role", data.role || "user");
+    localStorage.setItem("is_guest", "false");
+  }
 }
 
 /**
  * 游客升级为正式用户后，将 token 从 sessionStorage 迁移到 localStorage。
  */
 export function moveGuestToUser(data: AuthResponse): void {
-  AUTH_KEYS.forEach(k => sessionStorage.removeItem(k));
+  // 游客升级：同时写 sessionStorage（当前标签页）+ localStorage（持久化）
+  sessionStorage.setItem("access_token", data.access_token);
+  sessionStorage.setItem("refresh_token", data.refresh_token);
+  sessionStorage.setItem("username", data.username);
+  sessionStorage.setItem("role", data.role || "user");
+  sessionStorage.setItem("is_guest", "false");
   localStorage.setItem("access_token", data.access_token);
   localStorage.setItem("refresh_token", data.refresh_token);
   localStorage.setItem("username", data.username);

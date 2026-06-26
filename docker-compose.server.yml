@@ -56,7 +56,7 @@ services:
       DATABASE_URL: "mysql+pymysql://${DB_USER}:${DB_PASS}@127.0.0.1:3307/${DB_NAME}"
       REDIS_URL: "redis://127.0.0.1:6380/0"
       R_ENGINE_URL: "http://127.0.0.1:8787"
-      R_ENGINE_TIMEOUT: "3600"
+      R_ENGINE_TIMEOUT: "86400"
       JWT_SECRET: "${JWT_SECRET}"
       JWT_ALGORITHM: "HS256"
       PROJECTS_ROOT: "${PROJECTS_ROOT:-/data/projects}"
@@ -140,7 +140,7 @@ services:
       - ./r-engine/R:/app/R:ro
     # 实测全流程单步峰值: 常规步骤 1.5-5GB、inferCNV 最高 ~11GB(小数据)。64g 封顶对当前数据
     # 绰绰有余且 8×64=512 不会拖垮 502GB 宿主(实际占用远低于封顶); 超大数据集的 inferCNV 另议(admission)。
-    mem_limit: 64g
+    mem_limit: 128g
     healthcheck:
       disable: true
 
