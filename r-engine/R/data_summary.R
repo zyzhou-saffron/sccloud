@@ -935,12 +935,17 @@ RunInfercnv <- function(pro, inferDf, cutoff_gene = 0.1, outdir, numThreads = 1L
                      cluster_by_groups = TRUE,
                      denoise = TRUE,
                      write_expr_matrix = TRUE,
+                     tumor_subcluster_partition_method = "leiden",
+                     resume_mode = TRUE,
                      HMM = TRUE,
                      useRaster = FALSE)
     },
     error = function(e) {
       message("[INFERCNV] HMM=TRUE failed: ", e$message)
       message("[INFERCNV] Retrying with HMM=FALSE...")
+      # 清理上次失败输出，避免 resume_mode 读到半成品
+      unlink(outdir, recursive = TRUE)
+      dir.create(outdir, showWarnings = FALSE, recursive = TRUE)
       infercnv::run(infercnv_obj,
                      cutoff = cutoff_val,
                      out_dir = outdir,
@@ -948,6 +953,8 @@ RunInfercnv <- function(pro, inferDf, cutoff_gene = 0.1, outdir, numThreads = 1L
                      cluster_by_groups = TRUE,
                      denoise = TRUE,
                      write_expr_matrix = TRUE,
+                     tumor_subcluster_partition_method = "leiden",
+                     resume_mode = TRUE,
                      HMM = FALSE,
                      useRaster = FALSE)
     }
