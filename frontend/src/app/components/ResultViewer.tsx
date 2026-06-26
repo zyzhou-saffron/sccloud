@@ -654,25 +654,39 @@ function ClusterResult({ data, task }: { data: Record<string, unknown> | null; t
   const [subsetTask, setSubsetTask] = useState<Task | null>(null);
   // 用户本次挂载内已手动提取过 → 不再用历史结果覆盖(remount 后 ref 重置, 会重新恢复最新一条)
   const subsetTouchedRef = useRef(false);
+  // 是否已经执行过一次历史结果恢复
+  const subsetRestoredRef = useRef(false);
+
+  // task 切换时重置恢复标记，允许新任务重新评估历史结果
+  useEffect(() => {
+    subsetRestoredRef.current = false;
+  }, [task?.id]);
 
   // 挂载时恢复上次"细胞亚类提取"结果(切走再切回来不丢)。
   // 该功能只展示一个 RDS 下载链接(由 subsetTask.result_path 驱动), 没有结果数据可视化,
   // 故只需最近一条已完成任务, 不必再取 /result。
+  // 为避免把之前项目/前一次运行的结果带到当前 cluster 步骤，仅当历史任务的 clusters
+  // 全部存在于当前 cluster_levels 中时才恢复；且不再自动回填选中状态。
   useEffect(() => {
     if (!task?.project_id) return;
+    if (subsetRestoredRef.current) return;
+    if (!stats?.cluster_levels?.length) return;
     let alive = true;
     listCompletedTasks(task.project_id)
       .then((tasks) => {
-        if (!alive || subsetTouchedRef.current) return;
+        if (!alive || subsetTouchedRef.current || subsetRestoredRef.current) return;
         const t = latestOfStep(tasks, "subset_cluster");
         if (!t) return;
-        setSubsetTask(t);
         const cls = paramToList(t.params?.clusters);
-        if (cls.length) setSelectedClusters(cls);
+        const currentLevels = new Set(stats.cluster_levels);
+        if (cls.length && cls.every(c => currentLevels.has(c))) {
+          setSubsetTask(t);
+        }
+        subsetRestoredRef.current = true;
       })
       .catch(() => {});
     return () => { alive = false; };
-  }, [task?.project_id]);
+  }, [task?.project_id, stats?.cluster_levels]);
 
   // ── deck.gl 交互式散点图数据 ──
   const rawScatter = useMemo(() => safeScatter(data?.scatter_data), [data]);
@@ -2508,12 +2522,6 @@ function GenericStepResult({ data, stepId, taskId, task }: { data: Record<string
         </div>
       )}
 
-      {/* 输出目录信息 */}
-      {outdir && (
-        <div className="text-[10px] px-3 py-1.5 rounded border border-dashed" style={{ borderColor: "var(--clr-border)", color: "var(--clr-text-faint)" }}>
-          输出目录: {outdir}
-        </div>
-      )}
     </div>
   );
 }
