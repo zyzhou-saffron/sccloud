@@ -517,8 +517,7 @@ function(req) {
       report(8, paste0("检测到 ", ext, " 格式，正在转换为 RDS..."))
       rds_out <- file.path(project_path, paste0("_converted_", basename(load_file), ".rds"))
       if (!file.exists(rds_out)) {
-        exp <- convert_to_rds(load_file, ext, rds_out)
-        save_with_canonical(rds_out, rds_out, exp)
+        convert_to_rds(load_file, ext, rds_out)
       }
       exp <- readRDS(rds_out)
     } else {

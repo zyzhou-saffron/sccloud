@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     # 动态预算: budget = 宿主 MemAvailable + 在跑重任务实占(worker 上报) − 余量; 重任务按估算权重原子预约。
     # 预算满则提交时拒("资源紧张请稍后重试"); 既实时反映共享机真实空闲(含别人非-Docker 占用), 又防并发超订 OOM。
     heavy_mem_reserve_gb: int = 60    # 留给 OS/DB/page-cache/突发的安全余量(从动态预算里扣掉)
-    worker_mem_cap_gb: int = 256      # 单 worker 封顶; 估算 > 此值的任务直接拒("数据过大")
+    worker_mem_cap_gb: int = 500      # 单 worker 封顶; 估算 > 此值的任务直接拒("数据过大")
     admission_wait_grace_sec: int = 180  # 预算暂满时等待多久再放弃(给排在前面的任务腾出空间)
 
     # ---- 文件存储 ----

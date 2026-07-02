@@ -164,6 +164,50 @@ def _n_cells(project_path: str) -> int | None:
     return None
 
 
+
+def _n_cells_from_input(project_path: str) -> int | None:
+    """Read n_obs from uploaded h5ad as the trusted server-side cell count.
+
+    Priority:
+    1. A cached `.scc_cell_count.json` written during upload/by an engine.
+    2. Parse the h5ad directly if anndata is available (backend may not have it).
+    This makes first-run projects use the cell-count formula instead of the
+    file-size formula, avoiding huge overestimation on large but sparse h5ads.
+    """
+    up_dir = os.path.join(project_path, "_uploaded")
+    cache = os.path.join(up_dir, ".scc_cell_count.json")
+    try:
+        with open(cache) as f:
+            n = int((json.load(f) or {}).get("n_obs", 0))
+        if n > 0:
+            return n
+    except Exception:
+        pass
+
+    try:
+        import anndata
+        cands = [f for f in glob.glob(os.path.join(up_dir, "*"))
+                 if os.path.isfile(f) and f.endswith(".h5ad")]
+        if not cands:
+            return None
+        h5ad_path = max(cands, key=os.path.getsize)
+        ad = anndata.read_h5ad(h5ad_path, backed="r")
+        n = int(ad.n_obs)
+        try:
+            ad.file.close()
+        except Exception:
+            pass
+        if n > 0:
+            try:
+                with open(cache, "w") as f:
+                    json.dump({"n_obs": n}, f)
+            except Exception:
+                pass
+            return n
+    except Exception:
+        pass
+    return None
+
 def _safe_int(v) -> int | None:
     """容错把 JSON 来的数字(可能 float/str/None)转正整数, 否则 None。"""
     try:
@@ -175,14 +219,15 @@ def _safe_int(v) -> int | None:
 def estimate_weight_gb(step: str, project_path: str | None, n_cells: int | None = None) -> float:
     """估算某步骤峰值内存(GB)。
     - 服务端从结果 json 读到的细胞数可信 → 直接用细胞公式;
-    - 全流程首次提交只有客户端传入的 n_cells(不可信) → 取'细胞估算'与'文件MB估算'的较大者,
+    - 全流程首次提交若能从上传 h5ad 解析出 n_obs → 也直接用细胞公式;
+    - 只有客户端传入的 n_cells(不可信) → 取'细胞估算'与'文件MB估算'的较大者,
       防客户端报小绕过 400(文件MB由上传文件实测、客户端改不了);
     - 都拿不到细胞数 → 退回纯文件 MB 旧公式。"""
     def _cell_w(cells: int) -> float:
         per1k = _WC.get(step, _WC_DEFAULT)
         return (_WC_BASE + per1k * cells / 1000.0) * _SAFETY
 
-    server_cells = _n_cells(project_path) if project_path else None
+    server_cells = (_n_cells(project_path) or _n_cells_from_input(project_path)) if project_path else None
     client_cells = _safe_int(n_cells)
 
     if server_cells and server_cells > 0:
