@@ -291,13 +291,26 @@ export default function Phase2ParamPage({ pipeline, token, onComplete, species =
 
       {/* 分析模块卡片 */}
       <div className="space-y-2">
-      {MODULES.map((mod) => {
+      {MODULES.map((mod, index) => {
         const isEnabled = enabled[mod.key];
         const isAdvanced = showAdvanced[mod.key];
+        const groupHeader = index === 0
+          ? "高级分析"
+          : index === 4
+            ? "beta（该部分处于测试阶段，样本过大会触发OOM，如遇问题请联系管理员。）"
+            : null;
 
         return (
+          <React.Fragment key={mod.key}>
+            {groupHeader && (
+              <div
+                className="px-1 py-1.5 text-xs font-semibold mt-2 first:mt-0"
+                style={{ color: "var(--clr-amber-dark)" }}
+              >
+                {groupHeader}
+              </div>
+            )}
           <div
-            key={mod.key}
             className="card overflow-hidden transition-all duration-200"
             style={{
               borderColor: isEnabled ? "var(--clr-amber)" : "var(--clr-border)",
@@ -736,6 +749,7 @@ export default function Phase2ParamPage({ pipeline, token, onComplete, species =
               </div>
             )}
           </div>
+          </React.Fragment>
         );
       })}
       </div>
