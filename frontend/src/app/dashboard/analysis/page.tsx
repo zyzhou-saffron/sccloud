@@ -124,9 +124,9 @@ function AnalysisPageContent() {
 
   const [clusterLevels, setClusterLevels] = useState<string[]>([]);
 
-  // Pipeline 模式切换（从 sessionStorage 恢复）
+  // Pipeline 模式切换（当前版本仅支持全流程分析，单步分析入口已隐藏）
   const [analysisMode, _setAnalysisMode] = useState<"single" | "pipeline">(
-    ss?.analysisMode ?? "single"
+    "pipeline"
   );
   const [activePipelineId, setActivePipelineId] = useState<string | null>(
     ss?.activePipelineId ?? null
@@ -155,6 +155,14 @@ function AnalysisPageContent() {
     const handlePipelineBack = () => setActivePipelineIdPersist(null);
     window.addEventListener("pipeline-back", handlePipelineBack);
     return () => window.removeEventListener("pipeline-back", handlePipelineBack);
+  }, []);
+
+  // 当前版本隐藏单步分析，强制使用全流程分析模式
+  useEffect(() => {
+    if (analysisMode !== "pipeline") {
+      setAnalysisMode("pipeline");
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Marker 基因文件上传状态
@@ -505,38 +513,11 @@ function AnalysisPageContent() {
         </div>
       </div>
 
-      {/* ===== 分析模式 Tab 切换 ===== */}
+      {/* ===== 分析模式 Tab 切换（当前版本隐藏单步分析，仅保留全流程分析） ===== */}
       <div className="flex gap-2 mb-6 border-b" style={{ borderColor: "var(--clr-border)" }}>
         <button
-          className={`px-4 py-2 text-sm font-semibold transition-all ${
-            analysisMode === "single"
-              ? "border-b-2"
-              : "opacity-60 hover:opacity-80"
-          }`}
-          style={
-            analysisMode === "single"
-              ? { borderColor: "var(--clr-amber)", color: "var(--clr-amber)" }
-              : { color: "var(--clr-text-muted)" }
-          }
-          onClick={() => {
-            setAnalysisMode("single");
-            setActivePipelineIdPersist(null);
-          }}
-        >
-          单步分析
-        </button>
-        <button
-          className={`px-4 py-2 text-sm font-semibold transition-all ${
-            analysisMode === "pipeline"
-              ? "border-b-2"
-              : "opacity-60 hover:opacity-80"
-          }`}
-          style={
-            analysisMode === "pipeline"
-              ? { borderColor: "var(--clr-amber)", color: "var(--clr-amber)" }
-              : { color: "var(--clr-text-muted)" }
-          }
-          onClick={() => setAnalysisMode("pipeline")}
+          className="px-4 py-2 text-sm font-semibold border-b-2 transition-all"
+          style={{ borderColor: "var(--clr-amber)", color: "var(--clr-amber)" }}
         >
           全流程分析
         </button>

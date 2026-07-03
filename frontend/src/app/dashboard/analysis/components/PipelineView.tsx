@@ -404,35 +404,45 @@ export default function PipelineView({ pipelineId, token, projectName }: Pipelin
       {/* 双面板布局 */}
       <div className="flex gap-6">
         {/* ── 左侧导航（sticky 固定） ── */}
-        <div className="shrink-0 space-y-1 sticky top-4 self-start" style={{ width: sidebarWidth }}>
-          {visibleSteps.map((step) => {
+        <div className="shrink-0 sticky top-4 self-start" style={{ width: sidebarWidth }}>
+          {visibleSteps.map((step, index) => {
             const st = getStepStatus(step.id);
             const isActive = activeStep === step.id;
             const dotCls = STATUS_DOT[st] || STATUS_DOT.pending;
             // Phase 2 步骤在 pipeline 暂停时也可点击（用于查看配置状态）
             const isPhase2 = ["monocle", "cellchat", "infercnv", "wgcna"].includes(step.subSteps[0]);
             const isClickable = st === "completed" || st === "running" || st === "failed" || (isPhase2 && pipeline.status === "paused");
+            const groupHeader = index === 0 ? "基础分析" : index === 3 ? "高级分析" : index === 7 ? "Beta" : null;
 
             return (
-              <button
-                key={step.id}
-                onClick={() => { if (isClickable) { userSelectedRef.current = true; setActiveStep(step.id); } }}
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded text-sm text-left transition-all duration-200"
-                style={
-                  isActive
-                    ? { borderLeft: "3px solid var(--clr-amber)", color: "var(--clr-amber-dark)", background: "rgba(200,96,25,0.06)", fontWeight: 600 }
-                    : { borderLeft: "3px solid transparent", color: isClickable ? "var(--clr-text-muted)" : "var(--clr-text-faint)", opacity: isClickable ? 1 : 0.5, cursor: isClickable ? "pointer" : "default" }
-                }
-              >
-                <step.Icon size={18} className={isActive ? "text-[#C86019]" : "text-[#999]"} />
-                <div className="flex-1 min-w-0">
-                  <div>{step.num}. {step.label}</div>
-                  <div className="text-xs" style={{ color: "var(--clr-text-faint)" }}>
-                    {step.desc}
+              <React.Fragment key={step.id}>
+                {groupHeader && (
+                  <div
+                    className="px-3 py-1.5 text-xs font-semibold mt-3 first:mt-0"
+                    style={{ color: "var(--clr-amber-dark)" }}
+                  >
+                    {groupHeader}
                   </div>
-                </div>
-                <div className={`w-2 h-2 rounded-full shrink-0 ${dotCls}`} />
-              </button>
+                )}
+                <button
+                  onClick={() => { if (isClickable) { userSelectedRef.current = true; setActiveStep(step.id); } }}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded text-sm text-left transition-all duration-200"
+                  style={
+                    isActive
+                      ? { borderLeft: "3px solid var(--clr-amber)", color: "var(--clr-amber-dark)", background: "rgba(200,96,25,0.06)", fontWeight: 600 }
+                      : { borderLeft: "3px solid transparent", color: isClickable ? "var(--clr-text-muted)" : "var(--clr-text-faint)", opacity: isClickable ? 1 : 0.5, cursor: isClickable ? "pointer" : "default" }
+                  }
+                >
+                  <step.Icon size={18} className={isActive ? "text-[#C86019]" : "text-[#999]"} />
+                  <div className="flex-1 min-w-0">
+                    <div>{step.num}. {step.label}</div>
+                    <div className="text-xs" style={{ color: "var(--clr-text-faint)" }}>
+                      {step.desc}
+                    </div>
+                  </div>
+                  <div className={`w-2 h-2 rounded-full shrink-0 ${dotCls}`} />
+                </button>
+              </React.Fragment>
             );
           })}
         </div>
