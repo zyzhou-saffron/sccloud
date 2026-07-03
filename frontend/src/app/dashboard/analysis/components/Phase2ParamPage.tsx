@@ -240,12 +240,6 @@ export default function Phase2ParamPage({ pipeline, token, onComplete, species =
       Icon: IconPathway,
     },
     {
-      key: "monocle",
-      label: "拟时序分析",
-      desc: "Monocle 2 — 细胞发育轨迹推断与分支分析",
-      Icon: IconBranch,
-    },
-    {
       key: "cellchat",
       label: "细胞通讯分析",
       desc: "CellChat — 配体-受体介导的细胞间通讯网络",
@@ -256,6 +250,12 @@ export default function Phase2ParamPage({ pipeline, token, onComplete, species =
       label: "WGCNA 分析",
       desc: "加权基因共表达网络 — 识别基因模块与细胞类型关联",
       Icon: IconNetwork,
+    },
+    {
+      key: "monocle",
+      label: "拟时序分析",
+      desc: "Monocle 2 — 细胞发育轨迹推断与分支分析",
+      Icon: IconBranch,
     },
     {
       key: "infercnv",

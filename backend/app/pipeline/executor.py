@@ -1,7 +1,7 @@
 """
 Pipeline 执行引擎 — 分两阶段执行分析步骤。
 Phase 1: qc → normalize → reduce → annotate（完成后暂停）
-Phase 2: markers → monocle → cellchat → infercnv（串行执行）
+Phase 2: markers → enrich → cellchat → wgcna → monocle → infercnv（串行执行）
 """
 
 import asyncio
@@ -18,7 +18,7 @@ from app.utils.r_bridge import call_r_engine
 logger = logging.getLogger(__name__)
 
 PIPELINE_PHASE1 = ["qc", "normalize", "reduce", "annotate"]
-PIPELINE_PHASE2_ALL = ["markers", "enrich", "monocle", "cellchat", "wgcna", "infercnv"]
+PIPELINE_PHASE2_ALL = ["markers", "enrich", "cellchat", "wgcna", "monocle", "infercnv"]
 # Phase 2 步骤全部串行执行 — R Plumber 单线程，并行会导致内存溢出和进程崩溃
 PARALLEL_PHASE2 = []
 # 长耗时步骤的超时覆盖 (秒)

@@ -58,6 +58,17 @@ interface MarkerTableRow {
   original_celltype?: string;
 }
 
+/** 兼容 markers 字段可能是字符串、数组或空值的情况 */
+function normalizeMarkers(markers: unknown): string[] {
+  if (Array.isArray(markers)) {
+    return markers.filter((m): m is string => typeof m === "string");
+  }
+  if (typeof markers === "string") {
+    return markers.split(/[|,;]/).map((s) => s.trim()).filter(Boolean);
+  }
+  return [];
+}
+
 interface AnnotateData {
   status: string;
   result_path?: string;
@@ -155,13 +166,23 @@ export default function AnnotateResult({
 
   // ── 本地状态（合并后可更新） ──
   const [localScatter, setLocalScatter] = useState<ScatterData | undefined>(rawScatter);
-  const [markerTable, setMarkerTable] = useState<MarkerTableRow[]>(annotateData?.marker_table ?? []);
+  const [markerTable, setMarkerTable] = useState<MarkerTableRow[]>(
+    (annotateData?.marker_table ?? []).map((row) => ({
+      ...row,
+      markers: normalizeMarkers(row.markers),
+    }))
+  );
   const [freqTable, setFreqTable] = useState<FreqTableRow[]>(annotateData?.freq_table ?? []);
 
   // 当原始数据变化时重置本地状态
   useEffect(() => {
     setLocalScatter(rawScatter);
-    setMarkerTable(annotateData?.marker_table ?? []);
+    setMarkerTable(
+      (annotateData?.marker_table ?? []).map((row) => ({
+        ...row,
+        markers: normalizeMarkers(row.markers),
+      }))
+    );
     setFreqTable(annotateData?.freq_table ?? []);
   }, [rawScatter, annotateData?.marker_table, annotateData?.freq_table]);
 
@@ -898,38 +919,41 @@ export default function AnnotateResult({
                         )}
                       </td>
                       <td className="px-3 py-2" style={{ color: "var(--clr-text)", maxWidth: 260 }}>
-                        {row.markers.length > 0 ? (
-                          <>
-                            {row.markers.slice(0, 5).map((g, gi) => (
-                              <React.Fragment key={g}>
-                                <button
-                                  onMouseEnter={(e) => openGenePopup(g, row.celltype, e)}
-                                  onMouseLeave={scheduleCloseGenePopup}
-                                  style={{
-                                    background: "none",
-                                    border: "none",
-                                    padding: 0,
-                                    color: activeGene === g ? "#60a5fa" : "var(--clr-text)",
-                                    cursor: "pointer",
-                                    textDecoration: activeGene === g ? "underline" : "none",
-                                    fontSize: "inherit",
-                                    fontFamily: "inherit",
-                                  }}
-                                >
-                                  {g}
-                                </button>
-                                {gi < Math.min(4, row.markers.length - 1) && (
-                                  <span style={{ color: "var(--clr-text-muted)" }}>, </span>
-                                )}
-                              </React.Fragment>
-                            ))}
-                            {row.markers.length > 5 && (
-                              <span style={{ color: "var(--clr-text-muted)" }}> +{row.markers.length - 5}</span>
-                            )}
-                          </>
-                        ) : (
-                          <span style={{ color: "var(--clr-text-faint)" }}>—</span>
-                        )}
+                        {(() => {
+                          const markers = normalizeMarkers(row.markers);
+                          return markers.length > 0 ? (
+                            <>
+                              {markers.slice(0, 5).map((g, gi) => (
+                                <React.Fragment key={g}>
+                                  <button
+                                    onMouseEnter={(e) => openGenePopup(g, row.celltype, e)}
+                                    onMouseLeave={scheduleCloseGenePopup}
+                                    style={{
+                                      background: "none",
+                                      border: "none",
+                                      padding: 0,
+                                      color: activeGene === g ? "#60a5fa" : "var(--clr-text)",
+                                      cursor: "pointer",
+                                      textDecoration: activeGene === g ? "underline" : "none",
+                                      fontSize: "inherit",
+                                      fontFamily: "inherit",
+                                    }}
+                                  >
+                                    {g}
+                                  </button>
+                                  {gi < Math.min(4, markers.length - 1) && (
+                                    <span style={{ color: "var(--clr-text-muted)" }}>, </span>
+                                  )}
+                                </React.Fragment>
+                              ))}
+                              {markers.length > 5 && (
+                                <span style={{ color: "var(--clr-text-muted)" }}> +{markers.length - 5}</span>
+                              )}
+                            </>
+                          ) : (
+                            <span style={{ color: "var(--clr-text-faint)" }}>—</span>
+                          );
+                        })()}
                       </td>
                       <td className="px-2 py-1.5" style={{ position: "relative" }}>
                         <div style={{ position: "relative" }}>

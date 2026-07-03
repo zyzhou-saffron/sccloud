@@ -31,6 +31,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libhiredis-dev \
     libfreetype6-dev \
     libwebp-dev \
+    jags \
     cmake \
     make \
     curl \
@@ -38,12 +39,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
+# Ubuntu 的 jags 把模块装到 /usr/lib/x86_64-linux-gnu/JAGS，rjags 编译时按 /usr/local/JAGS 找
+RUN ln -s /usr/lib/x86_64-linux-gnu/JAGS /usr/local/JAGS
+
 # ===== Python 依赖（reticulate 用于 H5AD/Loom 格式处理）=====
 RUN pip3 install --no-cache-dir anndata loompy
 
 ENV RETICULATE_PYTHON=/usr/bin/python3
 
 WORKDIR /app
+
+# ===== 编译子进程 reap 助手（解决 system(wait=FALSE) 留下僵尸导致任务卡死）=====
+COPY reap.c /app/reap.c
+RUN R CMD SHLIB /app/reap.c
 
 # ===== R 库：从服务器预编译包直接复制 =====
 # 572 个已编译包，包含 Seurat、Bioconductor、SingleR、clusterProfiler 等
@@ -61,7 +69,8 @@ RUN chmod -R a+rX /usr/local/lib/R/site-library/
 RUN Rscript -e " \
     options(repos = c(CRAN = 'https://mirrors.ustc.edu.cn/CRAN/')); \
     install.packages(c('stringi', 'Cairo', 'systemfonts', 'textshaping', 'svglite', 'ragg'), type = 'source', Ncpus = 1L); \
-    install.packages(c('plumber', 'redux'), Ncpus = 2L) \
+    install.packages(c('plumber', 'redux'), Ncpus = 2L); \
+    install.packages('rjags', type = 'source', Ncpus = 2L) \
 "
 
 # ===== 应用代码 =====
