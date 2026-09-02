@@ -58,6 +58,17 @@ interface MarkerTableRow {
   original_celltype?: string;
 }
 
+/** 兼容 markers 字段可能是字符串、数组或空值的情况 */
+function normalizeMarkers(markers: unknown): string[] {
+  if (Array.isArray(markers)) {
+    return markers.filter((m): m is string => typeof m === "string");
+  }
+  if (typeof markers === "string") {
+    return markers.split(/[|,;]/).map((s) => s.trim()).filter(Boolean);
+  }
+  return [];
+}
+
 interface AnnotateData {
   status: string;
   result_path?: string;
@@ -71,7 +82,7 @@ interface AnnotateData {
     species?: string;
     tissue?: string;
   };
-  freq_table?: Array<{ CellType: string; Sample?: string; Freq?: number; n?: number; pct?: number }>;
+  freq_table?: FreqTableRow[];
   marker_table?: MarkerTableRow[];
 }
 
@@ -92,6 +103,52 @@ function safeScatter(raw: unknown): ScatterData | undefined {
   };
 }
 
+interface FreqTableRow {
+  CellType: string;
+  Sample?: string;
+  Freq?: number;
+  n?: number;
+  pct?: number;
+}
+
+/** 根据重命名映射更新 freq_table：替换 CellType 并合并同名样本 */
+function renameFreqTable(
+  freqTable: FreqTableRow[],
+  renameMap: Record<string, string>
+): FreqTableRow[] {
+  if (!freqTable.length || !Object.keys(renameMap).length) return freqTable;
+  const renamed = freqTable.map(r => ({
+    ...r,
+    CellType: renameMap[r.CellType ?? ""] ?? r.CellType,
+  }));
+
+  const merged: Record<string, Record<string, { Freq: number; n: number; pct: number; count: number }>> = {};
+  for (const r of renamed) {
+    const ct = r.CellType ?? "";
+    const s = r.Sample ?? "";
+    if (!merged[ct]) merged[ct] = {};
+    if (!merged[ct][s]) merged[ct][s] = { Freq: 0, n: 0, pct: 0, count: 0 };
+    merged[ct][s].Freq += r.Freq ?? 0;
+    merged[ct][s].n += r.n ?? 0;
+    merged[ct][s].pct += r.pct ?? 0;
+    merged[ct][s].count += 1;
+  }
+
+  const result: FreqTableRow[] = [];
+  for (const [ct, sMap] of Object.entries(merged)) {
+    for (const [s, agg] of Object.entries(sMap)) {
+      result.push({
+        CellType: ct,
+        Sample: s,
+        Freq: agg.Freq,
+        n: agg.n,
+        pct: agg.count > 0 ? agg.pct : undefined,
+      });
+    }
+  }
+  return result;
+}
+
 export default function AnnotateResult({
   data,
   task,
@@ -109,13 +166,25 @@ export default function AnnotateResult({
 
   // ── 本地状态（合并后可更新） ──
   const [localScatter, setLocalScatter] = useState<ScatterData | undefined>(rawScatter);
-  const [markerTable, setMarkerTable] = useState<MarkerTableRow[]>(annotateData?.marker_table ?? []);
+  const [markerTable, setMarkerTable] = useState<MarkerTableRow[]>(
+    (annotateData?.marker_table ?? []).map((row) => ({
+      ...row,
+      markers: normalizeMarkers(row.markers),
+    }))
+  );
+  const [freqTable, setFreqTable] = useState<FreqTableRow[]>(annotateData?.freq_table ?? []);
 
   // 当原始数据变化时重置本地状态
   useEffect(() => {
     setLocalScatter(rawScatter);
-    setMarkerTable(annotateData?.marker_table ?? []);
-  }, [rawScatter, annotateData?.marker_table]);
+    setMarkerTable(
+      (annotateData?.marker_table ?? []).map((row) => ({
+        ...row,
+        markers: normalizeMarkers(row.markers),
+      }))
+    );
+    setFreqTable(annotateData?.freq_table ?? []);
+  }, [rawScatter, annotateData?.marker_table, annotateData?.freq_table]);
 
   // 编辑中的 annotation_result 值
   const [editedResults, setEditedResults] = useState<Record<string, string>>({});
@@ -170,6 +239,16 @@ export default function AnnotateResult({
         mapping[row.cluster_id] ? { ...row, celltype: mapping[row.cluster_id] } : row
       );
       setMarkerTable(newTable);
+      // 同步更新占比表
+      const renameMap: Record<string, string> = {};
+      for (const row of markerTable) {
+        const newName = mapping[row.cluster_id];
+        if (newName && newName !== row.celltype) {
+          renameMap[row.celltype] = newName;
+        }
+      }
+      const newFreqTable = renameFreqTable(freqTable, renameMap);
+      setFreqTable(newFreqTable);
       // 更新 scatter_data celltype
       let updatedCelltype: string[] | undefined;
       const scatter = displayScatter;
@@ -185,6 +264,9 @@ export default function AnnotateResult({
       if (updatedCelltype && annotateData?.scatter_data) {
         updatePayload.scatter_data = { ...(annotateData.scatter_data as Record<string, unknown>), celltype: updatedCelltype };
       }
+      if (newFreqTable.length > 0) {
+        updatePayload.freq_table = newFreqTable;
+      }
       await updateTaskResult(taskId, updatePayload);
       window.dispatchEvent(new CustomEvent("annotation-updated"));
       setUploadAnnotateMsg(`成功更新 ${count} 个聚类的注释`);
@@ -194,7 +276,7 @@ export default function AnnotateResult({
       setUploadAnnotating(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
-  }, [markerTable, displayScatter, taskId, annotateData?.scatter_data]);
+  }, [markerTable, displayScatter, taskId, annotateData?.scatter_data, freqTable]);
 
   // ── 基因表达弹窗状态（hover 触发，跟随鼠标） ──
   const [activeGene, setActiveGene] = useState<string | null>(null);
@@ -248,7 +330,18 @@ export default function AnnotateResult({
   const markerTotalPages = Math.ceil(markerTable.length / pageSize);
 
   // ── 细胞类型占比表（CellType × Sample pivot） ──
-  const freqRaw = annotateData?.freq_table ?? [];
+  const freqRaw = freqTable;
+
+  // 当前 celltype 对应的原始注释集合（用于占比表显示修改来源）
+  const celltypeOriginals = useMemo(() => {
+    const map: Record<string, Set<string>> = {};
+    for (const row of markerTable) {
+      const orig = row.original_celltype || row.celltype;
+      if (!map[row.celltype]) map[row.celltype] = new Set();
+      map[row.celltype].add(orig);
+    }
+    return map;
+  }, [markerTable]);
   const [freqPage, setFreqPage] = useState(0);
   const freqPageSize = 15;
   const { freqHeaders, freqRows } = useMemo(() => {
@@ -330,7 +423,11 @@ export default function AnnotateResult({
       );
       setMarkerTable(newMarkerTable);
 
-      // 3. 持久化到后端
+      // 3. 同步更新占比表
+      const newFreqTable = renameFreqTable(freqTable, merge_map);
+      setFreqTable(newFreqTable);
+
+      // 4. 持久化到后端
       const updatePayload: Record<string, unknown> = {
         marker_table: newMarkerTable,
       };
@@ -339,6 +436,9 @@ export default function AnnotateResult({
           ...annotateData?.scatter_data,
           celltype: newScatter.celltype,
         };
+      }
+      if (newFreqTable.length > 0) {
+        updatePayload.freq_table = newFreqTable;
       }
       await updateTaskResult(taskId, updatePayload);
       window.dispatchEvent(new CustomEvent("annotation-updated"));
@@ -352,7 +452,7 @@ export default function AnnotateResult({
     } finally {
       setMerging(false);
     }
-  }, [selectedForMerge, mergeTargetName, tableHighlightType, markerTable, displayScatter, taskId, annotateData?.scatter_data]);
+  }, [selectedForMerge, mergeTargetName, tableHighlightType, markerTable, displayScatter, taskId, annotateData?.scatter_data, freqTable]);
 
   const toggleMergeSelection = useCallback((id: string, type?: "cluster" | "celltype") => {
     if (type) {
@@ -433,6 +533,17 @@ export default function AnnotateResult({
     );
     setMarkerTable(newMarkerTable);
 
+    // 同步更新占比表：cluster_id 重命名转换为 celltype 重命名
+    const renameMap: Record<string, string> = {};
+    for (const row of markerTable) {
+      const newName = clusterRename[row.cluster_id];
+      if (newName && newName !== row.celltype) {
+        renameMap[row.celltype] = newName;
+      }
+    }
+    const newFreqTable = renameFreqTable(freqTable, renameMap);
+    setFreqTable(newFreqTable);
+
     setEditedResults({});
     setMergeMode(false);
 
@@ -448,6 +559,9 @@ export default function AnnotateResult({
           celltype: newScatter.celltype,
         };
       }
+      if (newFreqTable.length > 0) {
+        updatePayload.freq_table = newFreqTable;
+      }
       await updateTaskResult(taskId, updatePayload);
       window.dispatchEvent(new CustomEvent("annotation-updated"));
     } catch (e) {
@@ -455,7 +569,7 @@ export default function AnnotateResult({
     } finally {
       setSavingResultsState(false);
     }
-  }, [editedResults, displayScatter, markerTable, taskId, annotateData?.scatter_data]);
+  }, [editedResults, displayScatter, markerTable, taskId, annotateData?.scatter_data, freqTable]);
 
   return (
     <div className="space-y-4">
@@ -805,38 +919,41 @@ export default function AnnotateResult({
                         )}
                       </td>
                       <td className="px-3 py-2" style={{ color: "var(--clr-text)", maxWidth: 260 }}>
-                        {row.markers.length > 0 ? (
-                          <>
-                            {row.markers.slice(0, 5).map((g, gi) => (
-                              <React.Fragment key={g}>
-                                <button
-                                  onMouseEnter={(e) => openGenePopup(g, row.celltype, e)}
-                                  onMouseLeave={scheduleCloseGenePopup}
-                                  style={{
-                                    background: "none",
-                                    border: "none",
-                                    padding: 0,
-                                    color: activeGene === g ? "#60a5fa" : "var(--clr-text)",
-                                    cursor: "pointer",
-                                    textDecoration: activeGene === g ? "underline" : "none",
-                                    fontSize: "inherit",
-                                    fontFamily: "inherit",
-                                  }}
-                                >
-                                  {g}
-                                </button>
-                                {gi < Math.min(4, row.markers.length - 1) && (
-                                  <span style={{ color: "var(--clr-text-muted)" }}>, </span>
-                                )}
-                              </React.Fragment>
-                            ))}
-                            {row.markers.length > 5 && (
-                              <span style={{ color: "var(--clr-text-muted)" }}> +{row.markers.length - 5}</span>
-                            )}
-                          </>
-                        ) : (
-                          <span style={{ color: "var(--clr-text-faint)" }}>—</span>
-                        )}
+                        {(() => {
+                          const markers = normalizeMarkers(row.markers);
+                          return markers.length > 0 ? (
+                            <>
+                              {markers.slice(0, 5).map((g, gi) => (
+                                <React.Fragment key={g}>
+                                  <button
+                                    onMouseEnter={(e) => openGenePopup(g, row.celltype, e)}
+                                    onMouseLeave={scheduleCloseGenePopup}
+                                    style={{
+                                      background: "none",
+                                      border: "none",
+                                      padding: 0,
+                                      color: activeGene === g ? "#60a5fa" : "var(--clr-text)",
+                                      cursor: "pointer",
+                                      textDecoration: activeGene === g ? "underline" : "none",
+                                      fontSize: "inherit",
+                                      fontFamily: "inherit",
+                                    }}
+                                  >
+                                    {g}
+                                  </button>
+                                  {gi < Math.min(4, markers.length - 1) && (
+                                    <span style={{ color: "var(--clr-text-muted)" }}>, </span>
+                                  )}
+                                </React.Fragment>
+                              ))}
+                              {markers.length > 5 && (
+                                <span style={{ color: "var(--clr-text-muted)" }}> +{markers.length - 5}</span>
+                              )}
+                            </>
+                          ) : (
+                            <span style={{ color: "var(--clr-text-faint)" }}>—</span>
+                          );
+                        })()}
                       </td>
                       <td className="px-2 py-1.5" style={{ position: "relative" }}>
                         <div style={{ position: "relative" }}>
@@ -999,8 +1116,17 @@ export default function AnnotateResult({
           </p>
           <button
             onClick={() => {
-              const header = ["CellType", ...freqHeaders];
-              const csvRows = freqRows.map(r => [r.celltype, ...freqHeaders.map(s => r[s])]);
+              const header = ["CellType", "原始注释", ...freqHeaders];
+              const csvRows = freqRows.map(r => [
+                r.celltype,
+                (() => {
+                  const originals = celltypeOriginals[r.celltype];
+                  if (!originals || originals.size === 0) return "";
+                  if (originals.size === 1 && originals.has(r.celltype)) return "";
+                  return Array.from(originals).join("; ");
+                })(),
+                ...freqHeaders.map(s => r[s]),
+              ]);
               const csv = [header.join(","), ...csvRows.map(r => r.join(","))].join("\n");
               const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
               const url = URL.createObjectURL(blob);
@@ -1028,6 +1154,9 @@ export default function AnnotateResult({
                   <th className="px-3 py-2 text-left font-semibold sticky left-0" style={{ color: "var(--clr-amber-dark)", background: "var(--clr-bg)", zIndex: 1 }}>
                     CellType
                   </th>
+                  <th className="px-3 py-2 text-left font-semibold" style={{ color: "var(--clr-amber-dark)", minWidth: 100 }}>
+                    原始注释
+                  </th>
                   {freqHeaders.map(s => (
                     <th key={s} className="px-3 py-2 text-right font-semibold" style={{ color: "var(--clr-amber-dark)" }}>
                       {s}
@@ -1037,7 +1166,7 @@ export default function AnnotateResult({
               </thead>
               <tbody>
                 {freqPageData.map((row, idx) => (
-                  <tr
+                    <tr
                     key={row.celltype}
                     style={{
                       borderBottom: "1px solid var(--clr-border)",
@@ -1046,6 +1175,14 @@ export default function AnnotateResult({
                   >
                     <td className="px-3 py-1.5 font-medium sticky left-0" style={{ color: "var(--clr-text)", background: idx % 2 === 0 ? "var(--clr-bg-alt)" : "rgba(255,255,255,0.4)", zIndex: 1 }}>
                       {row.celltype}
+                    </td>
+                    <td className="px-3 py-1.5 text-left" style={{ color: "var(--clr-text-muted)", fontSize: "11px", minWidth: 100 }}>
+                      {(() => {
+                        const originals = celltypeOriginals[row.celltype];
+                        if (!originals || originals.size === 0) return "—";
+                        if (originals.size === 1 && originals.has(row.celltype)) return "—";
+                        return Array.from(originals).join(", ");
+                      })()}
                     </td>
                     {freqHeaders.map(s => (
                       <td key={s} className="px-3 py-1.5 text-right" style={{ color: "var(--clr-text-muted)", fontVariantNumeric: "tabular-nums" }}>

@@ -58,7 +58,7 @@ const STEP_LABELS: Record<string, string> = {
 /** 合并后的步骤序号映射 */
 const STEP_INDEX: Record<string, number> = {
   qc: 1, normalize: 1, reduce: 2, cluster: 2, annotate: 3,
-  markers: 4, enrich: 5, monocle: 6, cellchat: 7, wgcna: 8, infercnv: 9,
+  markers: 4, enrich: 5, cellchat: 6, wgcna: 7, monocle: 8, infercnv: 9,
 };
 
 /** 计算 Pipeline 总步骤数（Phase1 合并后 3 步 + Phase2 步数） */
@@ -67,7 +67,7 @@ const PHASE1_COUNT = 4;
 const PHASE1_ORDER: Record<string, number> = {
   qc: 1, normalize: 2, reduce: 3, annotate: 4,
 };
-const PHASE2_STEPS = ["markers", "enrich", "monocle", "cellchat", "wgcna", "infercnv"];
+const PHASE2_STEPS = ["markers", "enrich", "cellchat", "wgcna", "monocle", "infercnv"];
 
 function getTotalSteps(params?: Record<string, unknown>): number {
   const enabled = (params?.enabled_steps as string[] | undefined) || [];

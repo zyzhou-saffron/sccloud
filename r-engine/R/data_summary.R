@@ -71,16 +71,28 @@ RenameIdents2 <- function(pro) {
 runHarmony <- function(sctpro1,redu1,group1,nDim,res){
    if(redu1=="harmony"){
        sctpro1 <- RunPCA(object = sctpro1, verbose = FALSE)
+
+       # 如果分组列只有 1 个水平，无法做 Harmony 批次校正，退回到普通 PCA 流程
+       group_vals <- as.character(sctpro1@meta.data[[group1]])
+       if (length(unique(group_vals)) <= 1) {
+         message(sprintf("[runHarmony] group_by column '%s' has only %d level(s), skipping Harmony", group1, length(unique(group_vals))))
+         sctpro1 <- RunUMAP(object = sctpro1, reduction = "pca", dims = 1:nDim, verbose = FALSE)
+         sctpro1 <- FindNeighbors(sctpro1, reduction = "pca", dims = 1:nDim, verbose = FALSE) %>% FindClusters(resolution = res, verbose = FALSE)
+         sctpro1 <- RenameIdents2(sctpro1)
+         sctpro1$Cluster <- Idents(sctpro1)
+         return(sctpro1)
+       }
+
        sctpro1 <- RunUMAP(object = sctpro1, reduction = "pca", dims = 1:nDim, verbose = FALSE)
-       
+
        sctpro1@meta.data[[group1]] <- as.character(sctpro1@meta.data[[group1]]) # Seurat v5
-       
+
        #sctpro1 <- harmony::RunHarmony(sctpro1, group.by.vars = group1 , reduction = 'pca', assay.use = 'SCT', verbose = FALSE) # Seurat v4
        sctpro1 <- harmony::RunHarmony(sctpro1, group.by.vars = group1, reduction.use = 'pca', assay.use = 'SCT', verbose = FALSE) # Seurat v5
-       
+
        sctpro1 <- RunUMAP(sctpro1, reduction = "harmony", dims = 1:nDim)
        sctpro1 <- FindNeighbors(sctpro1, reduction = "harmony", dims = 1:nDim, verbose = FALSE) %>% FindClusters(resolution = res,verbose = FALSE)
-       
+
        sctpro1 <- RenameIdents2(sctpro1)
        sctpro1$Cluster <- Idents(sctpro1)
        return(sctpro1)
@@ -923,11 +935,17 @@ RunInfercnv <- function(pro, inferDf, cutoff_gene = 0.1, outdir, numThreads = 1L
                      cluster_by_groups = TRUE,
                      denoise = TRUE,
                      write_expr_matrix = TRUE,
-                     HMM = TRUE)
+                     tumor_subcluster_partition_method = "leiden",
+                     resume_mode = TRUE,
+                     HMM = TRUE,
+                     useRaster = FALSE)
     },
     error = function(e) {
       message("[INFERCNV] HMM=TRUE failed: ", e$message)
       message("[INFERCNV] Retrying with HMM=FALSE...")
+      # 清理上次失败输出，避免 resume_mode 读到半成品
+      unlink(outdir, recursive = TRUE)
+      dir.create(outdir, showWarnings = FALSE, recursive = TRUE)
       infercnv::run(infercnv_obj,
                      cutoff = cutoff_val,
                      out_dir = outdir,
@@ -935,7 +953,10 @@ RunInfercnv <- function(pro, inferDf, cutoff_gene = 0.1, outdir, numThreads = 1L
                      cluster_by_groups = TRUE,
                      denoise = TRUE,
                      write_expr_matrix = TRUE,
-                     HMM = FALSE)
+                     tumor_subcluster_partition_method = "leiden",
+                     resume_mode = TRUE,
+                     HMM = FALSE,
+                     useRaster = FALSE)
     }
   )
 

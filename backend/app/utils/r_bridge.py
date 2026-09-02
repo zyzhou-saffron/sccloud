@@ -19,7 +19,7 @@ from app.config import get_settings
 from app.db.models import Task
 
 # 走 quick 引擎(8788)的只读/重出图秒级请求，避免被重任务(inferCNV/WGCNA/cellchat/pipeline)堵塞 (#42)
-QUICK_STEPS = {"plot_markers", "cellchat_pathway"}
+QUICK_STEPS = {"plot_markers", "cellchat_pathway", "subset_cluster"}
 
 
 async def call_r_engine(
@@ -209,8 +209,12 @@ async def _run_via_queue(
     from app.utils import admission
 
     # ── 内存准入(admission control) ── 估算权重: 超单 worker 封顶 → 直接拒(再多并发也跑不动)
+    # admin 跳过内存准入
+    from app.db.models import User as _U
+    _adm = db.query(_U).filter(_U.id == task.user_id).first()
+    _is_admin = _adm and _adm.role == "admin"
     weight = admission.estimate_weight_gb(endpoint, payload.get("project_path"))
-    if weight > settings.worker_mem_cap_gb:
+    if not _is_admin and weight > settings.worker_mem_cap_gb:
         raise Exception(
             f"数据过大：{endpoint} 预计需 ~{weight:.0f}GB, 超过单任务内存上限 "
             f"{settings.worker_mem_cap_gb}GB。请拆分数据, 或联系管理员调大 worker mem_limit。")
@@ -219,25 +223,26 @@ async def _run_via_queue(
     r = aioredis.from_url(settings.redis_url, socket_timeout=None)
     reserved = False
     try:
-        # 从总预算预约 weight(满则等 admission_wait_grace_sec 给前面任务腾位, 仍满 → 资源紧张)
-        _dl = _t.monotonic() + settings.admission_wait_grace_sec
-        while not await admission.try_reserve(
-                r, str(task.id), weight, settings, settings.r_engine_timeout):
-            if _t.monotonic() >= _dl:
-                raise Exception("服务器资源紧张, 请稍后重试")
-            # 等预算期间用户点了"停止" → 立刻退出, 别傻等到 grace 超时 (bot #64)。
-            # cancel 端点先 commit DB=cancelled 再 SET scc:cancel, 故此键在即 DB 已 cancelled; 上层 except 保持 cancelled。
-            if await r.exists(f"scc:cancel:{task.id}"):
-                raise Exception("任务已被取消")
-            try:  # 预算暂满时给前端反馈, 别让用户以为卡死
-                task.progress_message = "排队等待内存资源..."
-                db.commit()
-            except Exception:
-                pass
-            await asyncio.sleep(3)
-        reserved = True
-        _bud = await admission.dynamic_budget_gb(r, settings)
-        logger.info(f"[admission] task={task.id} {endpoint} 预约 {weight}GB / 动态预算 {_bud:.0f}GB")
+        if _is_admin:
+            reserved = True
+            logger.info(f"[admission] task={task.id} admin bypass, skipping reservation")
+        else:
+            _dl = _t.monotonic() + settings.admission_wait_grace_sec
+            while not await admission.try_reserve(
+                    r, str(task.id), weight, settings, settings.r_engine_timeout):
+                if _t.monotonic() >= _dl:
+                    raise Exception("服务器资源紧张, 请稍后重试")
+                if await r.exists(f"scc:cancel:{task.id}"):
+                    raise Exception("任务已被取消")
+                try:
+                    task.progress_message = "排队等待内存资源..."
+                    db.commit()
+                except Exception:
+                    pass
+                await asyncio.sleep(3)
+            reserved = True
+            _bud = await admission.dynamic_budget_gb(r, settings)
+            logger.info(f"[admission] task={task.id} {endpoint} 预约 {weight}GB / 动态预算 {_bud:.0f}GB")
 
         job = {
             "step": endpoint,

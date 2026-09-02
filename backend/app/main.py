@@ -31,11 +31,32 @@ def _run_alembic_upgrade():
         logger.warning(f"[alembic] upgrade failed: {e}")
 
 
+def _cleanup_stale_tasks():
+    """启动时将卡在 pending/running 的任务标记为 failed（后端重启会丢失后台任务）。"""
+    from app.db.models import SessionLocal, Task
+    db = SessionLocal()
+    try:
+        count = (
+            db.query(Task)
+            .filter(Task.status.in_(["pending", "running"]))
+            .update({"status": "failed", "error_msg": "后端重启，任务被自动清理"})
+        )
+        if count:
+            db.commit()
+            logger.info(f"[startup] 清理了 {count} 个卡住的任务")
+    except Exception as e:
+        logger.warning(f"[startup] 清理卡住任务失败: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期 — 启动时执行迁移、创建数据库表并启动后台服务。"""
     _run_alembic_upgrade()
     Base.metadata.create_all(bind=engine)
+    _cleanup_stale_tasks()
     # 重任务改走 Redis 队列 + worker(#42 Phase2)，无需再初始化引擎池。
     # 启动 Redis → DB 进度同步器 (后台协程)
     syncer = ProgressSyncer()

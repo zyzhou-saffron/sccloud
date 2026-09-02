@@ -354,8 +354,18 @@ my_distPlot8 <- function(pro, minPct, logFc, test, pos, ntop, rawC = "All") {
     featuresVar <- VariableFeatures(pro)
     plotFeatures2 <- intersect(plotFeatures, featuresVar)
 
+    # 热图降采样：细胞数过多时 PNG 设备会把整张图渲染成白色。
+    # 对每类细胞最多保留 300 个，既保留各群特征，又能正常出图。
+    MAX_CELLS_PER_CLUSTER <- 300
+    if (ncol(pro) > MAX_CELLS_PER_CLUSTER * length(target_idents)) {
+      plot_cells <- WhichCells(pro, downsample = MAX_CELLS_PER_CLUSTER)
+      pro_plot <- subset(pro, cells = plot_cells)
+    } else {
+      pro_plot <- pro
+    }
+
     p <- DoHeatmap(
-      pro, features = plotFeatures2,
+      pro_plot, features = plotFeatures2,
       size = 3, group.bar = TRUE, group.colors = clusterCols
     ) &
     scale_fill_gradientn(colours = rev(colorRampPalette(brewer.pal(11, "RdBu"))(100))) &

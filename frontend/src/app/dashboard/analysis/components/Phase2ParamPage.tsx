@@ -5,7 +5,7 @@
  */
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { resumePipeline, type Pipeline } from "../../../lib/pipeline-api";
 import GeneExpressionPopup from "../../../components/GeneExpressionPopup";
 import NumberInput from "./NumberInput";
@@ -28,6 +28,27 @@ const DEFAULT_PARAMS = {
   infercnv: { cutoff_gene: 0.1, num_threads: 4, species: "Human", infer_df: [] as { cellType: string; refType: string }[], plot_format: "png" },
   wgcna: { interest_types: [] as string[], min_fraction: 0.05, sft_threshold: 0.8, module_score: "Seurat", k: 25, max_shared: 10, min_cells: 100, n_hubs: 10, n_genes_score: 25, plot_format: "png" },
 };
+
+/** 从 marker_table 推导 original_celltype -> celltype 的重命名映射（仅一对一） */
+function buildCelltypeRenameMap(
+  markerTable: Array<{ celltype: string; original_celltype?: string }> | undefined
+): Record<string, string> {
+  if (!markerTable) return {};
+  const grouped: Record<string, Set<string>> = {};
+  for (const row of markerTable) {
+    const orig = row.original_celltype;
+    if (!orig || orig === row.celltype) continue;
+    if (!grouped[orig]) grouped[orig] = new Set();
+    grouped[orig].add(row.celltype);
+  }
+  const map: Record<string, string> = {};
+  for (const [orig, targets] of Object.entries(grouped)) {
+    if (targets.size === 1) {
+      map[orig] = Array.from(targets)[0];
+    }
+  }
+  return map;
+}
 
 export default function Phase2ParamPage({ pipeline, token, onComplete, species = "Human" }: Phase2ParamPageProps) {
   const [enabled, setEnabled] = useState<Record<string, boolean>>({
@@ -53,39 +74,80 @@ export default function Phase2ParamPage({ pipeline, token, onComplete, species =
 
   // 从 annotate 结果中获取 CellType 列表
   const annotateTask = pipeline.tasks.find(t => t.step === "annotate");
+
+  const loadCellTypes = useCallback(async () => {
+    if (!annotateTask?.id) return;
+    try {
+      const data = await apiFetch<Record<string, unknown>>(`/api/tasks/${annotateTask.id}/result`);
+      if (!data) return;
+      // 优先从 scatter_data.celltype 提取（与 Seurat 对象一致）
+      // freq_table 可能在重命名后过时
+      const scatterCt = data.scatter_data?.celltype as string[] | undefined;
+      const freqTable = data.freq_table as { CellType: string }[] | undefined;
+      let types: string[] = [];
+      if (scatterCt && scatterCt.length > 0) {
+        types = [...new Set(scatterCt)].sort();
+      } else if (freqTable && freqTable.length > 0) {
+        types = [...new Set(freqTable.map(r => r.CellType))].sort();
+      }
+      if (types.length === 0) return;
+
+      const markerTable = data.marker_table as Array<{ celltype: string; original_celltype?: string }> | undefined;
+      const renameMap = buildCelltypeRenameMap(markerTable);
+
+      setAllCellTypes(types);
+      setParams(prev => {
+        const next = { ...prev };
+
+        // 同步 infercnv.infer_df：重命名旧 celltype，移除已不存在的，补充新类型
+        const existingInferDf = prev.infercnv.infer_df.length > 0
+          ? prev.infercnv.infer_df
+          : types.map(ct => ({ cellType: ct, refType: "query" as const }));
+        const migratedInferDf = existingInferDf
+          .map(d => {
+            const renamed = renameMap[d.cellType];
+            return renamed ? { ...d, cellType: renamed } : d;
+          })
+          .filter(d => types.includes(d.cellType));
+        const migratedTypes = new Set(migratedInferDf.map(d => d.cellType));
+        const missingTypes = types.filter(ct => !migratedTypes.has(ct));
+        next.infercnv = {
+          ...prev.infercnv,
+          infer_df: [...migratedInferDf, ...missingTypes.map(ct => ({ cellType: ct, refType: "query" as const }))],
+        };
+
+        // 同步 wgcna.interest_types：重命名旧 celltype，移除已不存在的
+        const migratedInterest = prev.wgcna.interest_types
+          .map(ct => renameMap[ct] || ct)
+          .filter(ct => types.includes(ct));
+        next.wgcna = {
+          ...prev.wgcna,
+          interest_types: migratedInterest.length > 0 ? migratedInterest : [types[0]],
+        };
+
+        return next;
+      });
+    } catch {
+      // 忽略加载失败
+    }
+  }, [annotateTask?.id]);
+
+  useEffect(() => {
+    loadCellTypes();
+  }, [loadCellTypes]);
+
+  // 监听注释修改事件，实时同步 CellType 列表与 Phase 2 参数
+  useEffect(() => {
+    const handler = () => loadCellTypes();
+    window.addEventListener("annotation-updated", handler);
+    return () => window.removeEventListener("annotation-updated", handler);
+  }, [loadCellTypes]);
+
   useEffect(() => {
     const handleScroll = () => setWgcnaDropdownOpen(false);
     window.addEventListener("scroll", handleScroll, true);
     return () => window.removeEventListener("scroll", handleScroll, true);
   }, []);
-
-  useEffect(() => {
-    if (!annotateTask?.id) return;
-    apiFetch<Record<string, unknown>>(`/api/tasks/${annotateTask.id}/result`)
-      .then((data) => {
-        if (!data) return;
-        // 优先从 scatter_data.celltype 提取（与 Seurat 对象一致）
-        // freq_table 可能在重命名后过时
-        const scatterCt = data.scatter_data?.celltype as string[] | undefined;
-        const freqTable = data.freq_table as { CellType: string }[] | undefined;
-        let types: string[] = [];
-        if (scatterCt && scatterCt.length > 0) {
-          types = [...new Set(scatterCt)].sort();
-        } else if (freqTable && freqTable.length > 0) {
-          types = [...new Set(freqTable.map(r => r.CellType))].sort();
-        }
-        if (types.length > 0) {
-          setAllCellTypes(types);
-          setParams(prev => ({ ...prev, wgcna: { ...prev.wgcna, interest_types: [types[0]] } }));
-          // 自动填充 infer_df：所有细胞类型默认为 query，用户手动标记 reference
-          setParams(prev => {
-            if (prev.infercnv.infer_df.length > 0) return prev;
-            return { ...prev, infercnv: { ...prev.infercnv, infer_df: types.map(ct => ({ cellType: ct, refType: "query" })) } };
-          });
-        }
-      })
-      .catch(() => {});
-  }, [annotateTask?.id]);
 
   const updateParam = (step: string, key: string, value: unknown) => {
     setParams(prev => ({ ...prev, [step]: { ...prev[step as keyof typeof prev], [key]: value } }));
@@ -178,12 +240,6 @@ export default function Phase2ParamPage({ pipeline, token, onComplete, species =
       Icon: IconPathway,
     },
     {
-      key: "monocle",
-      label: "拟时序分析",
-      desc: "Monocle 2 — 细胞发育轨迹推断与分支分析",
-      Icon: IconBranch,
-    },
-    {
       key: "cellchat",
       label: "细胞通讯分析",
       desc: "CellChat — 配体-受体介导的细胞间通讯网络",
@@ -194,6 +250,12 @@ export default function Phase2ParamPage({ pipeline, token, onComplete, species =
       label: "WGCNA 分析",
       desc: "加权基因共表达网络 — 识别基因模块与细胞类型关联",
       Icon: IconNetwork,
+    },
+    {
+      key: "monocle",
+      label: "拟时序分析",
+      desc: "Monocle 2 — 细胞发育轨迹推断与分支分析",
+      Icon: IconBranch,
     },
     {
       key: "infercnv",
@@ -229,13 +291,26 @@ export default function Phase2ParamPage({ pipeline, token, onComplete, species =
 
       {/* 分析模块卡片 */}
       <div className="space-y-2">
-      {MODULES.map((mod) => {
+      {MODULES.map((mod, index) => {
         const isEnabled = enabled[mod.key];
         const isAdvanced = showAdvanced[mod.key];
+        const groupHeader = index === 0
+          ? "高级分析"
+          : index === 4
+            ? "beta（该部分处于测试阶段，样本过大会触发OOM，如遇问题请联系管理员。）"
+            : null;
 
         return (
+          <React.Fragment key={mod.key}>
+            {groupHeader && (
+              <div
+                className="px-1 py-1.5 text-xs font-semibold mt-2 first:mt-0"
+                style={{ color: "var(--clr-amber-dark)" }}
+              >
+                {groupHeader}
+              </div>
+            )}
           <div
-            key={mod.key}
             className="card overflow-hidden transition-all duration-200"
             style={{
               borderColor: isEnabled ? "var(--clr-amber)" : "var(--clr-border)",
@@ -674,6 +749,7 @@ export default function Phase2ParamPage({ pipeline, token, onComplete, species =
               </div>
             )}
           </div>
+          </React.Fragment>
         );
       })}
       </div>

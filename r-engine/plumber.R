@@ -111,6 +111,10 @@ sync_celltype_from_json <- function(pro, project_path) {
   if (is.null(merged_ct) || length(merged_ct) != ncol(pro)) return(pro)
 
   pro$CellType <- merged_ct
+  # 同步 active identity，确保依赖 Idents(pro) 的分析（如 inferCNV）也能拿到新名称
+  if (length(merged_ct) == ncol(pro)) {
+    Idents(pro) <- merged_ct
+  }
   pro
 }
 
@@ -513,14 +517,35 @@ function(req) {
       report(8, paste0("检测到 ", ext, " 格式，正在转换为 RDS..."))
       rds_out <- file.path(project_path, paste0("_converted_", basename(load_file), ".rds"))
       if (!file.exists(rds_out)) {
-        exp <- convert_to_rds(load_file, ext, rds_out)
-        save_with_canonical(rds_out, rds_out, exp)
+        convert_to_rds(load_file, ext, rds_out)
       }
       exp <- readRDS(rds_out)
     } else {
       exp <- readRDS(load_file)
     }
   }
+
+  # --- 推断并确保 Sample 列正确 ---
+  # 优先级：Sample > sample_id > donor_id > orig.ident > 文件名 > 细胞名(fallback)
+  infer_sample_values <- function(obj, fallback_name = NULL) {
+    if ("Sample" %in% colnames(obj@meta.data)) {
+      vals <- as.character(obj@meta.data$Sample)
+      if (length(unique(vals)) > 1) return(vals)
+    }
+    for (col in c("sample_id", "donor_id", "orig.ident")) {
+      if (col %in% colnames(obj@meta.data)) {
+        vals <- as.character(obj@meta.data[[col]])
+        if (length(unique(vals)) >= 1) return(vals)
+      }
+    }
+    if (!is.null(fallback_name) && nchar(fallback_name) > 0) {
+      return(rep(fallback_name, ncol(obj)))
+    }
+    return(colnames(obj))
+  }
+
+  fallback_sname <- sub("\\.(rds|h5ad|h5|h5seurat|rdata)$", "", basename(load_file), ignore.case = TRUE)
+  exp$Sample <- infer_sample_values(exp, fallback_sname)
 
   # --- 样本分组信息处理 ---
   # 1. 优先从 Pipeline params 中读取分组信息
@@ -545,11 +570,6 @@ function(req) {
       })
     }
   }
-  # 如果 Seurat 对象没有 Sample 列，用细胞名作为默认 Sample
-  if (!"Sample" %in% colnames(exp@meta.data)) {
-    exp$Sample <- colnames(exp)
-  }
-
   # 3. 如果存在分组信息，写入 Seurat 对象的 meta.data$Group 列
   if (!is.null(sample_groups) && length(sample_groups) > 0 && "Sample" %in% colnames(exp@meta.data)) {
     report(12, "写入样本分组信息...")

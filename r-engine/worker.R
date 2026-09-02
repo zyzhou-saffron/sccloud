@@ -12,6 +12,17 @@
 suppressMessages({ library(redux); library(jsonlite) })
 `%||%` <- function(a, b) if (is.null(a) || length(a) == 0) b else a
 
+# 加载 C 小助手：正确 reap 子进程，避免 R 的 system(wait=FALSE) 留下僵尸
+# reap.so 在 Dockerfile 里用 R CMD SHLIB 编译
+tryCatch(dyn.load("/app/reap.so"), error = function(e) {
+  message("[worker] 无法加载 reap.so: ", conditionMessage(e))
+})
+pid_status <- function(p) {
+  if (is.na(p)) return(-2L)
+  res <- .C("reap_pid", pid = as.integer(p), status = integer(1), PACKAGE = "reap")
+  res$status
+}
+
 redis_url <- Sys.getenv("REDIS_URL", "redis://127.0.0.1:6380/0")
 QUEUE  <- "scc:heavyqueue"
 worker_id <- Sys.getenv("WORKER_ID", as.character(Sys.getpid()))
@@ -19,8 +30,6 @@ worker_id <- Sys.getenv("WORKER_ID", as.character(Sys.getpid()))
 connect <- function() redux::hiredis(url = redis_url)
 r <- connect()
 message("[worker ", worker_id, "] started; BRPOP ", QUEUE, " @ ", redis_url)
-
-pid_alive <- function(p) !is.na(p) && system(paste("kill -0", p), ignore.stderr = TRUE) == 0L
 
 repeat {
   job <- tryCatch(r$BRPOP(QUEUE, 5), error = function(e) {
@@ -68,9 +77,15 @@ repeat {
   message("[worker ", worker_id, "] spawned pid=", pid)
   r$SET(paste0("scc:pid:", task_id), as.character(pid))
 
+  # 持久化资源监控峰值（项目目录 + Redis 双写）
+  metrics_file <- file.path(proj_path, ".scc_step_metrics.json")
+  peak_mem_bytes <- NA_real_
+  peak_cpu_usec <- NA_real_
+
   # 监督
   cancelled <- FALSE
-  while (pid_alive(pid)) {
+  finished_status <- -1L
+  while (finished_status == -1L) {
     # Redis 断连时重连, 否则整段任务期间读不到 cancel、续不了目录锁(bot #64)。BRPOP 主循环也是这套。
     flag <- tryCatch(r$GET(paste0("scc:cancel:", task_id)),
                      error = function(e) { r <<- tryCatch(connect(), error = function(e2) r); NULL })
@@ -83,10 +98,51 @@ repeat {
     # 上报本容器实时内存(memory.current, 含 run_job 子进程) → 后端动态预算汇总 scc:wmem:*
     mem <- tryCatch(suppressWarnings(readLines("/sys/fs/cgroup/memory.current", warn = FALSE)[1]),
                     error = function(e) NA)
-    if (!is.na(mem) && nzchar(mem))
-      tryCatch(r$command(list("SET", paste0("scc:wmem:", task_id), mem, "EX", "15")),
-               error = function(e) NULL)
-    Sys.sleep(1)
+    if (!is.na(mem) && nzchar(mem)) {
+      mem_bytes <- suppressWarnings(as.numeric(mem))
+      if (!is.na(mem_bytes)) {
+        if (is.na(peak_mem_bytes) || mem_bytes > peak_mem_bytes) peak_mem_bytes <- mem_bytes
+        tryCatch(r$command(list("SET", paste0("scc:wmem:", task_id), mem, "EX", "30")),
+                 error = function(e) NULL)
+      }
+    }
+
+    # 上报本容器累计 CPU 时间（微秒），供资源监控脚本计算 CPU%
+    cpu_usage <- NA
+    cpu_stat <- tryCatch(suppressWarnings(readLines("/sys/fs/cgroup/cpu.stat", warn = FALSE)),
+                         error = function(e) character(0))
+    usage_line <- grep("^usage_usec\\s+", cpu_stat, value = TRUE)
+    if (length(usage_line) > 0) {
+      cpu_usage <- suppressWarnings(as.numeric(strsplit(usage_line[1], "\\s+")[[1]][2]))
+      if (!is.na(cpu_usage)) {
+        if (is.na(peak_cpu_usec) || cpu_usage > peak_cpu_usec) peak_cpu_usec <- cpu_usage
+        tryCatch(r$command(list("SET", paste0("scc:wcpu:", task_id), as.character(cpu_usage), "EX", "30")),
+                 error = function(e) NULL)
+      }
+    }
+
+    finished_status <- pid_status(pid)
+    if (finished_status == -1L) Sys.sleep(1)
+  }
+
+  # 任务结束时把峰值资源写入项目目录持久文件
+  if (nzchar(proj_path) && !is.null(spec$step)) {
+    tryCatch({
+      entry <- list(
+        task_id = task_id,
+        step = spec$step,
+        worker = worker_id,
+        started_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%S%z"),
+        peak_mem_bytes = if (is.na(peak_mem_bytes)) NULL else peak_mem_bytes,
+        peak_mem_gb = if (is.na(peak_mem_bytes)) NULL else round(peak_mem_bytes / 1024 / 1024 / 1024, 3),
+        peak_cpu_usec = if (is.na(peak_cpu_usec)) NULL else peak_cpu_usec,
+        status = if (cancelled) "cancelled" else "finished"
+      )
+      existing <- if (file.exists(metrics_file)) jsonlite::read_json(metrics_file) else list()
+      if (!is.list(existing) || length(existing) == 0 || is.null(names(existing))) existing <- list()
+      existing[[length(existing) + 1]] <- entry
+      jsonlite::write_json(existing, metrics_file, auto_unbox = TRUE, pretty = TRUE)
+    }, error = function(e) message("[worker] metrics persistence failed: ", conditionMessage(e)))
   }
 
   # 投递结果
@@ -100,7 +156,7 @@ repeat {
   }
   tryCatch(r$LPUSH(paste0("scc:result:", task_id), out), error = function(e) NULL)
   r$DEL(paste0("scc:pid:", task_id))
-  tryCatch(r$DEL(paste0("scc:wmem:", task_id)), error = function(e) NULL)  # 清实时内存上报
+  # scc:wmem / scc:wcpu 保留 30s TTL 自动过期，便于监控脚本读取最终峰值
   if (!is.null(lock_key)) tryCatch(r$DEL(lock_key), error = function(e) NULL)  # 释放目录锁
   message("[worker ", worker_id, "] task=", task_id, " 完成(cancelled=", cancelled, ")")
   unlink(c(spec_file, result_out, pid_file))
