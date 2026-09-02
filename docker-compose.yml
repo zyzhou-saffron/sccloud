@@ -40,6 +40,8 @@ services:
     image: ${FRONTEND_IMAGE:-ghcr.io/zyzhou-saffron/sccloud-frontend:latest}
     build:
       context: ./frontend
+      # 共享机/rootless 容器 DNS 常挂；host 网络让 apt/npm 走宿主机解析
+      network: host
       args:
         BACKEND_URL: http://backend:8000
     logging: *default-logging
@@ -55,7 +57,9 @@ services:
 
   backend:
     image: ${BACKEND_IMAGE:-ghcr.io/zyzhou-saffron/sccloud-backend:latest}
-    build: ./backend
+    build:
+      context: ./backend
+      network: host
     logging: *default-logging
     restart: unless-stopped
     env_file: .env
@@ -97,6 +101,7 @@ services:
     build:
       context: ./r-engine
       dockerfile: Dockerfile
+      network: host
     logging: *default-logging
     restart: unless-stopped
     environment:
@@ -122,6 +127,7 @@ services:
     build:
       context: ./r-engine
       dockerfile: Dockerfile
+      network: host
     logging: *default-logging
     restart: unless-stopped
     command: ["Rscript", "/app/worker.R"]
