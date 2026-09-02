@@ -378,6 +378,22 @@ set +a
 WEB_PORT="${WEB_PORT:-8080}"
 
 build_ok=0
+
+images_ready() {
+  missing=0
+  for img in \
+    "${FRONTEND_IMAGE:-ghcr.io/zyzhou-saffron/sccloud-frontend:latest}" \
+    "${BACKEND_IMAGE:-ghcr.io/zyzhou-saffron/sccloud-backend:latest}" \
+    "${R_ENGINE_IMAGE:-ghcr.io/zyzhou-saffron/sccloud-r-engine:latest}"
+  do
+    if ! image_exists_locally "$img"; then
+      warn "缺少镜像：$img"
+      missing=1
+    fi
+  done
+  [ "$missing" = "0" ]
+}
+
 if [ "$DO_BUILD" = "1" ]; then
   ensure_r_engine_image || true
   info "本地构建镜像（R 引擎首次可能很久）..."
@@ -406,28 +422,15 @@ else
   # R 镜像特殊兜底（即使 FE/BE pull 成功，R 也可能缺失）
   ensure_r_engine_image || true
 
-  if [ "$pull_ok" = "1" ]; then
-    # 确认三业务镜像都在
-    missing=0
-    for img in \
-      "${FRONTEND_IMAGE:-ghcr.io/zyzhou-saffron/sccloud-frontend:latest}" \
-      "${BACKEND_IMAGE:-ghcr.io/zyzhou-saffron/sccloud-backend:latest}" \
-      "${R_ENGINE_IMAGE:-ghcr.io/zyzhou-saffron/sccloud-r-engine:latest}"
-    do
-      if ! image_exists_locally "$img"; then
-        warn "缺少镜像：$img"
-        missing=1
-      fi
-    done
-    if [ "$missing" = "0" ]; then
+  if images_ready; then
+    ok "本地三业务镜像已就绪"
+    build_ok=1
+  elif [ "$pull_ok" = "1" ]; then
+    info "pull 后仍缺镜像，补齐：docker compose build..."
+    if $DOCKER_COMPOSE build; then
       build_ok=1
     else
-      info "补齐缺失镜像：docker compose build..."
-      if $DOCKER_COMPOSE build; then
-        build_ok=1
-      else
-        die "镜像不完整且 build 失败"
-      fi
+      die "镜像不完整且 build 失败"
     fi
   else
     info "本地构建镜像..."
