@@ -46,6 +46,10 @@ class Settings(BaseSettings):
     # ---- 部署 ----
     environment: str = "development"
 
+    # ---- 首次空库自动创建管理员（users 表为空时生效）----
+    bootstrap_admin_user: str = "admin"
+    bootstrap_admin_password: str = "admin123"
+
     # ---- 数据保留（天） ----
     retention_guest_days: int = 1
     retention_user_days: int = 7

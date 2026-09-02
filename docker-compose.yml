@@ -1,70 +1,176 @@
-# scCloud v2 — Docker Compose 基础配置
-# 开发: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
-# 生产: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# scCloud — 一键部署（桥接网络，对齐闲鱼助手模式）
+#
+# 用法:
+#   sh ./start.sh
+#   docker compose --env-file .env up -d
+#
+# 高级 GPU host 网络见 docker-compose.server.yml
+
+name: sccloud
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
 
 services:
-  # ---- 前端 (Next.js) ----
+  # ---- 唯一对外入口 ----
+  web:
+    image: nginx:alpine
+    logging: *default-logging
+    restart: unless-stopped
+    ports:
+      - "${WEB_BIND_ADDRESS:-0.0.0.0}:${WEB_PORT:-8080}:80"
+    volumes:
+      - ./nginx/nginx.bridge.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      frontend:
+        condition: service_started
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
   frontend:
+    image: ${FRONTEND_IMAGE:-ghcr.io/zyzhou-saffron/sccloud-frontend:latest}
     build:
       context: ./frontend
       args:
-        # 构建时注入 — Next.js rewrites 代理目标
         BACKEND_URL: http://backend:8000
-    ports: ["3000:3000"]
-    depends_on: [backend]
+    logging: *default-logging
+    restart: unless-stopped
+    environment:
+      HOSTNAME: "0.0.0.0"
+      PORT: "3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    expose:
+      - "3000"
 
-  # ---- API 网关 (FastAPI) ----
   backend:
+    image: ${BACKEND_IMAGE:-ghcr.io/zyzhou-saffron/sccloud-backend:latest}
     build: ./backend
-    ports: ["8000:8000"]
+    logging: *default-logging
+    restart: unless-stopped
     env_file: .env
-    depends_on: [db, redis]
     environment:
-      DATABASE_URL: "mysql+pymysql://${DB_USER}:${DB_PASS}@${DB_HOST}:${DB_PORT}/${DB_NAME}"
-      REDIS_URL: "${REDIS_URL}"
-      R_ENGINE_URL: "${R_ENGINE_URL}"
+      DATABASE_URL: "mysql+pymysql://${DB_USER:-sccloud_app}:${DB_PASS}@db:3306/${DB_NAME:-sccloud_v2}"
+      REDIS_URL: "redis://redis:6379/0"
+      R_ENGINE_URL: "http://r-engine:8787"
+      # 一键默认不启 quick 实例，快请求回落到主引擎
+      R_ENGINE_QUICK_URL: "http://r-engine:8787"
+      R_ENGINE_TIMEOUT: "${R_ENGINE_TIMEOUT:-86400}"
       JWT_SECRET: "${JWT_SECRET}"
-      JWT_ALGORITHM: "${JWT_ALGORITHM}"
-      PROJECTS_ROOT: "${PROJECTS_ROOT}"
+      JWT_ALGORITHM: "${JWT_ALGORITHM:-HS256}"
+      ACCESS_TOKEN_EXPIRE_MINUTES: "${ACCESS_TOKEN_EXPIRE_MINUTES:-60}"
+      REFRESH_TOKEN_EXPIRE_DAYS: "${REFRESH_TOKEN_EXPIRE_DAYS:-30}"
+      PROJECTS_ROOT: "${PROJECTS_ROOT:-/data/projects}"
+      ENVIRONMENT: "${ENVIRONMENT:-production}"
+      BOOTSTRAP_ADMIN_USER: "${BOOTSTRAP_ADMIN_USER:-admin}"
+      BOOTSTRAP_ADMIN_PASSWORD: "${BOOTSTRAP_ADMIN_PASSWORD:-admin123}"
+      WORKER_MEM_CAP_GB: "${WORKER_MEM_CAP_GB:-32}"
     volumes:
       - projects_data:${PROJECTS_ROOT:-/data/projects}
+      - ./r-engine/data:/app/r-engine-data:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=5)"]
+      interval: 10s
+      timeout: 8s
+      retries: 18
+      start_period: 40s
 
-  # ---- R 计算引擎 (Plumber) ----
   r-engine:
-    image: sccloud-r-engine:latest
-    # build: ./r-engine
-    ports: ["8787:8787"]
+    image: ${R_ENGINE_IMAGE:-ghcr.io/zyzhou-saffron/sccloud-r-engine:latest}
+    build:
+      context: ./r-engine
+      dockerfile: Dockerfile
+    logging: *default-logging
+    restart: unless-stopped
     environment:
-      REDIS_URL: "${REDIS_URL}"
+      REDIS_URL: "redis://redis:6379/0"
     volumes:
       - projects_data:${PROJECTS_ROOT:-/data/projects}
-      - ./r-engine/data:/app/data
+      - ./r-engine/data:/app/data:ro
       - ./r-engine/plumber.R:/app/plumber.R:ro
       - ./r-engine/R:/app/R:ro
-    mem_limit: 64g
+    mem_limit: ${R_ENGINE_MEM_LIMIT:-16g}
+    expose:
+      - "8787"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8787/health"]
+      interval: 30s
+      timeout: 20s
+      retries: 5
+      start_period: 60s
 
-  # ---- 数据库 (MariaDB) ----
+  # 重任务 worker：消费 Redis scc:heavyqueue（无 worker 则分析任务会一直排队）
+  r-engine-worker:
+    image: ${R_ENGINE_IMAGE:-ghcr.io/zyzhou-saffron/sccloud-r-engine:latest}
+    build:
+      context: ./r-engine
+      dockerfile: Dockerfile
+    logging: *default-logging
+    restart: unless-stopped
+    command: ["Rscript", "/app/worker.R"]
+    environment:
+      REDIS_URL: "redis://redis:6379/0"
+    volumes:
+      - projects_data:${PROJECTS_ROOT:-/data/projects}
+      - ./r-engine/data:/app/data:ro
+      - ./r-engine/run_job.R:/app/run_job.R:ro
+      - ./r-engine/worker.R:/app/worker.R:ro
+      - ./r-engine/plumber.R:/app/plumber.R:ro
+      - ./r-engine/R:/app/R:ro
+    mem_limit: ${R_WORKER_MEM_LIMIT:-32g}
+    depends_on:
+      redis:
+        condition: service_healthy
+      r-engine:
+        condition: service_started
+    healthcheck:
+      disable: true
+
   db:
     image: mariadb:11
-    ports: ["3306:3306"]
+    logging: *default-logging
+    restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: "${DB_ROOT_PASS}"
-      MYSQL_DATABASE: "${DB_NAME}"
-      MYSQL_USER: "${DB_USER}"
+      MYSQL_DATABASE: "${DB_NAME:-sccloud_v2}"
+      MYSQL_USER: "${DB_USER:-sccloud_app}"
       MYSQL_PASSWORD: "${DB_PASS}"
     volumes:
       - db_data:/var/lib/mysql
-      - ./data/sccloud_v2_dump.sql:/docker-entrypoint-initdb.d/dump.sql:ro
+      # 可选：将 schema/demo dump 放到 data/initdb.d/ 会在空 volume 首次启动时导入
+      - ./data/initdb.d:/docker-entrypoint-initdb.d:ro
+    expose:
+      - "3306"
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 12
+      start_period: 20s
 
-  # ---- 消息队列 (Redis) ----
   redis:
     image: redis:7-alpine
-    ports: ["6379:6379"]
+    logging: *default-logging
+    restart: unless-stopped
+    expose:
+      - "6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
