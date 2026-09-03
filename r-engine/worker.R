@@ -22,6 +22,19 @@ pid_status <- function(p) {
   res <- .C("reap_pid", pid = as.integer(p), status = integer(1), PACKAGE = "reap")
   res$status
 }
+# system(wait=FALSE) 在部分环境下 spawn 的进程不是 R 的 waitable 子进程
+# → waitpid 恒 ECHILD(-2)，若只信 reap 会立刻误判结束并 unlink spec，run_job 读不到文件。
+# kill -0 探测存活；进程仍在则视为 running(-1)。
+pid_alive <- function(p) {
+  if (is.na(p) || p <= 1L) return(FALSE)
+  system(sprintf("kill -0 %d", as.integer(p)), ignore.stderr = TRUE) == 0
+}
+pid_finished <- function(p) {
+  st <- pid_status(p)
+  if (st == -1L) return(list(done = FALSE, status = st))
+  if (st == -2L && pid_alive(p)) return(list(done = FALSE, status = -1L))
+  list(done = TRUE, status = st)
+}
 
 redis_url <- Sys.getenv("REDIS_URL", "redis://127.0.0.1:6380/0")
 QUEUE  <- "scc:heavyqueue"
@@ -85,14 +98,18 @@ repeat {
   # 监督
   cancelled <- FALSE
   finished_status <- -1L
-  while (finished_status == -1L) {
+  while (TRUE) {
     # Redis 断连时重连, 否则整段任务期间读不到 cancel、续不了目录锁(bot #64)。BRPOP 主循环也是这套。
     flag <- tryCatch(r$GET(paste0("scc:cancel:", task_id)),
                      error = function(e) { r <<- tryCatch(connect(), error = function(e2) r); NULL })
     if (!is.null(flag)) {
       message("[worker ", worker_id, "] CANCEL task=", task_id, " → kill -9 ", pid)
       system(paste("kill -9", pid), ignore.stderr = TRUE)
-      cancelled <- TRUE; break
+      # 等进程真正消失再收结果，避免仍在跑时 unlink spec
+      for (j in 1:20) { if (!pid_alive(pid)) break; Sys.sleep(0.1) }
+      cancelled <- TRUE
+      finished_status <- -9L
+      break
     }
     if (!is.null(lock_key)) tryCatch(r$EXPIRE(lock_key, 120), error = function(e) NULL)  # 续锁
     # 上报本容器实时内存(memory.current, 含 run_job 子进程) → 后端动态预算汇总 scc:wmem:*
@@ -121,8 +138,16 @@ repeat {
       }
     }
 
-    finished_status <- pid_status(pid)
-    if (finished_status == -1L) Sys.sleep(1)
+    fin <- pid_finished(pid)
+    if (fin$done) {
+      finished_status <- fin$status
+      # 进程刚退出时结果文件可能尚未 fsync 完，短等一下
+      if (!cancelled && !file.exists(result_out)) {
+        for (j in 1:10) { if (file.exists(result_out)) break; Sys.sleep(0.1) }
+      }
+      break
+    }
+    Sys.sleep(1)
   }
 
   # 任务结束时把峰值资源写入项目目录持久文件
