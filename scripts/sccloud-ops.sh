@@ -19,11 +19,25 @@ if [ "$(id -u)" != "0" ] && ! docker info >/dev/null 2>&1; then
   fi
 fi
 
-DC="${SUDO} docker compose --env-file .env"
+COMPOSE_FILES="--env-file .env"
+if [ -z "${COMPOSE_FILE:-}" ] && [ "${SCLOUD_ROOTLESS:-0}" = "1" ] && [ -f docker-compose.rootless.yml ]; then
+  COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.yml -f docker-compose.rootless.yml"
+fi
+DC="${SUDO} docker compose $COMPOSE_FILES"
 cmd="${1:-status}"
 if [ "$#" -gt 0 ]; then
   shift
 fi
+
+db_app_pass() {
+  if [ -s ./secrets/db-password ]; then
+    tr -d '\r\n' < ./secrets/db-password
+    return 0
+  fi
+  # shellcheck disable=SC1091
+  . ./.env 2>/dev/null || true
+  printf '%s' "${DB_PASS:-}"
+}
 
 case "$cmd" in
   status|ps)
@@ -52,7 +66,8 @@ case "$cmd" in
     fi
     # shellcheck disable=SC1091
     . ./.env
-    $DC exec -T db mariadb -u"${DB_USER:-sccloud_app}" -p"${DB_PASS}" "${DB_NAME:-sccloud_v2}" \
+    DB_PASS_VAL=$(db_app_pass)
+    $DC exec -T db mariadb -u"${DB_USER:-sccloud_app}" -p"${DB_PASS_VAL}" "${DB_NAME:-sccloud_v2}" \
       -e "UPDATE users SET role='admin', max_projects=100, total_quota=1000 WHERE username='${user}';"
     echo "已尝试将 ${user} 提升为 admin（请核对上方 SQL 结果）"
     ;;
@@ -63,6 +78,7 @@ case "$cmd" in
   logs [service]          # TAIL=200 可改
   stop | restart | up | pull
   promote-admin <user>
+  环境: SCLOUD_ROOTLESS=1 叠加 docker-compose.rootless.yml
 EOF
     exit 1
     ;;

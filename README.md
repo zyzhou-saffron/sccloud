@@ -79,13 +79,15 @@ sh ./start.sh
 脚本会自动：
 
 1. 检测 Docker Compose v2（缺省不自动装 Docker；共享机可用 `sh ./start.sh --install-docker`）
-2. 无 `.env` 时运行 `scripts/setup-wizard.sh`（随机 DB/JWT，默认管理员 `admin` / `admin123`）
+2. 无 `.env` 或 `./secrets/*` 时运行 `scripts/setup-wizard.sh`（随机 DB/JWT/Redis 密钥写入 **`./secrets/`**，默认管理员 `admin` / `admin123`）
 3. `WEB_PORT` 默认 `8080`；若占用（例如闲鱼助手）则自动 +1…+9 并写回 `.env`
 4. 探测 GHCR → `docker compose pull`；失败则本地 `build`
 5. R 镜像兜底：本地 tag → `data/sccloud-r-engine-image.tar.gz` load → 有 `r-engine/r-library` 再 build
 6. `up -d` 并等待 db / redis / backend / r-engine / 入口 `/healthz`
 
 访问 **http://localhost:${WEB_PORT}**（默认 8080）。空库首次启动会 bootstrap 管理员。
+
+**安全（对齐闲鱼助手）**：`DB`/`JWT`/`Redis`/管理员密码仅在 `./secrets/`（compose secrets 挂载），容器默认 `no-new-privileges`、`cap_drop: ALL`，nginx/frontend/redis/db 额外 `read_only` + 非 root；MariaDB/Redis/nginx **钉镜像 digest**。
 
 ```bash
 # 常用运维
@@ -96,17 +98,23 @@ sh ./scripts/sccloud-ops.sh stop
 # 强制本地构建 / 跳过 pull
 sh ./start.sh --build
 sh ./start.sh --no-pull
+
+# rootless / 只绑本机
+SCLOUD_ROOTLESS=1 sh ./start.sh
+# 或: export COMPOSE_FILE=docker-compose.yml:docker-compose.rootless.yml
 ```
 
 ### 预构建镜像（GHCR）
 
 | 镜像 | 说明 |
 |------|------|
-| `ghcr.io/zyzhou-saffron/sccloud-frontend` | CI（`main` push）自动构建推送 |
-| `ghcr.io/zyzhou-saffron/sccloud-backend` | CI 自动构建推送 |
+| `ghcr.io/zyzhou-saffron/sccloud-frontend` | CI（`main` push）自动构建推送，**linux/amd64 + arm64** |
+| `ghcr.io/zyzhou-saffron/sccloud-backend` | 同上 |
 | `ghcr.io/zyzhou-saffron/sccloud-r-engine` | 需 `r-library`，在 GPU/本机构建后手动 push |
 
 包建议设为 **Public**，免登录 pull。私有包需先 `docker login ghcr.io`。
+
+**阿里云 ACR（可选）**：在仓库 Settings → Variables/Secrets 配置 `ALIYUN_ACR_REGISTRY`、`ALIYUN_ACR_NAMESPACE`、`ALIYUN_ACR_USERNAME`、`ALIYUN_ACR_PASSWORD` 后，CI 会用 `buildx imagetools` 把多架构清单 mirror 到 ACR。`.env` 中把 `FRONTEND_IMAGE`/`BACKEND_IMAGE` 改成 ACR 前缀即可（见 `.env.example`）。
 
 ### R 引擎镜像说明
 
@@ -189,25 +197,29 @@ docker compose --env-file .env.server -f docker-compose.server.yml up -d --build
 
 ## 环境变量参考
 
-一键部署由 `setup-wizard.sh` 生成 `.env`（随机 DB/JWT）。完整模板见 `.env.example`。
+一键部署由 `setup-wizard.sh` 生成 `.env` + `./secrets/`。完整模板见 `.env.example`。
 
 | 变量 | 默认值 | 必填 | 说明 |
 |------|--------|------|------|
 | `WEB_PORT` | `8080` | | 唯一对外端口（占用自动换） |
-| `WEB_BIND_ADDRESS` | `0.0.0.0` | | 监听地址 |
-| `FRONTEND_IMAGE` / `BACKEND_IMAGE` / `R_ENGINE_IMAGE` | GHCR `…/sccloud-*:latest` | | 预构建镜像 |
+| `WEB_BIND_ADDRESS` | `0.0.0.0` | | 监听地址；rootless 叠加默认 `127.0.0.1` |
+| `FRONTEND_IMAGE` / `BACKEND_IMAGE` / `R_ENGINE_IMAGE` | GHCR `…/sccloud-*:latest` | | 预构建镜像（可改 ACR） |
 | `DB_NAME` | `sccloud_v2` | | 数据库名 |
 | `DB_USER` | `sccloud_app` | | 数据库用户 |
-| `DB_PASS` | — | ✅ | **数据库密码**（向导自动生成） |
-| `DB_ROOT_PASS` | — | ✅ | **root 密码** |
-| `JWT_SECRET` | — | ✅ | **JWT 签名密钥** |
+| `./secrets/db-password` | 向导生成 | ✅ | **应用库密码**（compose secret） |
+| `./secrets/db-root-password` | 向导生成 | ✅ | **root 密码** |
+| `./secrets/jwt-secret` | 向导生成 | ✅ | **JWT 签名密钥** |
+| `./secrets/redis-password` | 向导生成 | ✅ | **Redis requirepass** |
+| `./secrets/bootstrap-admin-password` | `admin123` | | 空库首次管理员密码 |
+| `R_REDIS_URL` | 向导写入 | | 供 R 引擎的带密码 Redis URL |
 | `JWT_ALGORITHM` | `HS256` | | JWT 算法 |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `60` | | 访问令牌有效期 |
 | `REFRESH_TOKEN_EXPIRE_DAYS` | `30` | | 刷新令牌有效期 |
 | `R_ENGINE_TIMEOUT` | `86400` | | R 请求超时（秒） |
 | `R_ENGINE_MEM_LIMIT` / `R_WORKER_MEM_LIMIT` | `16g` / `32g` | | 容器内存上限 |
 | `PROJECTS_ROOT` | `/data/projects` | | 项目数据路径 |
-| `BOOTSTRAP_ADMIN_USER` / `PASSWORD` | `admin` / `admin123` | | 空库首次管理员 |
+| `BOOTSTRAP_ADMIN_USER` | `admin` | | 空库首次管理员用户名 |
+| `SCLOUD_ROOTLESS` | `0` | | `1` 时叠加 `docker-compose.rootless.yml` |
 | `ENVIRONMENT` | `production` | | `development` / `production` |
 
 ---
@@ -300,8 +312,10 @@ sccloud/
 │   └── sccloud-r-engine-image.tar.gz  # 预构建 R 引擎镜像 (~2GB)
 │
 ├── start.sh                    # 一键启动（对齐闲鱼助手）
-├── docker-compose.yml          # 一键桥接部署
+├── docker-compose.yml          # 一键桥接部署（secrets + 加固 + digest pin）
+├── docker-compose.rootless.yml # rootless/本机绑定叠加
 ├── docker-compose.server.yml   # 高级 host 网络
+├── secrets/                    # 密钥目录（gitignore；向导生成）
 ├── scripts/setup-wizard.sh
 ├── scripts/sccloud-ops.sh
 ├── nginx/nginx.bridge.conf

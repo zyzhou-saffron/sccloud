@@ -262,13 +262,16 @@ diagnose_failure() {
   df -h . 2>/dev/null | sed 's/^/    /' || true
   echo ""
   info "完整日志：$DOCKER_COMPOSE logs --tail 200"
-  info "重置：    $DOCKER_COMPOSE down -v && rm -f .env && sh ./start.sh"
+  info "重置：    $DOCKER_COMPOSE down -v && rm -f .env && rm -f secrets/* && sh ./start.sh"
   warn "=============================="
 }
 
 print_access_info() {
   admin_user="${BOOTSTRAP_ADMIN_USER:-admin}"
   admin_pass="${BOOTSTRAP_ADMIN_PASSWORD:-admin123}"
+  if [ -f ./secrets/bootstrap-admin-password ]; then
+    admin_pass=$(tr -d '\r\n' < ./secrets/bootstrap-admin-password)
+  fi
   if [ "$WEB_BIND" = "0.0.0.0" ]; then
     lan_ip=""
     if command -v ip >/dev/null 2>&1; then
@@ -341,12 +344,29 @@ if [ "$(id -u)" != "0" ] && ! docker info >/dev/null 2>&1; then
   fi
 fi
 
-DOCKER_COMPOSE="${SUDO} docker compose --env-file .env"
+# 支持 COMPOSE_FILE 或 SCLOUD_ROOTLESS=1 叠加 rootless
+COMPOSE_FILES="--env-file .env"
+if [ -n "${COMPOSE_FILE:-}" ]; then
+  :
+elif [ "${SCLOUD_ROOTLESS:-0}" = "1" ] && [ -f docker-compose.rootless.yml ]; then
+  COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.yml -f docker-compose.rootless.yml"
+fi
+DOCKER_COMPOSE="${SUDO} docker compose $COMPOSE_FILES"
 
 check_disk_space
 
+need_wizard=0
 if [ ! -f .env ]; then
-  info "首次启动，运行初始化向导..."
+  need_wizard=1
+fi
+for s in db-root-password db-password jwt-secret redis-password bootstrap-admin-password; do
+  if [ ! -s "./secrets/$s" ]; then
+    need_wizard=1
+    break
+  fi
+done
+if [ "$need_wizard" = "1" ]; then
+  info "运行初始化向导（.env / secrets）..."
   sh ./scripts/setup-wizard.sh || die "setup-wizard 失败"
 fi
 
@@ -354,6 +374,17 @@ set -a
 # shellcheck disable=SC1091
 . ./.env
 set +a
+
+# 每次启动用 secrets 刷新 R 引擎 Redis URL（密码不进 git）
+if [ -s ./secrets/redis-password ]; then
+  _rp=$(tr -d '\r\n' < ./secrets/redis-password)
+  export R_REDIS_URL="redis://:${_rp}@redis:6379/0"
+  if grep -q '^R_REDIS_URL=' .env 2>/dev/null; then
+    sed "s|^R_REDIS_URL=.*|R_REDIS_URL=${R_REDIS_URL}|" .env > .env.tmp && mv .env.tmp .env
+  else
+    printf 'R_REDIS_URL=%s\n' "$R_REDIS_URL" >> .env
+  fi
+fi
 
 WEB_PORT="${WEB_PORT:-8080}"
 WEB_BIND="${WEB_BIND_ADDRESS:-0.0.0.0}"
@@ -376,6 +407,11 @@ set -a
 . ./.env
 set +a
 WEB_PORT="${WEB_PORT:-8080}"
+# secrets 为准，防止 .env 旧 R_REDIS_URL 覆盖
+if [ -s ./secrets/redis-password ]; then
+  _rp=$(tr -d '\r\n' < ./secrets/redis-password)
+  export R_REDIS_URL="redis://:${_rp}@redis:6379/0"
+fi
 
 build_ok=0
 

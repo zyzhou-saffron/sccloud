@@ -2,6 +2,11 @@
 .env
 .env.local
 .env.production
+.env.server
+
+# Docker secrets（setup-wizard 生成；勿提交）
+secrets/*
+!secrets/.gitkeep
 
 # Python
 __pycache__/

@@ -1,10 +1,24 @@
 """
 scCloud v2 — FastAPI 配置模块
-从环境变量加载所有配置，不再硬编码任何敏感信息。
+从环境变量加载所有配置；敏感项也可由 *_FILE / Docker secrets 注入（entrypoint 已展开）。
 """
 
-from pydantic_settings import BaseSettings
+from __future__ import annotations
+
+import os
 from functools import lru_cache
+from pathlib import Path
+
+from pydantic_settings import BaseSettings
+
+
+def _read_file(path: str | None) -> str | None:
+    if not path:
+        return None
+    p = Path(path)
+    if not p.is_file():
+        return None
+    return p.read_text(encoding="utf-8").strip()
 
 
 class Settings(BaseSettings):
@@ -33,11 +47,9 @@ class Settings(BaseSettings):
     r_engine_timeout: int = 7200
 
     # ---- 重任务内存准入(admission control, #42) ----
-    # 动态预算: budget = 宿主 MemAvailable + 在跑重任务实占(worker 上报) − 余量; 重任务按估算权重原子预约。
-    # 预算满则提交时拒("资源紧张请稍后重试"); 既实时反映共享机真实空闲(含别人非-Docker 占用), 又防并发超订 OOM。
-    heavy_mem_reserve_gb: int = 60    # 留给 OS/DB/page-cache/突发的安全余量(从动态预算里扣掉)
-    worker_mem_cap_gb: int = 500      # 单 worker 封顶; 估算 > 此值的任务直接拒("数据过大")
-    admission_wait_grace_sec: int = 180  # 预算暂满时等待多久再放弃(给排在前面的任务腾出空间)
+    heavy_mem_reserve_gb: int = 60
+    worker_mem_cap_gb: int = 500
+    admission_wait_grace_sec: int = 180
 
     # ---- 文件存储 ----
     projects_root: str = "/data/projects"
@@ -62,7 +74,21 @@ class Settings(BaseSettings):
         env_file_encoding = "utf-8"
 
 
+def _apply_secret_file_overrides(settings: Settings) -> Settings:
+    """若 entrypoint 未展开，仍支持 JWT_SECRET_FILE / 等（本地开发）。"""
+    jwt_file = _read_file(os.environ.get("JWT_SECRET_FILE"))
+    if jwt_file:
+        object.__setattr__(settings, "jwt_secret", jwt_file)
+
+    boot_file = _read_file(os.environ.get("BOOTSTRAP_ADMIN_PASSWORD_FILE"))
+    if boot_file:
+        object.__setattr__(settings, "bootstrap_admin_password", boot_file)
+
+    # DATABASE_URL / REDIS_URL 由 entrypoint 组装；此处仅当显式 FILE 且 URL 仍是默认时兜底
+    return settings
+
+
 @lru_cache()
 def get_settings() -> Settings:
     """获取缓存的配置单例。"""
-    return Settings()
+    return _apply_secret_file_overrides(Settings())
