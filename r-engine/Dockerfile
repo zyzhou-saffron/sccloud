@@ -10,6 +10,8 @@ FROM rocker/r-ver:4.3.2
 
 LABEL maintainer="scCloud Team"
 LABEL description="scCloud v2 R Compute Engine — Seurat + Plumber API"
+LABEL org.opencontainers.image.source="https://github.com/zyzhou-saffron/sccloud"
+LABEL org.opencontainers.image.description="scCloud R compute engine (Seurat + Plumber + worker)"
 
 # ===== 系统依赖 =====
 # Seurat/HDF5/网络/图形渲染所需的 C/C++ 运行时库
@@ -74,7 +76,7 @@ RUN Rscript -e " \
 "
 
 # ===== 应用代码 =====
-COPY plumber.R .
+COPY plumber.R worker.R run_job.R ./
 COPY R/ R/
 
 # ===== 数据资源 =====
