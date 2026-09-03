@@ -108,13 +108,32 @@ SCLOUD_ROOTLESS=1 sh ./start.sh
 
 | 镜像 | 说明 |
 |------|------|
-| `ghcr.io/zyzhou-saffron/sccloud-frontend` | CI（`main` push）自动构建推送，**linux/amd64 + arm64** |
+| `ghcr.io/zyzhou-saffron/sccloud-frontend` | CI 自动构建推送，**linux/amd64 + arm64** |
 | `ghcr.io/zyzhou-saffron/sccloud-backend` | 同上 |
 | `ghcr.io/zyzhou-saffron/sccloud-r-engine` | 需 `r-library`，在 GPU/本机构建后手动 push |
+
+**标签**
+
+| 触发 | 镜像 tag |
+|------|----------|
+| `main` 上改 `frontend/**` / `backend/**` | `latest` + git 短 SHA |
+| Release Please 发版（GitHub Release published） | 另加 `vX.Y.Z` 与 `X.Y.Z` |
+| Actions → 手动 `workflow_dispatch` | `latest` + SHA（两边都建） |
 
 包建议设为 **Public**，免登录 pull。私有包需先 `docker login ghcr.io`。
 
 **阿里云 ACR（可选）**：在仓库 Settings → Variables/Secrets 配置 `ALIYUN_ACR_REGISTRY`、`ALIYUN_ACR_NAMESPACE`、`ALIYUN_ACR_USERNAME`、`ALIYUN_ACR_PASSWORD` 后，CI 会用 `buildx imagetools` 把多架构清单 mirror 到 ACR。`.env` 中把 `FRONTEND_IMAGE`/`BACKEND_IMAGE` 改成 ACR 前缀即可（见 `.env.example`）。
+
+### 发版（Release Please）
+
+仓库已接 [release-please](https://github.com/googleapis/release-please)：`main` 上的 conventional commits（`feat:` / `fix:` …）会自动维护 **Release PR**（更新 `CHANGELOG.md`、`version.txt`、`.release-please-manifest.json`）。
+
+1. 日常开发：commit 用 `feat:` / `fix:` 前缀（`ci:` / `chore:` 默认不进 CHANGELOG 正文）。
+2. 打开/审查 Release PR（例如当前的 1.1.0），确认 CHANGELOG 后 **合并**。
+3. 合并后自动打 `vX.Y.Z` tag 并创建 GitHub Release。
+4. `release` 事件触发 docker-publish：FE/BE 推 `latest`、短 SHA、`vX.Y.Z`、`X.Y.Z`。
+
+`version.txt` 在 main 上可能暂时落后（例如仍为 `0.0.0`），**以 Release PR 合并后的值 / GitHub tag 为准**，不要手改 main 上的 version 与 release-please 抢跑。
 
 ### R 引擎镜像说明
 

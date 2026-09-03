@@ -1,15 +1,18 @@
 name: Build and Publish Docker Images
 
-# main 推送（仅相关 paths）/ 手动触发：构建 frontend + backend 并推 GHCR（linux/amd64 + linux/arm64）。
+# main 推送（仅相关 paths）/ GitHub Release 发布 / 手动触发：
+#   构建 frontend + backend 并推 GHCR（linux/amd64 + linux/arm64）。
 # r-engine 依赖 gitignore 的 r-library，本仓库 CI 不构建；在 GPU 本机构建后：
 #   docker tag <local> ghcr.io/zyzhou-saffron/sccloud-r-engine:latest
 #   docker push ghcr.io/zyzhou-saffron/sccloud-r-engine:latest
 #
-# 镜像标签：latest + git 短 SHA。
-# 可选 ACR 同步：配置 Variables/Secrets 后自动 mirror。
+# 镜像标签：
+#   - 日常 main：latest + git 短 SHA
+#   - Release Please 发版（release published）：另加 vX.Y.Z 与 X.Y.Z
 #
 # paths：改 README / compose / 文档等不触发；仅 frontend/**、backend/** 或本 workflow 变更才跑。
-# 组件级：只改 frontend 时不重建 backend（反之亦然）；workflow_dispatch 或改本文件则两者都建。
+# 组件级：只改 frontend 时不重建 backend（反之亦然）；
+# workflow_dispatch / 改本文件 / release 事件则两者都建。
 #
 # 阿里云 ACR（可选）：
 #   Variables: ALIYUN_ACR_REGISTRY, ALIYUN_ACR_NAMESPACE
@@ -23,12 +26,13 @@ on:
       - "frontend/**"
       - "backend/**"
       - ".github/workflows/docker-publish.yml"
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
   contents: read
   packages: write
-  # paths-filter 读 PR/commit 文件列表
   pull-requests: read
 
 env:
@@ -41,14 +45,15 @@ jobs:
       frontend: ${{ steps.result.outputs.frontend }}
       backend: ${{ steps.result.outputs.backend }}
       workflow: ${{ steps.result.outputs.workflow }}
+      version: ${{ steps.result.outputs.version }}
     steps:
       - name: Checkout
-        if: github.event_name != 'workflow_dispatch'
+        if: github.event_name == 'push'
         uses: actions/checkout@v4
 
       - name: Detect changed paths
         id: filter
-        if: github.event_name != 'workflow_dispatch'
+        if: github.event_name == 'push'
         uses: dorny/paths-filter@v3
         with:
           filters: |
@@ -62,7 +67,9 @@ jobs:
       - name: Set change flags
         id: result
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          set -e
+          # 发版 / 手动：两边都建
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "${{ github.event_name }}" = "release" ]; then
             echo "frontend=true" >> "$GITHUB_OUTPUT"
             echo "backend=true" >> "$GITHUB_OUTPUT"
             echo "workflow=true" >> "$GITHUB_OUTPUT"
@@ -71,7 +78,15 @@ jobs:
             echo "backend=${{ steps.filter.outputs.backend }}" >> "$GITHUB_OUTPUT"
             echo "workflow=${{ steps.filter.outputs.workflow }}" >> "$GITHUB_OUTPUT"
           fi
-          echo "event=${{ github.event_name }} fe=${{ steps.filter.outputs.frontend }} be=${{ steps.filter.outputs.backend }} wf=${{ steps.filter.outputs.workflow }}"
+
+          # 版本标签：仅 release 事件打 vX.Y.Z
+          ver=""
+          if [ "${{ github.event_name }}" = "release" ]; then
+            tag="${{ github.event.release.tag_name }}"
+            ver="${tag#v}"
+          fi
+          echo "version=${ver}" >> "$GITHUB_OUTPUT"
+          echo "event=${{ github.event_name }} version=${ver:-none}"
 
   build:
     needs: changes
@@ -106,10 +121,9 @@ jobs:
         run: |
           set -e
           comp="${{ matrix.component }}"
-          # 改 workflow 或手动触发：两边都建
           if [ "${{ needs.changes.outputs.workflow }}" = "true" ]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
-            echo "Building $comp (workflow change or manual dispatch)"
+            echo "Building $comp (workflow change, release, or manual dispatch)"
             exit 0
           fi
           if [ "$comp" = "frontend" ] && [ "${{ needs.changes.outputs.frontend }}" = "true" ]; then
@@ -154,7 +168,34 @@ jobs:
       - name: Derive image tags
         if: steps.skip.outputs.run == 'true'
         id: tags
-        run: echo "sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+        run: |
+          set -e
+          SHA="${GITHUB_SHA::7}"
+          echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
+
+          OWNER="${{ env.GHCR_OWNER }}"
+          IMG="${{ matrix.image }}"
+          BASE="ghcr.io/${OWNER}/${IMG}"
+
+          {
+            echo "list<<EOF"
+            echo "${BASE}:latest"
+            echo "${BASE}:${SHA}"
+            VER="${{ needs.changes.outputs.version }}"
+            if [ -n "$VER" ]; then
+              echo "${BASE}:v${VER}"
+              echo "${BASE}:${VER}"
+            fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Tags:"
+          echo "${BASE}:latest"
+          echo "${BASE}:${SHA}"
+          if [ -n "${{ needs.changes.outputs.version }}" ]; then
+            echo "${BASE}:v${{ needs.changes.outputs.version }}"
+            echo "${BASE}:${{ needs.changes.outputs.version }}"
+          fi
 
       - name: Build and push ${{ matrix.component }}
         if: steps.skip.outputs.run == 'true'
@@ -164,9 +205,7 @@ jobs:
           platforms: ${{ matrix.platforms }}
           push: true
           build-args: ${{ matrix.build-args }}
-          tags: |
-            ghcr.io/${{ env.GHCR_OWNER }}/${{ matrix.image }}:latest
-            ghcr.io/${{ env.GHCR_OWNER }}/${{ matrix.image }}:${{ steps.tags.outputs.sha }}
+          tags: ${{ steps.tags.outputs.list }}
           cache-from: type=gha,scope=${{ matrix.component }}
           cache-to: type=gha,mode=max,scope=${{ matrix.component }}
           provenance: false
@@ -177,9 +216,11 @@ jobs:
           set -e
           SRC="ghcr.io/${GHCR_OWNER}/${{ matrix.image }}:latest"
           ACR_BASE="${{ vars.ALIYUN_ACR_REGISTRY }}/${{ vars.ALIYUN_ACR_NAMESPACE }}/${{ matrix.image }}"
-          echo "Mirroring multi-arch ${SRC} -> ${ACR_BASE}:{latest,${{ steps.tags.outputs.sha }}}"
-          docker buildx imagetools create \
-            -t "${ACR_BASE}:latest" \
-            -t "${ACR_BASE}:${{ steps.tags.outputs.sha }}" \
-            "${SRC}"
+          extra=(-t "${ACR_BASE}:latest" -t "${ACR_BASE}:${{ steps.tags.outputs.sha }}")
+          VER="${{ needs.changes.outputs.version }}"
+          if [ -n "$VER" ]; then
+            extra+=(-t "${ACR_BASE}:v${VER}" -t "${ACR_BASE}:${VER}")
+          fi
+          echo "Mirroring multi-arch ${SRC} -> ${ACR_BASE} (${extra[*]})"
+          docker buildx imagetools create "${extra[@]}" "${SRC}"
           echo "ACR sync completed."
