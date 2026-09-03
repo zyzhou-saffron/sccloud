@@ -120,18 +120,10 @@ services:
       - projects_data:${PROJECTS_ROOT:-/data/projects}
       - ./r-engine/data:/app/r-engine-data:ro
     secrets:
-      - source: db_password
-        target: db_password
-        mode: 0444
-      - source: jwt_secret
-        target: jwt_secret
-        mode: 0444
-      - source: redis_password
-        target: redis_password
-        mode: 0444
-      - source: bootstrap_admin_password
-        target: bootstrap_admin_password
-        mode: 0444
+      - db_password
+      - jwt_secret
+      - redis_password
+      - bootstrap_admin_password
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=128m,mode=1777
     depends_on:
