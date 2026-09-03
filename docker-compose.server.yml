@@ -1,4 +1,5 @@
-# scCloud v2 — GPU 服务器完整部署 (host 网络模式)
+# scCloud v2 — GPU 服务器完整部署 (host 网络模式)【高级/历史】
+# 日常一键部署请用仓库根目录: sh ./start.sh  （桥接网络 docker-compose.yml）
 # 端口规划: Nginx 9000 / Frontend 3000 / Backend 8000 / R 8787 / DB 3307 / Redis 6380
 #
 # 部署: docker compose -f docker-compose.server.yml --env-file .env.server up -d

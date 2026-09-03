@@ -51,11 +51,47 @@ def _cleanup_stale_tasks():
         db.close()
 
 
+def _bootstrap_admin_if_empty():
+    """users 表为空时创建管理员（一键部署开箱账号）。"""
+    from app.auth.service import hash_password
+    from app.db.models import SessionLocal, User
+
+    settings = get_settings()
+    username = (settings.bootstrap_admin_user or "").strip()
+    password = settings.bootstrap_admin_password or ""
+    if not username or not password:
+        return
+
+    db = SessionLocal()
+    try:
+        if db.query(User).count() > 0:
+            return
+        user = User(
+            username=username,
+            email=None,
+            password_hash=hash_password(password),
+            role="admin",
+            is_guest=False,
+            is_active=True,
+            max_projects=100,
+            total_quota=1000,
+        )
+        db.add(user)
+        db.commit()
+        logger.info("[startup] bootstrap admin created: %s", username)
+    except Exception as e:
+        logger.warning("[startup] bootstrap admin failed: %s", e)
+        db.rollback()
+    finally:
+        db.close()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期 — 启动时执行迁移、创建数据库表并启动后台服务。"""
     _run_alembic_upgrade()
     Base.metadata.create_all(bind=engine)
+    _bootstrap_admin_if_empty()
     _cleanup_stale_tasks()
     # 重任务改走 Redis 队列 + worker(#42 Phase2)，无需再初始化引擎池。
     # 启动 Redis → DB 进度同步器 (后台协程)

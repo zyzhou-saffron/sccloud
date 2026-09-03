@@ -20,10 +20,10 @@
 | 章节 | 内容 |
 |---|---|
 | [架构总览](#架构总览) | ASCII 架构图 + 技术栈表 |
-| [快速开始](#快速开始--docker-compose-一键部署) | 4 步一键部署（clone → 配置 → R 镜像 → compose up） |
-| [R 引擎构建](#step-3-构建-r-计算引擎镜像) | 3 种方式：预编译库（10min）/ 预构建镜像（1min）/ 从零编译（2h） |
+| [快速开始](#快速开始--一键部署) | `sh ./start.sh` 拉镜像并启动 |
+| [R 引擎构建](#r-引擎镜像说明) | GHCR pull / tar load / r-library 本地 build |
 | [分析流程](#分析流程) | 8步标准 scRNA-seq 分析及 WebGL 可视化 |
-| [服务器部署](#服务器部署host-网络模式) | Host 网络模式 + 端口规划表 + 热更新命令 |
+| [服务器部署](#服务器部署host-网络模式) | Host 网络模式（高级）+ 端口规划 |
 | [环境变量](#环境变量参考) | 完整参考表，标注必填项 |
 | [API 端点](#api-端点) | 全部 REST + WebSocket 端点 |
 | [常见问题](#常见问题) | R 引擎故障 / 数据库初始化 / 大文件超时 / OOM |
@@ -60,112 +60,95 @@
 
 ---
 
-## 快速开始 — Docker Compose 一键部署
+## 快速开始 — 一键部署
 
 ### 前提条件
 
 - **Docker** ≥ 24.0 + **Docker Compose** v2
-- **内存** ≥ 16 GB（R 引擎分析大数据集时内存消耗较高）
-- **磁盘** ≥ 50 GB（R 包镜像 ~2GB + 用户项目数据）
+- **内存** ≥ 16 GB（分析大数据集时建议 32GB+）
+- **磁盘** ≥ 50 GB（R 镜像约 2GB+ + 项目数据）
 
-### Step 1: 克隆项目
+### 一键启动
 
 ```bash
-git clone <repo_url> sccloud
+git clone https://github.com/zyzhou-saffron/sccloud.git
 cd sccloud
+sh ./start.sh
 ```
 
-### Step 2: 配置环境变量
+脚本会自动：
+
+1. 检测 Docker Compose v2（缺省不自动装 Docker；共享机可用 `sh ./start.sh --install-docker`）
+2. 无 `.env` 或 `./secrets/*` 时运行 `scripts/setup-wizard.sh`（随机 DB/JWT/Redis 密钥写入 **`./secrets/`**，默认管理员 `admin` / `admin123`）
+3. `WEB_PORT` 默认 `8080`；若占用（例如闲鱼助手）则自动 +1…+9 并写回 `.env`
+4. 探测 GHCR → `docker compose pull`；失败则本地 `build`
+5. R 镜像兜底：本地 tag → `data/sccloud-r-engine-image.tar.gz` load → 有 `r-engine/r-library` 再 build
+6. `up -d` 并等待 db / redis / backend / r-engine / 入口 `/healthz`
+
+访问 **http://localhost:${WEB_PORT}**（默认 8080）。空库首次启动会 bootstrap 管理员。
+
+**安全（对齐闲鱼助手）**：`DB`/`JWT`/`Redis`/管理员密码仅在 `./secrets/`（compose secrets 挂载），容器默认 `no-new-privileges`、`cap_drop: ALL`，nginx/frontend/redis/db 额外 `read_only` + 非 root；MariaDB/Redis/nginx **钉镜像 digest**。
 
 ```bash
-cp .env.example .env
+# 常用运维
+sh ./scripts/sccloud-ops.sh status
+sh ./scripts/sccloud-ops.sh logs
+sh ./scripts/sccloud-ops.sh stop
+
+# 强制本地构建 / 跳过 pull
+sh ./start.sh --build
+sh ./start.sh --no-pull
+
+# rootless / 只绑本机
+SCLOUD_ROOTLESS=1 sh ./start.sh
+# 或: export COMPOSE_FILE=docker-compose.yml:docker-compose.rootless.yml
 ```
 
-编辑 `.env`，**必须修改**以下字段：
+### 预构建镜像（GHCR）
+
+| 镜像 | 说明 |
+|------|------|
+| `ghcr.io/zyzhou-saffron/sccloud-frontend` | CI（`main` push）自动构建推送，**linux/amd64 + arm64** |
+| `ghcr.io/zyzhou-saffron/sccloud-backend` | 同上 |
+| `ghcr.io/zyzhou-saffron/sccloud-r-engine` | 需 `r-library`，在 GPU/本机构建后手动 push |
+
+包建议设为 **Public**，免登录 pull。私有包需先 `docker login ghcr.io`。
+
+**阿里云 ACR（可选）**：在仓库 Settings → Variables/Secrets 配置 `ALIYUN_ACR_REGISTRY`、`ALIYUN_ACR_NAMESPACE`、`ALIYUN_ACR_USERNAME`、`ALIYUN_ACR_PASSWORD` 后，CI 会用 `buildx imagetools` 把多架构清单 mirror 到 ACR。`.env` 中把 `FRONTEND_IMAGE`/`BACKEND_IMAGE` 改成 ACR 前缀即可（见 `.env.example`）。
+
+### R 引擎镜像说明
+
+R 引擎体积大且 `r-library/` 不在 git 中。优先级：
+
+1. **GHCR pull**（`start.sh` 默认）
+2. **本地已有** `sccloud-r-engine` / 目标 tag
+3. **`data/sccloud-r-engine-image.tar.gz`** → `docker load`
+4. **本地 build**（需准备 `r-engine/r-library`）：
 
 ```bash
-# 数据库密码 — 生产环境务必修改
-DB_PASS=your_strong_password
-DB_ROOT_PASS=your_root_password
-
-# JWT 密钥 — 用以下命令生成
-# openssl rand -hex 32
-JWT_SECRET=your_generated_secret
+cp -r /path/to/R/library r-engine/r-library
+docker build -t ghcr.io/zyzhou-saffron/sccloud-r-engine:latest ./r-engine
+docker push ghcr.io/zyzhou-saffron/sccloud-r-engine:latest
 ```
 
-### Step 3: 构建 R 计算引擎镜像
+从零编译（约 2h）：改 `r-engine/Dockerfile`，用 `install_packages.R` 替代 `COPY r-library/`。
 
-R 引擎是最耗时的构建步骤（包含 572 个 R 包），有两种方式：
-
-#### 方式 A: 从预编译 R 库构建（推荐，~10 分钟）
-
-如果你的服务器上已有完整的 R 4.3 环境（含 Seurat、Bioconductor 等）：
+### 手动 compose（等价）
 
 ```bash
-# 1. 复制已编译的 R 库到项目目录
-cp -r /path/to/your/R/library r-engine/r-library
-
-# 2. 构建 Docker 镜像
-cd r-engine
-docker build -t sccloud-r-engine .
+sh ./scripts/setup-wizard.sh   # 或 cp .env.example .env 后手改
+docker compose --env-file .env pull
+docker compose --env-file .env up -d
+curl -fsS "http://127.0.0.1:${WEB_PORT:-8080}/healthz"
 ```
 
-#### 方式 B: 使用预构建镜像（最快）
-
-如果项目附带了导出的镜像文件 `data/sccloud-r-engine-image.tar.gz`：
-
-```bash
-# 直接导入镜像（~2GB，约 1 分钟）
-docker load < data/sccloud-r-engine-image.tar.gz
-```
-
-#### 方式 C: 从零编译安装（~2 小时）
-
-适用于没有预编译 `r-library/` 和预构建镜像的场景。
-
-```bash
-cd r-engine
-```
-
-修改 `Dockerfile`，将这一行：
-
-```dockerfile
-COPY r-library/ /usr/local/lib/R/site-library/
-```
-
-替换为：
-
-```dockerfile
-COPY install_packages.R .
-RUN Rscript install_packages.R
-```
-
-然后构建：
-
-```bash
-docker build -t sccloud-r-engine .
-```
-
-### Step 4: 启动所有服务
-
-```bash
-# 标准模式（bridge 网络，端口映射）
-docker compose up -d
-
-# 查看日志
-docker compose logs -f
-
-# 检查健康状态
-curl http://localhost:8000/api/health
-```
-
-访问 **http://localhost:3000** 即可使用。
+可选：将 SQL 放到 `data/initdb.d/`，仅在 **空** MariaDB volume 首次启动时导入（若已有 users 则不会 bootstrap 管理员）。
 
 ---
 
 ## 服务器部署（Host 网络模式）
 
-适用于需要高性能网络或服务器已占用默认端口的场景（如 GPU 服务器）。
+**高级/历史路径。** 日常请优先 `sh ./start.sh`（桥接 `docker-compose.yml`）。以下 host 网络适用于需要绑核/超大内存 worker 的 GPU 现网。
 
 ### 端口规划
 
@@ -214,24 +197,30 @@ docker compose --env-file .env.server -f docker-compose.server.yml up -d --build
 
 ## 环境变量参考
 
+一键部署由 `setup-wizard.sh` 生成 `.env` + `./secrets/`。完整模板见 `.env.example`。
+
 | 变量 | 默认值 | 必填 | 说明 |
 |------|--------|------|------|
-| `DB_HOST` | `db` | | Docker 内部主机名 |
-| `DB_PORT` | `3306` | | 数据库端口 |
+| `WEB_PORT` | `8080` | | 唯一对外端口（占用自动换） |
+| `WEB_BIND_ADDRESS` | `0.0.0.0` | | 监听地址；rootless 叠加默认 `127.0.0.1` |
+| `FRONTEND_IMAGE` / `BACKEND_IMAGE` / `R_ENGINE_IMAGE` | GHCR `…/sccloud-*:latest` | | 预构建镜像（可改 ACR） |
 | `DB_NAME` | `sccloud_v2` | | 数据库名 |
 | `DB_USER` | `sccloud_app` | | 数据库用户 |
-| `DB_PASS` | — | ✅ | **数据库密码** |
-| `DB_ROOT_PASS` | — | ✅ | **数据库 root 密码** |
-| `REDIS_URL` | `redis://redis:6379/0` | | Redis 连接字符串 |
-| `JWT_SECRET` | — | ✅ | **JWT 签名密钥**（`openssl rand -hex 32`） |
+| `./secrets/db-password` | 向导生成 | ✅ | **应用库密码**（compose secret） |
+| `./secrets/db-root-password` | 向导生成 | ✅ | **root 密码** |
+| `./secrets/jwt-secret` | 向导生成 | ✅ | **JWT 签名密钥** |
+| `./secrets/redis-password` | 向导生成 | ✅ | **Redis requirepass** |
+| `./secrets/bootstrap-admin-password` | `admin123` | | 空库首次管理员密码 |
+| `R_REDIS_URL` | 向导写入 | | 供 R 引擎的带密码 Redis URL |
 | `JWT_ALGORITHM` | `HS256` | | JWT 算法 |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | `15` | | 访问令牌有效期 |
-| `REFRESH_TOKEN_EXPIRE_DAYS` | `7` | | 刷新令牌有效期 |
-| `R_ENGINE_URL` | `http://r-engine:8787` | | R 引擎地址 |
-| `R_ENGINE_TIMEOUT` | `3600` | | R 引擎请求超时（秒） |
-| `PROJECTS_ROOT` | `/data/projects` | | 项目数据存储路径 |
-| `MAX_UPLOAD_SIZE_GB` | `30` | | 单文件上传上限 |
-| `ENVIRONMENT` | `development` | | `development` / `production` |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | `60` | | 访问令牌有效期 |
+| `REFRESH_TOKEN_EXPIRE_DAYS` | `30` | | 刷新令牌有效期 |
+| `R_ENGINE_TIMEOUT` | `86400` | | R 请求超时（秒） |
+| `R_ENGINE_MEM_LIMIT` / `R_WORKER_MEM_LIMIT` | `16g` / `32g` | | 容器内存上限 |
+| `PROJECTS_ROOT` | `/data/projects` | | 项目数据路径 |
+| `BOOTSTRAP_ADMIN_USER` | `admin` | | 空库首次管理员用户名 |
+| `SCLOUD_ROOTLESS` | `0` | | `1` 时叠加 `docker-compose.rootless.yml` |
+| `ENVIRONMENT` | `production` | | `development` / `production` |
 
 ---
 
@@ -322,8 +311,14 @@ sccloud/
 │   ├── sccloud_v2_dump.sql     # 数据库初始化 SQL
 │   └── sccloud-r-engine-image.tar.gz  # 预构建 R 引擎镜像 (~2GB)
 │
-├── docker-compose.yml          # 标准部署 (bridge 网络)
-├── docker-compose.server.yml   # 服务器部署 (host 网络)
+├── start.sh                    # 一键启动（对齐闲鱼助手）
+├── docker-compose.yml          # 一键桥接部署（secrets + 加固 + digest pin）
+├── docker-compose.rootless.yml # rootless/本机绑定叠加
+├── docker-compose.server.yml   # 高级 host 网络
+├── secrets/                    # 密钥目录（gitignore；向导生成）
+├── scripts/setup-wizard.sh
+├── scripts/sccloud-ops.sh
+├── nginx/nginx.bridge.conf
 ├── docker-compose.dev.yml      # 开发环境 (仅 Redis)
 │
 ├── .env.example                # 环境变量模板

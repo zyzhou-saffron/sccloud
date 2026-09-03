@@ -1,0 +1,36 @@
+# scCloud — rootless / 共享机叠加层
+# 用法:
+#   docker compose --env-file .env -f docker-compose.yml -f docker-compose.rootless.yml up -d
+#   export COMPOSE_FILE=docker-compose.yml:docker-compose.rootless.yml
+#
+# 相对基础 compose：
+#   - 默认只绑 127.0.0.1（WEB_BIND_ADDRESS 可覆盖）
+#   - restart: always
+# secrets / read_only / cap_drop / digest pin 仍继承主文件。
+# 不在此强制清 pids_limit（compose 版本差异大；rootless 下超限通常被忽略）。
+
+name: sccloud
+
+services:
+  web:
+    restart: always
+    ports:
+      - "${WEB_BIND_ADDRESS:-127.0.0.1}:${WEB_PORT:-8080}:8080"
+
+  frontend:
+    restart: always
+
+  backend:
+    restart: always
+
+  r-engine:
+    restart: always
+
+  r-engine-worker:
+    restart: always
+
+  db:
+    restart: always
+
+  redis:
+    restart: always

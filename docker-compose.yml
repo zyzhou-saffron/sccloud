@@ -1,76 +1,300 @@
-# scCloud v2 — Docker Compose 基础配置
-# 开发: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
-# 生产: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# scCloud — 一键部署（桥接网络，对齐闲鱼助手：secrets + 加固）
+#
+# 用法:
+#   sh ./start.sh
+#   docker compose --env-file .env up -d
+#
+# 敏感项在 ./secrets/（setup-wizard 生成），不写进 .env 明文。
+# 高级 GPU host 网络见 docker-compose.server.yml
+# rootless 叠加：-f docker-compose.yml -f docker-compose.rootless.yml
+
+name: sccloud
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+    compress: "true"
+
+x-service-defaults: &service-defaults
+  restart: unless-stopped
+  init: true
+  security_opt:
+    - no-new-privileges:true
+  logging: *default-logging
 
 services:
-  # ---- 前端 (Next.js) ----
+  # ---- 唯一对外入口 ----
+  web:
+    <<: *service-defaults
+    image: nginx:alpine@sha256:db35bfc6b2951e7f8a72db5db120288c127ffaeeb4a6d4b95a26fead017d5913
+    user: nginx
+    read_only: true
+    cap_drop:
+      - ALL
+    ports:
+      - "${WEB_BIND_ADDRESS:-0.0.0.0}:${WEB_PORT:-8080}:8080"
+    volumes:
+      - ./nginx/nginx.bridge.conf:/etc/nginx/conf.d/default.conf:ro
+    tmpfs:
+      - /var/cache/nginx:rw,noexec,nosuid,size=32m,mode=1777
+      - /var/run:rw,noexec,nosuid,size=8m,mode=1777
+      - /tmp:rw,noexec,nosuid,size=16m,mode=1777
+    depends_on:
+      frontend:
+        condition: service_started
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    mem_limit: ${WEB_MEM_LIMIT:-256m}
+    pids_limit: 128
+
   frontend:
+    <<: *service-defaults
+    image: ${FRONTEND_IMAGE:-ghcr.io/zyzhou-saffron/sccloud-frontend:latest}
     build:
       context: ./frontend
+      # 共享机/rootless 容器 DNS 常挂；host 网络让 apt/npm 走宿主机解析
+      network: host
       args:
-        # 构建时注入 — Next.js rewrites 代理目标
         BACKEND_URL: http://backend:8000
-    ports: ["3000:3000"]
-    depends_on: [backend]
+    user: "1001:1001"
+    read_only: true
+    cap_drop:
+      - ALL
+    environment:
+      HOSTNAME: "0.0.0.0"
+      PORT: "3000"
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m,mode=1777
+    depends_on:
+      backend:
+        condition: service_healthy
+    expose:
+      - "3000"
+    mem_limit: ${FRONTEND_MEM_LIMIT:-512m}
+    pids_limit: 256
 
-  # ---- API 网关 (FastAPI) ----
   backend:
-    build: ./backend
-    ports: ["8000:8000"]
-    env_file: .env
-    depends_on: [db, redis]
+    <<: *service-defaults
+    image: ${BACKEND_IMAGE:-ghcr.io/zyzhou-saffron/sccloud-backend:latest}
+    build:
+      context: ./backend
+      network: host
+    # entrypoint 需短暂 root 修正 projects volume；业务以 cap_drop 收紧
+    user: "0:0"
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
     environment:
-      DATABASE_URL: "mysql+pymysql://${DB_USER}:${DB_PASS}@${DB_HOST}:${DB_PORT}/${DB_NAME}"
-      REDIS_URL: "${REDIS_URL}"
-      R_ENGINE_URL: "${R_ENGINE_URL}"
-      JWT_SECRET: "${JWT_SECRET}"
-      JWT_ALGORITHM: "${JWT_ALGORITHM}"
-      PROJECTS_ROOT: "${PROJECTS_ROOT}"
+      DB_HOST: db
+      DB_PORT: "3306"
+      DB_NAME: ${DB_NAME:-sccloud_v2}
+      DB_USER: ${DB_USER:-sccloud_app}
+      DB_PASS_FILE: /run/secrets/db_password
+      JWT_SECRET_FILE: /run/secrets/jwt_secret
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD_FILE: /run/secrets/redis_password
+      BOOTSTRAP_ADMIN_PASSWORD_FILE: /run/secrets/bootstrap_admin_password
+      R_ENGINE_URL: "http://r-engine:8787"
+      R_ENGINE_QUICK_URL: "http://r-engine:8787"
+      R_ENGINE_TIMEOUT: "${R_ENGINE_TIMEOUT:-86400}"
+      JWT_ALGORITHM: "${JWT_ALGORITHM:-HS256}"
+      ACCESS_TOKEN_EXPIRE_MINUTES: "${ACCESS_TOKEN_EXPIRE_MINUTES:-60}"
+      REFRESH_TOKEN_EXPIRE_DAYS: "${REFRESH_TOKEN_EXPIRE_DAYS:-30}"
+      PROJECTS_ROOT: "${PROJECTS_ROOT:-/data/projects}"
+      ENVIRONMENT: "${ENVIRONMENT:-production}"
+      BOOTSTRAP_ADMIN_USER: "${BOOTSTRAP_ADMIN_USER:-admin}"
+      WORKER_MEM_CAP_GB: "${WORKER_MEM_CAP_GB:-32}"
     volumes:
       - projects_data:${PROJECTS_ROOT:-/data/projects}
+      - ./r-engine/data:/app/r-engine-data:ro
+    secrets:
+      - db_password
+      - jwt_secret
+      - redis_password
+      - bootstrap_admin_password
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=128m,mode=1777
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=5)"]
+      interval: 10s
+      timeout: 8s
+      retries: 18
+      start_period: 40s
+    mem_limit: ${BACKEND_MEM_LIMIT:-2g}
+    pids_limit: 512
 
-  # ---- R 计算引擎 (Plumber) ----
   r-engine:
-    image: sccloud-r-engine:latest
-    # build: ./r-engine
-    ports: ["8787:8787"]
+    <<: *service-defaults
+    image: ${R_ENGINE_IMAGE:-ghcr.io/zyzhou-saffron/sccloud-r-engine:latest}
+    build:
+      context: ./r-engine
+      dockerfile: Dockerfile
+      network: host
+    # 分析引擎需写 projects / 较大 tmp；不做 read_only
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
     environment:
-      REDIS_URL: "${REDIS_URL}"
+      # 由 start.sh / compose 注入带密码的 URL（见下方 redis 依赖）
+      REDIS_URL: ${R_REDIS_URL:-redis://redis:6379/0}
     volumes:
       - projects_data:${PROJECTS_ROOT:-/data/projects}
-      - ./r-engine/data:/app/data
+      - ./r-engine/data:/app/data:ro
       - ./r-engine/plumber.R:/app/plumber.R:ro
       - ./r-engine/R:/app/R:ro
-    mem_limit: 64g
+    mem_limit: ${R_ENGINE_MEM_LIMIT:-16g}
+    expose:
+      - "8787"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8787/health"]
+      interval: 30s
+      timeout: 20s
+      retries: 5
+      start_period: 60s
+    depends_on:
+      redis:
+        condition: service_healthy
 
-  # ---- 数据库 (MariaDB) ----
-  db:
-    image: mariadb:11
-    ports: ["3306:3306"]
+  r-engine-worker:
+    <<: *service-defaults
+    image: ${R_ENGINE_IMAGE:-ghcr.io/zyzhou-saffron/sccloud-r-engine:latest}
+    build:
+      context: ./r-engine
+      dockerfile: Dockerfile
+      network: host
+    command: ["Rscript", "/app/worker.R"]
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+      - KILL
     environment:
-      MYSQL_ROOT_PASSWORD: "${DB_ROOT_PASS}"
-      MYSQL_DATABASE: "${DB_NAME}"
-      MYSQL_USER: "${DB_USER}"
-      MYSQL_PASSWORD: "${DB_PASS}"
+      REDIS_URL: ${R_REDIS_URL:-redis://redis:6379/0}
+    volumes:
+      - projects_data:${PROJECTS_ROOT:-/data/projects}
+      - ./r-engine/data:/app/data:ro
+      - ./r-engine/run_job.R:/app/run_job.R:ro
+      - ./r-engine/worker.R:/app/worker.R:ro
+      - ./r-engine/plumber.R:/app/plumber.R:ro
+      - ./r-engine/R:/app/R:ro
+    mem_limit: ${R_WORKER_MEM_LIMIT:-32g}
+    depends_on:
+      redis:
+        condition: service_healthy
+      r-engine:
+        condition: service_started
+    healthcheck:
+      disable: true
+
+  db:
+    <<: *service-defaults
+    # 钉 digest，避免 latest 漂移（与 GPU 上 mariadb:11 对齐，2026-09）
+    image: mariadb:11@sha256:2439dcd7d14010ecd1ff7a4e1c5abe8e208c34fe35290744deeeaac3569043c3
+    user: mysql
+    read_only: true
+    cap_drop:
+      - ALL
+    environment:
+      MYSQL_ROOT_PASSWORD_FILE: /run/secrets/db_root_password
+      MYSQL_DATABASE: ${DB_NAME:-sccloud_v2}
+      MYSQL_USER: ${DB_USER:-sccloud_app}
+      MYSQL_PASSWORD_FILE: /run/secrets/db_password
     volumes:
       - db_data:/var/lib/mysql
-      - ./data/sccloud_v2_dump.sql:/docker-entrypoint-initdb.d/dump.sql:ro
+      # 可选：将 schema/demo dump 放到 data/initdb.d/ 会在空 volume 首次启动时导入
+      - ./data/initdb.d:/docker-entrypoint-initdb.d:ro
+    secrets:
+      - db_root_password
+      - db_password
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m,mode=1777
+      - /run/mysqld:rw,noexec,nosuid,size=16m,mode=1777
+    expose:
+      - "3306"
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 12
+      start_period: 40s
+    mem_limit: ${DB_MEM_LIMIT:-1g}
+    pids_limit: 256
 
-  # ---- 消息队列 (Redis) ----
   redis:
-    image: redis:7-alpine
-    ports: ["6379:6379"]
+    <<: *service-defaults
+    image: redis:7-alpine@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf
+    user: redis
+    read_only: true
+    cap_drop:
+      - ALL
+    environment:
+      REDIS_PASSWORD_FILE: /run/secrets/redis_password
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        umask 077
+        password="$$(tr -d '\r\n' < "$${REDIS_PASSWORD_FILE}")"
+        case "$${password}" in
+          '') echo 'Redis secret empty' >&2; exit 1 ;;
+        esac
+        printf 'bind 0.0.0.0\nprotected-mode yes\nport 6379\ndir /data\nappendonly yes\nappendfsync everysec\nrequirepass %s\nmaxmemory 384mb\nmaxmemory-policy noeviction\n' "$${password}" > /tmp/redis.conf
+        unset password
+        exec redis-server /tmp/redis.conf
+    volumes:
+      - redis_data:/data
+    secrets:
+      - redis_password
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m,mode=1777
+    expose:
+      - "6379"
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$(tr -d '\\r\\n' < /run/secrets/redis_password)\" redis-cli --no-auth-warning ping | grep -q PONG"]
       interval: 10s
-      timeout: 3s
-      retries: 5
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    mem_limit: ${REDIS_MEM_LIMIT:-512m}
+    pids_limit: 128
 
 volumes:
   db_data:
   projects_data:
+  redis_data:
+
+secrets:
+  db_root_password:
+    file: ./secrets/db-root-password
+  db_password:
+    file: ./secrets/db-password
+  jwt_secret:
+    file: ./secrets/jwt-secret
+  redis_password:
+    file: ./secrets/redis-password
+  bootstrap_admin_password:
+    file: ./secrets/bootstrap-admin-password
