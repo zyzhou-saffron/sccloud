@@ -12,6 +12,8 @@ name: Build and Publish Docker Images
 #   Variables: ALIYUN_ACR_REGISTRY   例 registry.cn-hangzhou.aliyuncs.com
 #              ALIYUN_ACR_NAMESPACE  例 your-namespace
 #   Secrets:   ALIYUN_ACR_USERNAME, ALIYUN_ACR_PASSWORD
+#
+# 注意：if 条件里不能直接写 secrets.*（workflow 会解析失败）；密码经 job env 注入后再判断。
 
 on:
   push:
@@ -28,6 +30,9 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      ACR_PASSWORD: ${{ secrets.ALIYUN_ACR_PASSWORD }}
+      ACR_USERNAME: ${{ secrets.ALIYUN_ACR_USERNAME }}
     strategy:
       fail-fast: false
       matrix:
@@ -61,12 +66,12 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Log in to Aliyun ACR
-        if: ${{ vars.ALIYUN_ACR_REGISTRY != '' && secrets.ALIYUN_ACR_PASSWORD != '' }}
+        if: ${{ vars.ALIYUN_ACR_REGISTRY != '' && env.ACR_PASSWORD != '' }}
         uses: docker/login-action@v3
         with:
           registry: ${{ vars.ALIYUN_ACR_REGISTRY }}
-          username: ${{ secrets.ALIYUN_ACR_USERNAME }}
-          password: ${{ secrets.ALIYUN_ACR_PASSWORD }}
+          username: ${{ env.ACR_USERNAME }}
+          password: ${{ env.ACR_PASSWORD }}
 
       - name: Derive image tags
         id: tags
@@ -87,7 +92,7 @@ jobs:
           provenance: false
 
       - name: Mirror to Aliyun ACR
-        if: ${{ vars.ALIYUN_ACR_REGISTRY != '' && secrets.ALIYUN_ACR_PASSWORD != '' }}
+        if: ${{ vars.ALIYUN_ACR_REGISTRY != '' && env.ACR_PASSWORD != '' }}
         run: |
           set -e
           SRC="ghcr.io/${GHCR_OWNER}/${{ matrix.image }}:latest"
