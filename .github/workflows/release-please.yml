@@ -3,6 +3,10 @@ name: release-please
 # 监听 main 上的 conventional commits，自动维护一个「Release PR」：
 #   - 该 PR 里写好 CHANGELOG.md 的新条目，并按 feat/fix 自动升级版本号(version.txt)
 # 合并该 PR 时，自动打 tag + 创建 GitHub Release。
+#
+# token 必须用 PAT（RELEASE_PLEASE_TOKEN），不能用 GITHUB_TOKEN：
+# GitHub 不会把 GITHUB_TOKEN 产生的 release/tag 事件再派发给其它 workflow，
+# docker-publish 的 on: release 会收不到。PAT 创建的 Release 可以正常触发下游。
 
 on:
   push:
@@ -19,5 +23,5 @@ jobs:
     steps:
       - uses: googleapis/release-please-action@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
           # 配置见 release-please-config.json + .release-please-manifest.json
