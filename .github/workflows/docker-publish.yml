@@ -15,7 +15,9 @@ name: Build and Publish Docker Images
 #
 # 镜像标签：
 #   - 日常 main：latest + git 短 SHA
-#   - Release Please 发版（release published）：另加 vX.Y.Z 与 X.Y.Z
+#   - Release published 或 workflow_dispatch(version)：另加 vX.Y.Z 与 X.Y.Z
+#     注意：release-please 的 GITHUB_TOKEN 创建的 Release 通常不会触发本 workflow，
+#     发版后需 Actions → 本 workflow → Run workflow，填 version
 #
 # paths：改 README / compose / 文档等不触发；仅 frontend/**、backend/** 或本 workflow 变更才跑。
 # 组件级：只改 frontend 时不重建 backend（反之亦然）；
@@ -35,7 +37,16 @@ on:
       - ".github/workflows/docker-publish.yml"
   release:
     types: [published]
+  # release-please uses GITHUB_TOKEN; that does NOT chain-trigger other workflows on
+  # release/tag. After a Release PR merge, run this manually with version=X.Y.Z
+  # (or set a PAT on release-please later). workflow_dispatch still builds FE+BE.
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Semver without v (e.g. 1.1.0). Adds :vX.Y.Z and :X.Y.Z tags. Leave empty for latest+SHA only."
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -86,11 +97,14 @@ jobs:
             echo "workflow=${{ steps.filter.outputs.workflow }}" >> "$GITHUB_OUTPUT"
           fi
 
-          # 版本标签：仅 release 事件打 vX.Y.Z
+          # 版本标签：release 事件或 workflow_dispatch 输入 → vX.Y.Z / X.Y.Z
           ver=""
           if [ "${{ github.event_name }}" = "release" ]; then
             tag="${{ github.event.release.tag_name }}"
             ver="${tag#v}"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            ver="${{ inputs.version }}"
+            ver="${ver#v}"
           fi
           echo "version=${ver}" >> "$GITHUB_OUTPUT"
           echo "event=${{ github.event_name }} version=${ver:-none}"
