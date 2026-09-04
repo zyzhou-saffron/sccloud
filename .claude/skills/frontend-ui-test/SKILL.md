@@ -1,9 +1,9 @@
 ---
-name: gpu-ui-smoke
-description: Run scCloud GPU UI smoke tests via frontend clicks only (not API task submit). Use whenever deploying to GPU-zhouy1 :8091, after worker/r-engine/frontend changes, before calling a deploy healthy, or when the user asks for 冒烟/smoke/UI 检查/回归 on sccloud GPU.
+name: frontend-ui-test
+description: Run scCloud frontend UI tests via clicks only (not API task submit). Use whenever deploying (e.g. GPU-zhouy1 :8091), after worker/r-engine/frontend changes, before calling a deploy healthy, or when the user asks for 冒烟/smoke/UI 检查/frontend-ui-test/回归 on sccloud.
 ---
 
-# scCloud GPU UI 冒烟（前端点击）
+# scCloud frontend UI test（前端点击）
 
 对 **GPU-zhouy1** 上的 scCloud（默认 `WEB_PORT=8091`，路径 `~/Projects/scRNA/sccloud-v2`）做**可操作的 UI 回归**。  
 **禁止**用 API 直接 `submitTask` / 创建 pipeline 来代替点击；API 只用于健康探测、读状态旁证、或下载示例数据。
