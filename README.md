@@ -82,14 +82,14 @@ sh ./start.sh
 
 1. 检测 Docker Compose v2（缺省不自动装 Docker；共享机可用 `sh ./start.sh --install-docker`）
 2. 无 `.env` 或 `./secrets/*` 时运行 `scripts/setup-wizard.sh`（随机 DB/JWT/Redis 密钥写入 **`./secrets/`**，默认管理员 `admin` / `admin123`）
-3. `WEB_PORT` 默认 `8080`；若占用（例如闲鱼助手）则自动 +1…+9 并写回 `.env`
+3. `WEB_PORT` 默认 `8080`；若占用则自动 +1…+9 并写回 `.env`
 4. 探测 GHCR → `docker compose pull`；失败则本地 `build`
 5. R 镜像兜底：本地 tag → `data/sccloud-r-engine-image.tar.gz` load → 有 `r-engine/r-library` 再 build
 6. `up -d` 并等待 db / redis / backend / r-engine / 入口 `/healthz`
 
 访问 **http://localhost:${WEB_PORT}**（默认 8080）。空库首次启动会 bootstrap 管理员。
 
-**安全（对齐闲鱼助手）**：`DB`/`JWT`/`Redis`/管理员密码仅在 `./secrets/`（compose secrets 挂载），容器默认 `no-new-privileges`、`cap_drop: ALL`，nginx/frontend/redis/db 额外 `read_only` + 非 root；MariaDB/Redis/nginx **钉镜像 digest**。
+**安全加固**：`DB`/`JWT`/`Redis`/管理员密码仅在 `./secrets/`（compose secrets 挂载），容器默认 `no-new-privileges`、`cap_drop: ALL`，nginx/frontend/redis/db 额外 `read_only` + 非 root；MariaDB/Redis/nginx **钉镜像 digest**。
 
 ```bash
 # 常用运维
@@ -351,7 +351,7 @@ sccloud/
 │   ├── sccloud_v2_dump.sql     # 数据库初始化 SQL
 │   └── sccloud-r-engine-image.tar.gz  # 预构建 R 引擎镜像 (~2GB)
 │
-├── start.sh                    # 一键启动（对齐闲鱼助手）
+├── start.sh                    # 一键启动
 ├── docker-compose.yml          # 一键桥接部署（secrets + 加固 + digest pin）
 ├── docker-compose.rootless.yml # rootless/本机绑定叠加
 ├── docker-compose.server.yml   # 高级 host 网络
