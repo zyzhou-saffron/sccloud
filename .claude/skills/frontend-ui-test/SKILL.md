@@ -8,6 +8,24 @@ description: Run scCloud frontend UI tests via clicks only (not API task submit)
 对 **GPU-zhouy1** 上的 scCloud（默认 `WEB_PORT=8091`，路径 `~/Projects/scRNA/sccloud-v2`）做**可操作的 UI 回归**。  
 **禁止**用 API 直接 `submitTask` / 创建 pipeline 来代替点击；API 只用于健康探测、读状态旁证、或下载示例数据。
 
+## 测试技术栈
+
+本 skill **不是** Playwright/Cypress/Jest 自动化套件；是 **Claude Code + 浏览器预览** 的人工/代理点击回归。用到的栈：
+
+| 层 | 技术 | 用途 |
+|----|------|------|
+| 被测应用 | Next.js 前端 + FastAPI + R Plumber/worker + MariaDB + Redis + Nginx | GPU compose 栈，入口 `:8091` |
+| 远程访问 | SSH（host **`GPU-zhouy1`**）+ Tailscale | 登机器、看日志、`docker compose` |
+| 本机入口 | `ssh -N -L 18091:127.0.0.1:8091` | 把远端 8091 映到本机 |
+| HTTP 反代 | 标准库 `python3` 脚本（如 `/tmp/sccloud_proxy.py`）→ `:18092` | 给 Browser 预览用；`Accept-Encoding: identity` 避免 gzip 乱码 |
+| 预览启动 | `.claude/launch.json` 配置名 `sccloud-gpu` | `preview_start` 拉起代理 |
+| UI 操作 | Claude Browser 预览工具 | `preview_snapshot` / `preview_click` / `preview_fill` / `preview_eval`（少用大 eval）/ `preview_screenshot` |
+| 旁证 CLI | `curl`、`gh`（可选）、`docker logs` / `docker exec` | health、pipeline GET、worker 假 OOM、镜像/HEAD |
+| 判定产物 | Markdown 冒烟报告（见文末模板） | PASS / FAIL / PASS-with-known-issues |
+
+**明确不用（默认）：** Playwright、Cypress、Selenium、Jest/Vitest 组件测、API 直接 `POST` 创建 pipeline 代替点击。  
+若以后要 CI 无人值守 E2E，另开 skill/workflow，不要 silently 改成本 skill 的门禁。
+
 ## 何时使用
 
 - 刚 `git pull` / `start.sh` / recreate 容器之后
