@@ -1,6 +1,6 @@
 # scCloud — 单细胞 RNA-seq 分析平台
 
-> 现代全栈架构：**Next.js 16 + FastAPI + R Plumber**，支持完整的 scRNA-seq 8 步分析流程。
+> 现代全栈架构：**Next.js 16 + FastAPI + R Plumber**，支持 scRNA-seq **全流程 Pipeline**（Phase 1 质控→注释 + 可选 Phase 2 高级分析）。
 
 <p align="left">
   <img src="https://img.shields.io/badge/Next.js-16-000000?style=flat-square&logo=next.js&logoColor=white" alt="Next.js" />
@@ -21,13 +21,14 @@
 |---|---|
 | [架构总览](#架构总览) | ASCII 架构图 + 技术栈表 |
 | [快速开始](#快速开始--一键部署) | `sh ./start.sh` 拉镜像并启动 |
-| [R 引擎构建](#r-引擎镜像说明) | GHCR pull / tar load / r-library 本地 build |
-| [分析流程](#分析流程) | 8步标准 scRNA-seq 分析及 WebGL 可视化 |
+| [R 引擎构建](#r-引擎镜像说明) | GHCR pull / tar load / r-library 本地 build / 应用层 bake |
+| [分析流程](#分析流程) | 全流程 Pipeline（Phase 1 + Phase 2）及 WebGL 可视化 |
 | [服务器部署](#服务器部署host-网络模式) | Host 网络模式（高级）+ 端口规划 |
 | [环境变量](#环境变量参考) | 完整参考表，标注必填项 |
 | [API 端点](#api-端点) | 全部 REST + WebSocket 端点 |
 | [常见问题](#常见问题) | R 引擎故障 / 数据库初始化 / 大文件超时 / OOM |
 | [开发模式](#开发模式) | 前后端热重载本地开发 |
+| [部署后 UI 回归](#部署后-ui-回归) | Claude 点击清单 skill（非 Playwright CI） |
 
 
 ## 架构总览
@@ -42,7 +43,7 @@
 │  SSR + SPA       │  REST API        │   Redis Pub/Sub       │
 ├──────────────────┴──────────────────┴───────────────────────┤
 │                  R-Engine (:8787)                            │
-│            Plumber API — Seurat 5 计算引擎                   │
+│     Plumber API + r-engine-worker（队列消费 / Seurat 5）     │
 ├──────────────────┬──────────────────────────────────────────┤
 │ MariaDB (:3307)  │              Redis (:6380)               │
 │ 用户/项目/任务    │         消息队列 + 进度缓存               │
@@ -53,7 +54,8 @@
 |------|------|------|
 | 前端 | Next.js 16, deck.gl, Plotly.js | 响应式 SPA，WebGL 海量点散点图 |
 | 后端 | FastAPI, SQLAlchemy 2.0, Redis | REST API + WebSocket 实时进度 |
-| 计算引擎 | R 4.3.2, Seurat 5, Plumber | 无状态 HTTP 计算引擎 |
+| 计算引擎 | R 4.3.2, Seurat 5, Plumber | HTTP 计算端点（`plumber.R`） |
+| Worker | 同镜像 `worker.R` | 消费任务队列、跑全流程各步 |
 | 数据库 | MariaDB 11 | 用户认证、项目管理、任务记录 |
 | 缓存 | Redis 7 | 进度推送、任务状态同步 |
 | 代理 | Nginx | 反向代理、WebSocket 升级、大文件上传 |
@@ -108,32 +110,32 @@ SCLOUD_ROOTLESS=1 sh ./start.sh
 
 | 镜像 | 说明 |
 |------|------|
-| `ghcr.io/zyzhou-saffron/sccloud-frontend` | CI 自动构建推送，**linux/amd64 + arm64** |
-| `ghcr.io/zyzhou-saffron/sccloud-backend` | 同上 |
-| `ghcr.io/zyzhou-saffron/sccloud-r-engine` | 需 `r-library`，在 GPU/本机构建后手动 push |
+| `ghcr.io/zyzhou-saffron/sccloud-frontend` | CI 自动构建推送，**仅 linux/amd64**（arm64 在 QEMU 下 Next 静态生成会 SIGILL，见 docker-publish） |
+| `ghcr.io/zyzhou-saffron/sccloud-backend` | CI 自动构建推送，**linux/amd64 + arm64** |
+| `ghcr.io/zyzhou-saffron/sccloud-r-engine` | 需 `r-library`，**不在** FE/BE 的 docker-publish 路径；在 GPU/本机构建后手动 push（push 账号需 `write:packages`） |
 
 **标签**
 
 | 触发 | 镜像 tag |
 |------|----------|
-| `main` 上改 `frontend/**` / `backend/**` | `latest` + git 短 SHA |
+| `main` 上改 `frontend/**` / `backend/**` | `latest` + git 短 SHA（仅变更的组件） |
 | Release Please 发版（GitHub Release published） | 另加 `vX.Y.Z` 与 `X.Y.Z` |
-| Actions → 手动 `workflow_dispatch` | `latest` + SHA（两边都建） |
+| Actions → 手动 `workflow_dispatch` | `latest` + SHA（FE/BE 都会建） |
 
 包建议设为 **Public**，免登录 pull。私有包需先 `docker login ghcr.io`。
 
-**阿里云 ACR（可选）**：在仓库 Settings → Variables/Secrets 配置 `ALIYUN_ACR_REGISTRY`、`ALIYUN_ACR_NAMESPACE`、`ALIYUN_ACR_USERNAME`、`ALIYUN_ACR_PASSWORD` 后，CI 会用 `buildx imagetools` 把多架构清单 mirror 到 ACR。`.env` 中把 `FRONTEND_IMAGE`/`BACKEND_IMAGE` 改成 ACR 前缀即可（见 `.env.example`）。
+**阿里云 ACR（可选）**：在仓库 Settings → Variables/Secrets 配置 `ALIYUN_ACR_REGISTRY`、`ALIYUN_ACR_NAMESPACE`、`ALIYUN_ACR_USERNAME`、`ALIYUN_ACR_PASSWORD` 后，CI 会用 `buildx imagetools` 把已构建清单 mirror 到 ACR（backend 为多架构；frontend 为 amd64）。`.env` 中把 `FRONTEND_IMAGE`/`BACKEND_IMAGE` 改成 ACR 前缀即可（见 `.env.example`）。
 
 ### 发版（Release Please）
 
 仓库已接 [release-please](https://github.com/googleapis/release-please)：`main` 上的 conventional commits（`feat:` / `fix:` …）会自动维护 **Release PR**（更新 `CHANGELOG.md`、`version.txt`、`.release-please-manifest.json`）。
 
-1. 日常开发：commit 用 `feat:` / `fix:` 前缀（`ci:` / `chore:` 默认不进 CHANGELOG 正文）。
-2. 打开/审查 Release PR（例如当前的 1.1.0），确认 CHANGELOG 后 **合并**。
+1. 日常开发：commit 用 `feat:` / `fix:` 前缀（`ci:` / `chore:` 默认不进 CHANGELOG 正文；未映射类型如 `ui:` 也不会进正文）。
+2. 打开/审查 **开放中的 Release PR**（版本号以该 PR 标题/manifest 为准，main 上 `version.txt` 在合并前可能仍是旧值），确认 CHANGELOG 后 **合并**。
 3. 合并后自动打 `vX.Y.Z` tag 并创建 GitHub Release。
 4. `release` 事件触发 docker-publish：FE/BE 推 `latest`、短 SHA、`vX.Y.Z`、`X.Y.Z`。
 
-`version.txt` 在 main 上可能暂时落后（例如仍为 `0.0.0`），**以 Release PR 合并后的值 / GitHub tag 为准**，不要手改 main 上的 version 与 release-please 抢跑。
+**不要**手改 main 上的 `version.txt` 与 release-please 抢跑；以 **Release PR 合并后的值 / GitHub tag** 为准。未合并的 Release PR 不代表已发版。
 
 ### R 引擎镜像说明
 
@@ -147,10 +149,12 @@ R 引擎体积大且 `r-library/` 不在 git 中。优先级：
 ```bash
 cp -r /path/to/R/library r-engine/r-library
 docker build -t ghcr.io/zyzhou-saffron/sccloud-r-engine:latest ./r-engine
-docker push ghcr.io/zyzhou-saffron/sccloud-r-engine:latest
+docker push ghcr.io/zyzhou-saffron/sccloud-r-engine:latest   # 需 write:packages
 ```
 
 从零编译（约 2h）：改 `r-engine/Dockerfile`，用 `install_packages.R` 替代 `COPY r-library/`。
+
+**仅刷新应用层（thin bake）**：`plumber.R` / `worker.R` / `run_job.R` / `R/` 变更时，可在**已有** `sccloud-r-engine` 镜像上 `FROM` 再 `COPY` 这些层并打 tag 推送，不必每次重编 `r-library`。全量 build 依赖构建环境 DNS/代理能拉 apt 源；失败时优先 thin bake。部署机若 bind-mount 了 `worker.R`，以挂载文件为准，镜像内脚本不会覆盖挂载。
 
 ### 手动 compose（等价）
 
@@ -245,21 +249,32 @@ docker compose --env-file .env.server -f docker-compose.server.yml up -d --build
 
 ## 分析流程
 
-支持 **8 步标准 scRNA-seq 分析**流程，每步结果自动衔接：
+Web UI 以 **全流程 Pipeline** 为主入口（单步分析 UI 已归档，见 issue #16）。流水线分两阶段，步骤结果自动衔接：
+
+**Phase 1（固定，跑完后暂停）**
 
 ```
-1. 数据预处理 (QC)        → 质控过滤（线粒体比例、基因数、UMI）
-2. 数据标准化              → SCTransform
-3. 数据降维                → PCA / UMAP / tSNE
-4. 批次校正聚类            → Harmony 校正 + Louvain 聚类
-5. 差异基因分析            → FindMarkers + DotPlot / Heatmap
-6. 通路富集                → GO / KEGG / GSEA
-7. Marker 基因表达         → FeaturePlot + VlnPlot 可视化
-8. 细胞注释                → SingleR 自动注释 / 手动注释
+1. QC / 标准化     → 质控过滤 + SCTransform 等
+2. 降维与聚类      → PCA / UMAP / Harmony + Louvain
+3. 细胞注释        → SingleR 自动注释 / 手动注释
 ```
+
+**Phase 2（可选，注释确认后配置）**
+
+```
+4. 差异基因 (markers)   → FindMarkers + 可视化
+5. 通路富集 (enrich)    → GO / KEGG / GSEA
+6. 细胞通讯 (cellchat)  → CellChat
+7. WGCNA               → 加权基因共表达网络
+8. 拟时序 (monocle)    → Monocle 2
+9. 拷贝数 (infercnv)   → inferCNV
+```
+
+默认发布回归至少覆盖 Phase 1 + Phase 2 的 **markers**；其余 Phase 2 步骤按需开启。
 
 ### 核心特性
 
+- **全流程表单**：多样本加样 → 开始全流程 → Pipeline 进度与结果
 - **格式转换**：H5AD / H5Seurat / CSV / TSV ↔ RDS 双向转换
 - **多样本 MTX 整合**：批量上传 10X ZIP → 自动合并 RDS
 - **WebGL 交互式散点图**：deck.gl 渲染百万级细胞点
@@ -290,14 +305,15 @@ docker compose --env-file .env.server -f docker-compose.server.yml up -d --build
 ```
 sccloud/
 ├── frontend/                   # Next.js 16 前端
-│   ├── Dockerfile              # 多阶段构建 (deps → build → standalone)
+│   ├── Dockerfile              # 多阶段构建 (deps → build → standalone；CI 仅 amd64)
 │   └── src/app/
 │       ├── lib/api.ts          # 统一 API 客户端 + JWT 自动刷新
 │       ├── components/         # 可复用组件
-│       │   ├── ResultViewer.tsx # 8 步分析结果渲染（核心组件）
+│       │   ├── ResultViewer.tsx # 步骤结果渲染
 │       │   ├── charts/         # deck.gl 散点图、Plotly 火山图
 │       │   └── TaskHistory.tsx  # 任务历史面板
-│       ├── dashboard/          # 仪表盘（分析主页）
+│       ├── dashboard/
+│       │   └── analysis/       # 全流程 Pipeline（PipelineForm / PipelineView）
 │       ├── convert/            # 格式转换页
 │       └── settings/           # 用户设置
 │
@@ -308,20 +324,25 @@ sccloud/
 │       ├── main.py             # 应用入口 + CORS
 │       ├── auth/               # JWT 认证 (注册/登录/刷新)
 │       ├── projects/           # 项目 CRUD
+│       ├── pipeline/           # 全流程编排
 │       ├── tasks/              # 任务管理 + R 引擎调用
 │       ├── upload/             # 分片上传 (大文件)
 │       ├── convert/            # 格式转换
 │       ├── ws/                 # WebSocket 进度推送
 │       └── utils/              # R 引擎 HTTP 桥接
 │
-├── r-engine/                   # R 计算引擎
+├── r-engine/                   # R 计算引擎 + worker
 │   ├── Dockerfile              # rocker/r-ver:4.3.2 + 预编译 R 库
 │   ├── plumber.R               # API 入口 (所有端点)
+│   ├── worker.R                # 队列 worker（compose: r-engine-worker）
 │   ├── install_packages.R      # 从零安装 R 包脚本 (备用)
 │   ├── R/                      # 分析模块
 │   │   ├── data_plot.R         # 绘图函数 (QC/降维/差异/Marker)
 │   │   └── data_summary.R     # 数据汇总函数
-│   └── data/                   # SingleR 参考数据等（首次运行时自动下载，无需手动准备）
+│   └── data/                   # SingleR 参考数据等（首次运行时自动下载）
+│
+├── .claude/skills/
+│   └── frontend-ui-test/       # 部署后前端点击回归 skill
 │
 ├── nginx/
 │   └── nginx.conf              # 反向代理配置
@@ -486,6 +507,19 @@ docker run -p 8787:8787 \
   -v $(pwd)/r-engine/R:/app/R:ro \
   sccloud-r-engine
 ```
+
+---
+
+## 部署后 UI 回归
+
+仓库内置 Claude skill（**不是** Playwright / Cypress CI）：
+
+- 路径：[`.claude/skills/frontend-ui-test/SKILL.md`](.claude/skills/frontend-ui-test/SKILL.md)
+- 用途：对任意已部署实例做**真实 UI 点击**回归（登录 → 导航 → 全流程 Phase 1 → Phase 2 至少 markers）
+- 约束：禁止用 API 直接创建 pipeline/task 冒充 UI 通过；API 仅作 health / 状态旁证
+- 触发：在 Claude Code 中按 skill 说明跑；需提供当次环境的 `BASE_URL`（及可选 SSH/compose 旁证）
+
+完整发布门禁见 skill 内 checklist；仅验证「进程没挂」可用 skill 中的 **deploy-smoke** 最小集。
 
 ---
 
