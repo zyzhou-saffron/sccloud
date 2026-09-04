@@ -1,6 +1,6 @@
-# scCloud — 单细胞 RNA-seq 分析平台
+# scCloud
 
-> 现代全栈架构：**Next.js 16 + FastAPI + R Plumber**，支持 scRNA-seq **全流程 Pipeline**（Phase 1 质控→注释 + 可选 Phase 2 高级分析）。
+单细胞 RNA-seq 分析平台。前端 Next.js 16，后端 FastAPI，计算侧 R / Seurat 5（Plumber + worker）。浏览器里跑全流程 Pipeline：Phase 1（质控 → 注释）结束后可选 Phase 2（差异基因、富集、CellChat 等）。
 
 <p align="left">
   <img src="https://img.shields.io/badge/Next.js-16-000000?style=flat-square&logo=next.js&logoColor=white" alt="Next.js" />
@@ -13,64 +13,57 @@
   <img src="https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" />
 </p>
 
-![scCloud Dashboard 预览](docs/images/dashboard.png)
+![scCloud Dashboard](docs/images/dashboard.png)
 
-## 文档导览
+## 目录
 
-| 章节 | 内容 |
-|---|---|
-| [架构总览](#架构总览) | ASCII 架构图 + 技术栈表 |
-| [快速开始](#快速开始--一键部署) | `sh ./start.sh` 拉镜像并启动 |
-| [R 引擎构建](#r-引擎镜像说明) | GHCR pull / tar load / r-library 本地 build / 应用层 bake |
-| [分析流程](#分析流程) | 全流程 Pipeline（Phase 1 + Phase 2）及 WebGL 可视化 |
-| [服务器部署](#服务器部署host-网络模式) | Host 网络模式（高级）+ 端口规划 |
-| [环境变量](#环境变量参考) | 完整参考表，标注必填项 |
-| [API 端点](#api-端点) | 全部 REST + WebSocket 端点 |
-| [常见问题](#常见问题) | R 引擎故障 / 数据库初始化 / 大文件超时 / OOM |
-| [开发模式](#开发模式) | 前后端热重载本地开发 |
-| [部署后 UI 回归](#部署后-ui-回归) | Claude 点击清单 skill（非 Playwright CI） |
+- [架构](#架构)
+- [快速开始](#快速开始)
+  - [预构建镜像（GHCR）](#预构建镜像ghcr)
+  - [发版](#发版)
+  - [R 引擎镜像](#r-引擎镜像)
+  - [不用 start.sh](#不用-startsh)
+- [Host 网络部署](#host-网络部署)
+- [环境变量](#环境变量)
+- [分析流程](#分析流程)
+- [项目结构](#项目结构)
+- [API](#api)
+- [常见问题](#常见问题)
+- [本地开发](#本地开发)
+- [部署后 UI 回归](#部署后-ui-回归)
+- [License](#license)
 
+## 架构
 
-## 架构总览
+桥接 compose（`start.sh` 默认）对外一般只有 `WEB_PORT`；下图端口是 host 网络 / 容器内常见取值，方便对照。
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                     Nginx (:9000)                           │
-│            反向代理 — 统一入口                               │
+│                      反向代理入口                             │
 ├──────────────────┬──────────────────┬───────────────────────┤
 │  Frontend (:3001)│  Backend (:8000) │   WebSocket (/ws/)    │
-│  Next.js 16      │  FastAPI         │   任务进度推送         │
-│  SSR + SPA       │  REST API        │   Redis Pub/Sub       │
+│  Next.js         │  FastAPI         │   任务进度            │
 ├──────────────────┴──────────────────┴───────────────────────┤
-│                  R-Engine (:8787)                            │
-│     Plumber API + r-engine-worker（队列消费 / Seurat 5）     │
+│            R-Engine (:8787)  Plumber + worker               │
 ├──────────────────┬──────────────────────────────────────────┤
 │ MariaDB (:3307)  │              Redis (:6380)               │
-│ 用户/项目/任务    │         消息队列 + 进度缓存               │
 └──────────────────┴──────────────────────────────────────────┘
 ```
 
-| 组件 | 技术 | 说明 |
+| 组件 | 技术 | 作用 |
 |------|------|------|
-| 前端 | Next.js 16, deck.gl, Plotly.js | 响应式 SPA，WebGL 海量点散点图 |
-| 后端 | FastAPI, SQLAlchemy 2.0, Redis | REST API + WebSocket 实时进度 |
-| 计算引擎 | R 4.3.2, Seurat 5, Plumber | HTTP 计算端点（`plumber.R`） |
-| Worker | 同镜像 `worker.R` | 消费任务队列、跑全流程各步 |
-| 数据库 | MariaDB 11 | 用户认证、项目管理、任务记录 |
-| 缓存 | Redis 7 | 进度推送、任务状态同步 |
-| 代理 | Nginx | 反向代理、WebSocket 升级、大文件上传 |
+| 前端 | Next.js 16, deck.gl, Plotly | UI；UMAP 等用 WebGL |
+| 后端 | FastAPI, SQLAlchemy 2, Redis | REST、鉴权、编排、WS 进度 |
+| R 引擎 | R 4.3.2, Seurat 5, Plumber | HTTP 计算（`plumber.R`） |
+| Worker | 同镜像 `worker.R` | 吃队列，跑 pipeline 各步 |
+| DB | MariaDB 11 | 用户 / 项目 / 任务 |
+| 缓存 | Redis 7 | 队列、进度 |
+| 入口 | Nginx | 反代、WS、大上传 |
 
----
+## 快速开始
 
-## 快速开始 — 一键部署
-
-### 前提条件
-
-- **Docker** ≥ 24.0 + **Docker Compose** v2
-- **内存** ≥ 16 GB（分析大数据集时建议 32GB+）
-- **磁盘** ≥ 50 GB（R 镜像约 2GB+ + 项目数据）
-
-### 一键启动
+需要：Docker ≥ 24、Compose v2；内存建议 ≥ 16 GB（大数据集 32 GB+）；磁盘预留几十 GB（R 镜像 + 项目数据）。
 
 ```bash
 git clone https://github.com/zyzhou-saffron/sccloud.git
@@ -78,30 +71,27 @@ cd sccloud
 sh ./start.sh
 ```
 
-脚本会自动：
+`start.sh` 大致会：
 
-1. 检测 Docker Compose v2（缺省不自动装 Docker；共享机可用 `sh ./start.sh --install-docker`）
-2. 无 `.env` 或 `./secrets/*` 时运行 `scripts/setup-wizard.sh`（随机 DB/JWT/Redis 密钥写入 **`./secrets/`**，默认管理员 `admin` / `admin123`）
-3. `WEB_PORT` 默认 `8080`；若占用则自动 +1…+9 并写回 `.env`
-4. 探测 GHCR → `docker compose pull`；失败则本地 `build`
-5. R 镜像兜底：本地 tag → `data/sccloud-r-engine-image.tar.gz` load → 有 `r-engine/r-library` 再 build
-6. `up -d` 并等待 db / redis / backend / r-engine / 入口 `/healthz`
+1. 检查 Compose v2（默认不装 Docker；共享机可 `sh ./start.sh --install-docker`）
+2. 没有 `.env` / `./secrets/*` 时跑 `scripts/setup-wizard.sh`，密钥写到 **`./secrets/`**；默认管理员 `admin` / `admin123`
+3. `WEB_PORT` 默认 `8080`，被占用则 +1…+9 并写回 `.env`
+4. 能拉 GHCR 就 `compose pull`，否则本地 build
+5. R 镜像：本地 tag → `data/sccloud-r-engine-image.tar.gz` load → 有 `r-engine/r-library` 再 build
+6. `up -d`，等 db / redis / backend / r-engine 和入口 `/healthz`
 
-访问 **http://localhost:${WEB_PORT}**（默认 8080）。空库首次启动会 bootstrap 管理员。
+浏览器打开 `http://localhost:${WEB_PORT}`（默认 8080）。空库首次起来会建管理员。
 
-**安全加固**：`DB`/`JWT`/`Redis`/管理员密码仅在 `./secrets/`（compose secrets 挂载），容器默认 `no-new-privileges`、`cap_drop: ALL`，nginx/frontend/redis/db 额外 `read_only` + 非 root；MariaDB/Redis/nginx **钉镜像 digest**。
+密钥只放 `./secrets/`（compose secrets）。容器默认 `no-new-privileges`、`cap_drop: ALL`；nginx / frontend / redis / db 另加 `read_only` 和非 root；MariaDB / Redis / nginx 镜像钉 digest。
 
 ```bash
-# 常用运维
 sh ./scripts/sccloud-ops.sh status
 sh ./scripts/sccloud-ops.sh logs
 sh ./scripts/sccloud-ops.sh stop
 
-# 强制本地构建 / 跳过 pull
-sh ./start.sh --build
-sh ./start.sh --no-pull
+sh ./start.sh --build      # 强制本地构建
+sh ./start.sh --no-pull    # 不 pull
 
-# rootless / 只绑本机
 SCLOUD_ROOTLESS=1 sh ./start.sh
 # 或: export COMPOSE_FILE=docker-compose.yml:docker-compose.rootless.yml
 ```
@@ -110,418 +100,316 @@ SCLOUD_ROOTLESS=1 sh ./start.sh
 
 | 镜像 | 说明 |
 |------|------|
-| `ghcr.io/zyzhou-saffron/sccloud-frontend` | CI 自动构建推送，**仅 linux/amd64**（arm64 在 QEMU 下 Next 静态生成会 SIGILL，见 docker-publish） |
-| `ghcr.io/zyzhou-saffron/sccloud-backend` | CI 自动构建推送，**linux/amd64 + arm64** |
-| `ghcr.io/zyzhou-saffron/sccloud-r-engine` | 需 `r-library`，**不在** FE/BE 的 docker-publish 路径；在 GPU/本机构建后手动 push（push 账号需 `write:packages`） |
+| `ghcr.io/zyzhou-saffron/sccloud-frontend` | CI 推送，**只打 linux/amd64**（arm64 在 QEMU 里 Next 静态生成会 SIGILL） |
+| `ghcr.io/zyzhou-saffron/sccloud-backend` | CI 推送，**amd64 + arm64** |
+| `ghcr.io/zyzhou-saffron/sccloud-r-engine` | 不进 FE/BE 的 publish workflow；本机/GPU 有 `r-library` 再 build、push（token 要 `write:packages`） |
 
-**标签**
+| 何时 | tag |
+|------|-----|
+| `main` 改 `frontend/**` 或 `backend/**` | `latest` + 短 SHA（只建改动的那个） |
+| GitHub Release（Release Please 合并后） | 再加 `vX.Y.Z`、`X.Y.Z` |
+| Actions 手动 `workflow_dispatch` | FE/BE 都建 `latest` + SHA |
 
-| 触发 | 镜像 tag |
-|------|----------|
-| `main` 上改 `frontend/**` / `backend/**` | `latest` + git 短 SHA（仅变更的组件） |
-| Release Please 发版（GitHub Release published） | 另加 `vX.Y.Z` 与 `X.Y.Z` |
-| Actions → 手动 `workflow_dispatch` | `latest` + SHA（FE/BE 都会建） |
+包设成 Public 最省事。私有包先 `docker login ghcr.io`。
 
-包建议设为 **Public**，免登录 pull。私有包需先 `docker login ghcr.io`。
+可选 mirror 到阿里云 ACR：仓库 Variables/Secrets 配好 `ALIYUN_ACR_*` 后，CI 用 `buildx imagetools` 推过去（backend 多架构，frontend 只有 amd64）。`.env` 里把 `FRONTEND_IMAGE` / `BACKEND_IMAGE` 改成 ACR 前缀，见 `.env.example`。
 
-**阿里云 ACR（可选）**：在仓库 Settings → Variables/Secrets 配置 `ALIYUN_ACR_REGISTRY`、`ALIYUN_ACR_NAMESPACE`、`ALIYUN_ACR_USERNAME`、`ALIYUN_ACR_PASSWORD` 后，CI 会用 `buildx imagetools` 把已构建清单 mirror 到 ACR（backend 为多架构；frontend 为 amd64）。`.env` 中把 `FRONTEND_IMAGE`/`BACKEND_IMAGE` 改成 ACR 前缀即可（见 `.env.example`）。
+### 发版
 
-### 发版（Release Please）
+用 [release-please](https://github.com/googleapis/release-please)。`main` 上 `feat:` / `fix:` 会堆到 Release PR 里（改 `CHANGELOG.md`、`version.txt`、`.release-please-manifest.json`）。`ci:` / `chore:` 默认不进 CHANGELOG；没映射的类型（例如 `ui:`）也不会进。
 
-仓库已接 [release-please](https://github.com/googleapis/release-please)：`main` 上的 conventional commits（`feat:` / `fix:` …）会自动维护 **Release PR**（更新 `CHANGELOG.md`、`version.txt`、`.release-please-manifest.json`）。
+1. 日常用 conventional commit
+2. 打开**还没合的** Release PR，对过 CHANGELOG 再合（版本看 PR 标题 / manifest；合之前 main 上 `version.txt` 可能还是旧的）
+3. 合完打 `vX.Y.Z` tag，建 GitHub Release
+4. `release` 事件跑 docker-publish，FE/BE 推 `latest`、短 SHA、semver
 
-1. 日常开发：commit 用 `feat:` / `fix:` 前缀（`ci:` / `chore:` 默认不进 CHANGELOG 正文；未映射类型如 `ui:` 也不会进正文）。
-2. 打开/审查 **开放中的 Release PR**（版本号以该 PR 标题/manifest 为准，main 上 `version.txt` 在合并前可能仍是旧值），确认 CHANGELOG 后 **合并**。
-3. 合并后自动打 `vX.Y.Z` tag 并创建 GitHub Release。
-4. `release` 事件触发 docker-publish：FE/BE 推 `latest`、短 SHA、`vX.Y.Z`、`X.Y.Z`。
+别在 main 上手改 `version.txt` 和 release-please 抢。Release PR 没合就不算发过版。
 
-**不要**手改 main 上的 `version.txt` 与 release-please 抢跑；以 **Release PR 合并后的值 / GitHub tag** 为准。未合并的 Release PR 不代表已发版。
+### R 引擎镜像
 
-### R 引擎镜像说明
+`r-library/` 不进 git，镜像也大。查找顺序：
 
-R 引擎体积大且 `r-library/` 不在 git 中。优先级：
-
-1. **GHCR pull**（`start.sh` 默认）
-2. **本地已有** `sccloud-r-engine` / 目标 tag
-3. **`data/sccloud-r-engine-image.tar.gz`** → `docker load`
-4. **本地 build**（需准备 `r-engine/r-library`）：
+1. GHCR pull（`start.sh` 默认）
+2. 本机已有 `sccloud-r-engine` / 目标 tag
+3. `data/sccloud-r-engine-image.tar.gz` → `docker load`
+4. 本地 build（先准备 `r-engine/r-library`）：
 
 ```bash
 cp -r /path/to/R/library r-engine/r-library
 docker build -t ghcr.io/zyzhou-saffron/sccloud-r-engine:latest ./r-engine
-docker push ghcr.io/zyzhou-saffron/sccloud-r-engine:latest   # 需 write:packages
+docker push ghcr.io/zyzhou-saffron/sccloud-r-engine:latest   # 需要 write:packages
 ```
 
-从零编译（约 2h）：改 `r-engine/Dockerfile`，用 `install_packages.R` 替代 `COPY r-library/`。
+从零装包大约两小时量级：改 Dockerfile，用 `install_packages.R` 代替 `COPY r-library/`。
 
-**仅刷新应用层（thin bake）**：`plumber.R` / `worker.R` / `run_job.R` / `R/` 变更时，可在**已有** `sccloud-r-engine` 镜像上 `FROM` 再 `COPY` 这些层并打 tag 推送，不必每次重编 `r-library`。全量 build 依赖构建环境 DNS/代理能拉 apt 源；失败时优先 thin bake。部署机若 bind-mount 了 `worker.R`，以挂载文件为准，镜像内脚本不会覆盖挂载。
+只改了 `plumber.R` / `worker.R` / `run_job.R` / `R/` 时，可以基于现有 `sccloud-r-engine` 做一层 thin bake（`FROM` 后再 `COPY`），不必重编整个 library。全量 build 要构建机能拉 apt；拉不动就先 thin bake。机器上如果 bind-mount 了 `worker.R`，跑的是挂载文件，不是镜像里那份。
 
-### 手动 compose（等价）
+### 不用 start.sh
 
 ```bash
-sh ./scripts/setup-wizard.sh   # 或 cp .env.example .env 后手改
+sh ./scripts/setup-wizard.sh   # 或 cp .env.example .env 再改
 docker compose --env-file .env pull
 docker compose --env-file .env up -d
 curl -fsS "http://127.0.0.1:${WEB_PORT:-8080}/healthz"
 ```
 
-可选：将 SQL 放到 `data/initdb.d/`，仅在 **空** MariaDB volume 首次启动时导入（若已有 users 则不会 bootstrap 管理员）。
+SQL 可放 `data/initdb.d/`，只在 **空** MariaDB volume 第一次启动时导入。库里已有 users 就不会再 bootstrap 管理员。
 
----
+## Host 网络部署
 
-## 服务器部署（Host 网络模式）
-
-**高级/历史路径。** 日常请优先 `sh ./start.sh`（桥接 `docker-compose.yml`）。以下 host 网络适用于需要绑核/超大内存 worker 的 GPU 现网。
-
-### 端口规划
+日常用桥接 + `start.sh` 即可。`docker-compose.server.yml` 是 host 网络，给要绑核、worker 内存很大的机器用。
 
 | 服务 | 端口 | 说明 |
 |------|------|------|
-| Nginx | 9000 | **统一入口** — 用户访问此端口 |
-| Frontend | 3001 | Next.js SSR |
-| Backend | 8000 | FastAPI API |
-| R-Engine | 8787 | Plumber 计算 |
-| MariaDB | 3307 | 避免与宿主机 3306 冲突 |
-| Redis | 6380 | 避免与宿主机 6379 冲突 |
-
-### 部署命令
+| Nginx | 9000 | 对外入口 |
+| Frontend | 3001 | Next.js |
+| Backend | 8000 | FastAPI |
+| R-Engine | 8787 | Plumber |
+| MariaDB | 3307 | 躲开宿主机 3306 |
+| Redis | 6380 | 躲开宿主机 6379 |
 
 ```bash
-# 创建服务器专用环境配置
 cp .env.example .env.server
-vim .env.server  # 修改以下必填项：
-#   - DB_PASS / DB_ROOT_PASS（数据库密码）
-#   - JWT_SECRET — 用 `openssl rand -hex 32` 生成，如：
-#     a583661e1b2f7bf173e2ca320a5889009f9ae2f64ab5365434a4914935d500f8
+# 至少改 DB 密码、JWT（openssl rand -hex 32）
 
-# 启动（使用 server 配置文件）
 docker compose --env-file .env.server -f docker-compose.server.yml up -d --build
-
-# 查看状态
 docker compose -f docker-compose.server.yml ps
-
-# 查看日志
 docker compose -f docker-compose.server.yml logs -f r-engine
 ```
 
-访问 **http://\<server-ip\>:9000**。
-
-### 重启单个服务
+访问 `http://<server-ip>:9000`。
 
 ```bash
-# 仅重启 R 引擎（修改 R 代码后）
+# 改 R 代码后
 docker compose --env-file .env.server -f docker-compose.server.yml restart r-engine
 
-# 仅重建前端（修改前端代码后）
+# 改前端后
 docker compose --env-file .env.server -f docker-compose.server.yml up -d --build frontend
 ```
 
----
+## 环境变量
 
-## 环境变量参考
+一键部署靠 `setup-wizard.sh` 写 `.env` 和 `./secrets/`。完整列表见 `.env.example`。
 
-一键部署由 `setup-wizard.sh` 生成 `.env` + `./secrets/`。完整模板见 `.env.example`。
-
-| 变量 | 默认值 | 必填 | 说明 |
-|------|--------|------|------|
-| `WEB_PORT` | `8080` | | 唯一对外端口（占用自动换） |
-| `WEB_BIND_ADDRESS` | `0.0.0.0` | | 监听地址；rootless 叠加默认 `127.0.0.1` |
-| `FRONTEND_IMAGE` / `BACKEND_IMAGE` / `R_ENGINE_IMAGE` | GHCR `…/sccloud-*:latest` | | 预构建镜像（可改 ACR） |
-| `DB_NAME` | `sccloud_v2` | | 数据库名 |
-| `DB_USER` | `sccloud_app` | | 数据库用户 |
-| `./secrets/db-password` | 向导生成 | ✅ | **应用库密码**（compose secret） |
-| `./secrets/db-root-password` | 向导生成 | ✅ | **root 密码** |
-| `./secrets/jwt-secret` | 向导生成 | ✅ | **JWT 签名密钥** |
-| `./secrets/redis-password` | 向导生成 | ✅ | **Redis requirepass** |
-| `./secrets/bootstrap-admin-password` | `admin123` | | 空库首次管理员密码 |
-| `R_REDIS_URL` | 向导写入 | | 供 R 引擎的带密码 Redis URL |
-| `JWT_ALGORITHM` | `HS256` | | JWT 算法 |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | `60` | | 访问令牌有效期 |
-| `REFRESH_TOKEN_EXPIRE_DAYS` | `30` | | 刷新令牌有效期 |
+| 变量 | 默认 | 必填 | 说明 |
+|------|------|------|------|
+| `WEB_PORT` | `8080` | | 对外端口（占用会换） |
+| `WEB_BIND_ADDRESS` | `0.0.0.0` | | rootless 叠加时常为 `127.0.0.1` |
+| `FRONTEND_IMAGE` / `BACKEND_IMAGE` / `R_ENGINE_IMAGE` | GHCR `…/sccloud-*:latest` | | 可改成 ACR |
+| `DB_NAME` | `sccloud_v2` | | |
+| `DB_USER` | `sccloud_app` | | |
+| `./secrets/db-password` | 向导生成 | ✅ | 应用库密码 |
+| `./secrets/db-root-password` | 向导生成 | ✅ | root |
+| `./secrets/jwt-secret` | 向导生成 | ✅ | JWT |
+| `./secrets/redis-password` | 向导生成 | ✅ | Redis requirepass |
+| `./secrets/bootstrap-admin-password` | `admin123` | | 空库首个管理员密码 |
+| `R_REDIS_URL` | 向导写入 | | R 侧带密码的 Redis URL |
+| `JWT_ALGORITHM` | `HS256` | | |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | `60` | | |
+| `REFRESH_TOKEN_EXPIRE_DAYS` | `30` | | |
 | `R_ENGINE_TIMEOUT` | `86400` | | R 请求超时（秒） |
 | `R_ENGINE_MEM_LIMIT` / `R_WORKER_MEM_LIMIT` | `16g` / `32g` | | 容器内存上限 |
-| `PROJECTS_ROOT` | `/data/projects` | | 项目数据路径 |
-| `BOOTSTRAP_ADMIN_USER` | `admin` | | 空库首次管理员用户名 |
-| `SCLOUD_ROOTLESS` | `0` | | `1` 时叠加 `docker-compose.rootless.yml` |
-| `ENVIRONMENT` | `production` | | `development` / `production` |
-
----
+| `PROJECTS_ROOT` | `/data/projects` | | 项目数据目录 |
+| `BOOTSTRAP_ADMIN_USER` | `admin` | | |
+| `SCLOUD_ROOTLESS` | `0` | | `1` 叠加 rootless compose |
+| `ENVIRONMENT` | `production` | | |
 
 ## 分析流程
 
-Web UI 以 **全流程 Pipeline** 为主入口（单步分析 UI 已归档，见 issue #16）。流水线分两阶段，步骤结果自动衔接：
+主入口是 **全流程 Pipeline**（旧单步 UI 已归档，见 issue #16）。Phase 1 跑完会暂停，确认注释后再配 Phase 2。
 
-**Phase 1（固定，跑完后暂停）**
-
-```
-1. QC / 标准化     → 质控过滤 + SCTransform 等
-2. 降维与聚类      → PCA / UMAP / Harmony + Louvain
-3. 细胞注释        → SingleR 自动注释 / 手动注释
-```
-
-**Phase 2（可选，注释确认后配置）**
+**Phase 1**
 
 ```
-4. 差异基因 (markers)   → FindMarkers + 可视化
-5. 通路富集 (enrich)    → GO / KEGG / GSEA
-6. 细胞通讯 (cellchat)  → CellChat
-7. WGCNA               → 加权基因共表达网络
-8. 拟时序 (monocle)    → Monocle 2
-9. 拷贝数 (infercnv)   → inferCNV
+1. QC / 标准化
+2. 降维与聚类（PCA / UMAP / Harmony + Louvain）
+3. 细胞注释（SingleR 或手动）
 ```
 
-默认发布回归至少覆盖 Phase 1 + Phase 2 的 **markers**；其余 Phase 2 步骤按需开启。
+**Phase 2（按需）**
 
-### 核心特性
+```
+4. markers     FindMarkers
+5. enrich      GO / KEGG / GSEA
+6. cellchat    CellChat
+7. wgcna
+8. monocle     Monocle 2
+9. infercnv
+```
 
-- **全流程表单**：多样本加样 → 开始全流程 → Pipeline 进度与结果
-- **格式转换**：H5AD / H5Seurat / CSV / TSV ↔ RDS 双向转换
-- **多样本 MTX 整合**：批量上传 10X ZIP → 自动合并 RDS
-- **WebGL 交互式散点图**：deck.gl 渲染百万级细胞点
-- **交互式火山图**：Plotly 双簇对比
-- **实时进度推送**：Redis Pub/Sub → WebSocket
+另外还有：H5AD / H5Seurat / 表格式 ↔ RDS；10X ZIP 多样本整合；deck.gl UMAP；Plotly 火山图；进度走 Redis → WebSocket。
 
-### 界面展示
+<details>
+<summary>截图</summary>
 
-<details open>
-<summary><b>展开查看分析可视化图表</b></summary>
+**UMAP**
+![UMAP](docs/images/umap.png)
 
-**1. 降维聚类 (UMAP)**
-![UMAP 降维图](docs/images/umap.png)
+**火山图**
+![volcano](docs/images/volcano.png)
 
-**2. 差异基因火山图**
-![差异基因火山图](docs/images/volcano.png)
-
-**3. Marker 基因表达可视化**
-![Marker 基因表达](docs/images/marker.png)
+**Marker**
+![marker](docs/images/marker.png)
 
 </details>
-
-
----
 
 ## 项目结构
 
 ```
 sccloud/
-├── frontend/                   # Next.js 16 前端
-│   ├── Dockerfile              # 多阶段构建 (deps → build → standalone；CI 仅 amd64)
+├── frontend/
+│   ├── Dockerfile              # CI 只建 amd64
 │   └── src/app/
-│       ├── lib/api.ts          # 统一 API 客户端 + JWT 自动刷新
-│       ├── components/         # 可复用组件
-│       │   ├── ResultViewer.tsx # 步骤结果渲染
-│       │   ├── charts/         # deck.gl 散点图、Plotly 火山图
-│       │   └── TaskHistory.tsx  # 任务历史面板
-│       ├── dashboard/
-│       │   └── analysis/       # 全流程 Pipeline（PipelineForm / PipelineView）
-│       ├── convert/            # 格式转换页
-│       └── settings/           # 用户设置
-│
-├── backend/                    # FastAPI 后端
+│       ├── lib/api.ts
+│       ├── components/         # ResultViewer、charts、TaskHistory
+│       ├── dashboard/analysis/ # PipelineForm / PipelineView
+│       ├── convert/
+│       └── settings/
+├── backend/
 │   ├── Dockerfile
-│   ├── pyproject.toml          # Python 依赖
-│   └── app/
-│       ├── main.py             # 应用入口 + CORS
-│       ├── auth/               # JWT 认证 (注册/登录/刷新)
-│       ├── projects/           # 项目 CRUD
-│       ├── pipeline/           # 全流程编排
-│       ├── tasks/              # 任务管理 + R 引擎调用
-│       ├── upload/             # 分片上传 (大文件)
-│       ├── convert/            # 格式转换
-│       ├── ws/                 # WebSocket 进度推送
-│       └── utils/              # R 引擎 HTTP 桥接
-│
-├── r-engine/                   # R 计算引擎 + worker
-│   ├── Dockerfile              # rocker/r-ver:4.3.2 + 预编译 R 库
-│   ├── plumber.R               # API 入口 (所有端点)
-│   ├── worker.R                # 队列 worker（compose: r-engine-worker）
-│   ├── install_packages.R      # 从零安装 R 包脚本 (备用)
-│   ├── R/                      # 分析模块
-│   │   ├── data_plot.R         # 绘图函数 (QC/降维/差异/Marker)
-│   │   └── data_summary.R     # 数据汇总函数
-│   └── data/                   # SingleR 参考数据等（首次运行时自动下载）
-│
-├── .claude/skills/
-│   └── frontend-ui-test/       # 部署后前端点击回归 skill
-│
+│   ├── pyproject.toml
+│   └── app/                    # auth, projects, pipeline, tasks, upload, convert, ws
+├── r-engine/
+│   ├── Dockerfile
+│   ├── plumber.R
+│   ├── worker.R                # compose 服务 r-engine-worker
+│   ├── install_packages.R
+│   ├── R/
+│   └── data/                   # SingleR 等，运行时再下
+├── .claude/skills/frontend-ui-test/
 ├── nginx/
-│   └── nginx.conf              # 反向代理配置
-│
-├── data/
-│   ├── sccloud_v2_dump.sql     # 数据库初始化 SQL
-│   └── sccloud-r-engine-image.tar.gz  # 预构建 R 引擎镜像 (~2GB)
-│
-├── start.sh                    # 一键启动
-├── docker-compose.yml          # 一键桥接部署（secrets + 加固 + digest pin）
-├── docker-compose.rootless.yml # rootless/本机绑定叠加
-├── docker-compose.server.yml   # 高级 host 网络
-├── secrets/                    # 密钥目录（gitignore；向导生成）
+├── data/                       # init SQL；可选 r-engine tar
+├── start.sh
+├── docker-compose.yml
+├── docker-compose.rootless.yml
+├── docker-compose.server.yml
+├── docker-compose.dev.yml
+├── secrets/                    # gitignore，向导生成
 ├── scripts/setup-wizard.sh
 ├── scripts/sccloud-ops.sh
-├── nginx/nginx.bridge.conf
-├── docker-compose.dev.yml      # 开发环境 (仅 Redis)
-│
-├── .env.example                # 环境变量模板
-└── .gitignore
+└── .env.example
 ```
 
----
+## API
 
-## API 端点
-
-### 认证 (`/api/auth`)
+### 认证 `/api/auth`
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | POST | `/api/auth/register` | 注册 |
-| POST | `/api/auth/login` | 登录 (OAuth2 表单) |
-| POST | `/api/auth/refresh` | 刷新 Token |
-| GET | `/api/auth/me` | 当前用户信息 |
-| POST | `/api/auth/change-password` | 修改密码 |
+| POST | `/api/auth/login` | 登录（OAuth2 表单） |
+| POST | `/api/auth/refresh` | 刷新 token |
+| GET | `/api/auth/me` | 当前用户 |
+| POST | `/api/auth/change-password` | 改密 |
 
-### 项目 (`/api/projects`)
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/api/projects` | 列出项目 |
-| POST | `/api/projects` | 创建项目 |
-| DELETE | `/api/projects/{id}` | 删除项目 |
-
-### 任务 (`/api/tasks`)
+### 项目 `/api/projects`
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/api/tasks` | 提交分析任务 |
-| GET | `/api/tasks` | 查询任务 (支持 project_id/status 筛选) |
-| GET | `/api/tasks/{id}` | 获取任务详情 |
-| POST | `/api/tasks/{id}/cancel` | 取消任务 |
-| GET | `/api/tasks/example-marker` | 下载示例 marker.txt |
-| POST | `/api/tasks/marker-file` | 上传 marker 基因文件 |
+| GET | `/api/projects` | 列表 |
+| POST | `/api/projects` | 创建 |
+| DELETE | `/api/projects/{id}` | 删除 |
 
-### 文件上传 (`/api/upload`)
+### 任务 `/api/tasks`
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/api/upload/init` | 初始化分片上传 |
-| POST | `/api/upload/chunk` | 上传单个分片 |
-| POST | `/api/upload/complete` | 合并分片 |
-| GET | `/api/upload/status/{id}` | 查询上传进度 |
+| POST | `/api/tasks` | 提交 |
+| GET | `/api/tasks` | 查询（可按 project_id / status） |
+| GET | `/api/tasks/{id}` | 详情 |
+| POST | `/api/tasks/{id}/cancel` | 取消 |
+| GET | `/api/tasks/example-marker` | 示例 marker.txt |
+| POST | `/api/tasks/marker-file` | 上传 marker 文件 |
 
-### 格式转换 (`/api/convert`)
+### 上传 `/api/upload`
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/api/convert/upload` | 上传转换文件 |
-| POST | `/api/convert` | 执行格式转换 |
+| POST | `/api/upload/init` | 初始化分片 |
+| POST | `/api/upload/chunk` | 分片 |
+| POST | `/api/upload/complete` | 合并 |
+| GET | `/api/upload/status/{id}` | 进度 |
+
+### 转换 `/api/convert`
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/convert/upload` | 上传待转文件 |
+| POST | `/api/convert` | 执行转换 |
 
 ### 系统
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | `/api/health` | 健康检查 |
-| WS | `/ws/tasks/{id}` | 任务进度 WebSocket |
-
----
+| WS | `/ws/tasks/{id}` | 任务进度 |
 
 ## 常见问题
 
-### R 引擎构建失败
+### R 引擎起不来 / 没镜像
 
-R 引擎需要预编译的 R 包库（`r-engine/r-library/`）。如果没有，使用方式 B（预构建镜像）或方式 C（从零编译）。
+没有 `r-engine/r-library/` 时，用 GHCR、本机已有 tag，或 `data/sccloud-r-engine-image.tar.gz` load；再不行就按上面从零 build。
 
 ```bash
-# 检查 R 引擎是否正常
-curl http://localhost:8787/health
-# 预期返回: {"status":"ok"}
-
-# 查看 R 引擎日志
+curl http://localhost:8787/health    # 期望 {"status":"ok"}
 docker compose logs r-engine
 ```
 
 ### SingleR 参考数据
 
-SingleR 细胞注释所需的参考数据集（~460MB）**无需手动准备**。首次运行自动注释时，`celldex` 包会自动从 Bioconductor 下载并缓存到容器内 `~/.cache/R/ExperimentHub/`。后续分析直接从缓存读取。
-
-如果下载失败（网络问题），可重试任务或检查 R 引擎容器的网络连通性：
+第一次自动注释时 `celldex` 会从 Bioconductor 拉参考（大约几百 MB），缓存在容器 `~/.cache/R/ExperimentHub/`。失败多半是出网问题：
 
 ```bash
 docker exec sccloud-r-engine-r-engine-1 curl -I https://experimenthub.bioconductor.org
 ```
 
-### 数据库初始化
+### 数据库重来
 
-首次启动时，MariaDB 会自动执行 `data/sccloud_v2_dump.sql` 初始化表结构。如果需要重新初始化：
+首次启动会跑 `data/sccloud_v2_dump.sql`。要清空重来：
 
 ```bash
-# 删除数据库卷并重建
-docker compose down -v
+docker compose down -v   # 会删 volume，先确认没有要留的数据
 docker compose up -d
 ```
 
-### 上传大文件超时
+### 大文件上传超时
 
-默认支持最大 **30 GB** 文件上传。如遇超时，检查：
+默认上限大约 30 GB。超时看：Nginx `client_max_body_size`、`proxy_read_timeout`；后端 / R 的 timeout 相关变量。
 
-1. Nginx `client_max_body_size`（默认 30G）
-2. 后端 `R_ENGINE_TIMEOUT`（默认 3600 秒）
-3. Nginx `proxy_read_timeout`（默认 3600 秒）
+### 内存不够
 
-### 内存不足
+R 引擎默认约 16 GB 上限。大数据集 OOM 时在 compose 里加大 `deploy.resources.limits.memory`，或调 `R_ENGINE_MEM_LIMIT` / `R_WORKER_MEM_LIMIT`。
 
-R 引擎默认限制 16 GB 内存。如分析大数据集 OOM：
+## 本地开发
 
-```yaml
-# docker-compose.yml 中修改
-r-engine:
-  deploy:
-    resources:
-      limits:
-        memory: 32G  # 增加到 32GB
-```
-
----
-
-## 开发模式
-
-适用于前端/后端开发调试，无需全量 Docker 构建：
+不必整栈 Docker build 时：
 
 ```bash
-# 1. 启动基础服务 (Redis + MariaDB)
-docker compose -f docker-compose.dev.yml up -d
+docker compose -f docker-compose.dev.yml up -d   # Redis + MariaDB
 
-# 2. 启动后端 (热重载)
 cd backend
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-cp ../.env.example ../.env  # 配置环境变量
+cp ../.env.example ../.env
 uvicorn app.main:app --reload --port 8000
 
-# 3. 启动前端 (热重载)
 cd frontend
 npm install
 npm run dev
 
-# 4. R 引擎 (Docker)
 docker run -p 8787:8787 \
-  -v $(pwd)/r-engine/plumber.R:/app/plumber.R:ro \
-  -v $(pwd)/r-engine/R:/app/R:ro \
+  -v "$(pwd)/r-engine/plumber.R:/app/plumber.R:ro" \
+  -v "$(pwd)/r-engine/R:/app/R:ro" \
   sccloud-r-engine
 ```
 
----
-
 ## 部署后 UI 回归
 
-仓库内置 Claude skill（**不是** Playwright / Cypress CI）：
+仓库里有一份 Claude skill，用浏览器**真点击**做回归，不是 Playwright / Cypress CI：
 
-- 路径：[`.claude/skills/frontend-ui-test/SKILL.md`](.claude/skills/frontend-ui-test/SKILL.md)
-- 用途：对任意已部署实例做**真实 UI 点击**回归（登录 → 导航 → 全流程 Phase 1 → Phase 2 至少 markers）
-- 约束：禁止用 API 直接创建 pipeline/task 冒充 UI 通过；API 仅作 health / 状态旁证
-- 触发：在 Claude Code 中按 skill 说明跑；需提供当次环境的 `BASE_URL`（及可选 SSH/compose 旁证）
+[`.claude/skills/frontend-ui-test/SKILL.md`](.claude/skills/frontend-ui-test/SKILL.md)
 
-完整发布门禁见 skill 内 checklist；仅验证「进程没挂」可用 skill 中的 **deploy-smoke** 最小集。
-
----
+覆盖登录、导航、全流程 Phase 1，以及 Phase 2 至少 markers。提交分析应走 UI；health / pipeline GET 只做旁证。跑的时候带上当次环境的 `BASE_URL`（需要的话再加 SSH / compose）。细节和判定标准在 skill 正文；只想确认进程活着可以用里面的 deploy-smoke 最小集。
 
 ## License
 
