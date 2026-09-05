@@ -13,7 +13,7 @@
 
 ![scCloud Dashboard](docs/images/dashboard.png)
 
-## 你需要什么
+## 部署条件
 
 - 一台 **Linux x86_64（amd64）** 机器（当前预构建计算镜像仅支持 amd64）
 - [Docker](https://docs.docker.com/get-docker/) ≥ 24，带 **Compose v2**（`docker compose version` 有输出）
@@ -73,7 +73,7 @@ sh ./start.sh --no-pull    # 不重新拉镜像，用本机已有的
 sh ./start.sh --build      # 强制本地构建（一般用户不需要）
 ```
 
-## 怎么用（简要）
+## 使用方式
 
 1. 登录（或使用站点提供的游客入口，若已开启）  
 2. 创建项目并上传单细胞数据（支持常见矩阵 / 10X 等，以界面为准）  
@@ -96,7 +96,7 @@ sh ./start.sh --build      # 强制本地构建（一般用户不需要）
 
 </details>
 
-## 你的数据在哪
+## 数据存储
 
 - **账号、项目名、任务状态**：存在数据库里（Docker 卷，随 compose 项目保留）。  
 - **表达矩阵、分析结果等大文件**：在统一的数据卷中，容器内路径为 `/data/projects`，按用户与项目分目录。  
@@ -123,7 +123,7 @@ sh ./start.sh --build      # 强制本地构建（一般用户不需要）
 **ARM 电脑（Apple Silicon 等）**  
 前端与 R 计算镜像当前按 **amd64** 交付；在 ARM 上可能无法直接跑通完整栈。请使用 amd64 服务器或云主机。
 
-## 架构（给想了解组件的人）
+## 架构简介
 
 ```text
 浏览器 → Nginx（对外 WEB_PORT）
