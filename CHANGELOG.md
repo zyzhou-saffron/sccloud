@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.1.1](https://github.com/zyzhou-saffron/sccloud/compare/v1.1.0...v1.1.1) (2026-09-05)
+
+
+### Bug Fixes
+
+* **ci:** allow docker-publish dispatch with semver tags ([#95](https://github.com/zyzhou-saffron/sccloud/issues/95)) ([0833e4f](https://github.com/zyzhou-saffron/sccloud/commit/0833e4ff4bf8d5ae3bc4f9fd16f19414eb03999e))
+* **ci:** use RELEASE_PLEASE_TOKEN so release triggers docker-publish ([#97](https://github.com/zyzhou-saffron/sccloud/issues/97)) ([3fc4aeb](https://github.com/zyzhou-saffron/sccloud/commit/3fc4aeba9402088ba5a63dbfada43d9bbaf6cb79))
+
+
+### Documentation
+
+* user-facing README; move maintainer topics aside ([58915bf](https://github.com/zyzhou-saffron/sccloud/commit/58915bf87650cdbc8451b5ee0f66565da01c48f0))
+
 ## [1.1.0](https://github.com/zyzhou-saffron/sccloud/compare/v1.0.0...v1.1.0) (2026-09-04)
 
 
